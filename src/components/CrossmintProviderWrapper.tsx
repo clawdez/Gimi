@@ -17,8 +17,8 @@ export function CrossmintProviderWrapper({ children }: { children: React.ReactNo
     <CrossmintProvider apiKey={apiKey}>
       <CrossmintAuthProvider
         authModalTitle="Connect to Tably"
-        loginMethods={["email"]}
-        prefetchOAuthUrls={false}
+        loginMethods={["email", "google"]}
+        prefetchOAuthUrls
       >
         <CrossmintWalletProvider
           createOnLogin={{
