@@ -241,10 +241,17 @@ function AgentChatbox({
   selectedItem: RentalItem;
   wallet: string;
 }) {
+  const [walletChooserOpen, setWalletChooserOpen] = useState(false);
+
   return (
-    <div className="w-full max-w-[680px] rounded-[34px] border border-white/80 bg-white/84 p-4 shadow-[0_36px_110px_rgba(6,23,37,0.2)] backdrop-blur-2xl sm:rounded-[44px] sm:p-6">
-      <div className="mx-auto mb-4 h-1.5 w-14 rounded-full bg-[#061725]/16" />
-      <form onSubmit={onSubmit} className="flex items-center gap-2 rounded-full border border-[#dfe5ee] bg-white p-1.5 shadow-[0_14px_34px_rgba(6,23,37,0.08)]">
+    <div className="w-full max-w-[640px] rounded-[38px] bg-white/76 p-3 shadow-[0_34px_120px_rgba(6,23,37,0.18)] ring-1 ring-white/80 backdrop-blur-2xl sm:rounded-[50px] sm:p-4">
+      <form
+        onSubmit={(event) => {
+          setWalletChooserOpen(false);
+          onSubmit(event);
+        }}
+        className="flex items-center gap-2 rounded-full border border-[#dfe5ee] bg-white/96 p-1.5 shadow-[0_16px_42px_rgba(6,23,37,0.09)]"
+      >
         <label className="sr-only" htmlFor="agent-command">Ask Tably</label>
         <input
           id="agent-command"
@@ -263,24 +270,19 @@ function AgentChatbox({
         </button>
       </form>
 
-      <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-        {crossmintConfigured ? (
-          <CrossmintConnectButton onStart={onCrossmintStart} onWalletReady={onWalletReady} />
-        ) : (
-          <button
-            type="button"
-            onClick={onCrossmintStart}
-            className="min-h-[44px] flex-1 rounded-full bg-[#061725] px-4 text-[14px] font-black text-white transition hover:bg-[#c8ff18] hover:text-[#061725]"
-          >
-            Connect Crossmint
-          </button>
-        )}
-        <SolanaConnectButton onWalletReady={onWalletReady} />
+      <div className="relative mt-3">
+        <WalletConnectButton
+          chooserOpen={walletChooserOpen}
+          crossmintConfigured={crossmintConfigured}
+          onChooserOpenChange={setWalletChooserOpen}
+          onCrossmintStart={onCrossmintStart}
+          onWalletReady={onWalletReady}
+          wallet={wallet}
+        />
       </div>
 
-      <div className="mt-4 flex items-center justify-between gap-3 px-1">
+      <div className="mt-3 flex items-center justify-between gap-3 px-2">
         <p className="min-w-0 truncate text-[12px] font-bold text-[#53697d] sm:text-[13px]">{agentLine}</p>
-        {wallet && <p className="shrink-0 text-[12px] font-black text-[#061725]">{shortKey(wallet)}</p>}
       </div>
 
       {hasSearched && (
@@ -328,66 +330,87 @@ function RecommendationCard({ item, selected, onClick }: { item: RentalItem; sel
   );
 }
 
-function CrossmintConnectButton({
-  onStart,
+function WalletConnectButton({
+  chooserOpen,
+  crossmintConfigured,
+  onChooserOpenChange,
+  onCrossmintStart,
   onWalletReady,
+  wallet: externalWallet,
 }: {
-  onStart: () => void;
+  chooserOpen: boolean;
+  crossmintConfigured: boolean;
+  onChooserOpenChange: (open: boolean) => void;
+  onCrossmintStart: () => void;
   onWalletReady: (address: string) => void;
+  wallet: string;
 }) {
   const { login, status: authStatus } = useCrossmintAuth();
-  const { wallet, status: walletStatus } = useWallet();
-
-  useEffect(() => {
-    if (wallet?.address) {
-      onWalletReady(wallet.address);
-    }
-  }, [onWalletReady, wallet?.address]);
-
-  const isBusy = authStatus === "initializing" || authStatus === "in-progress" || walletStatus === "in-progress";
-  const label = isBusy ? "Connecting..." : wallet?.address ? `Crossmint ${shortKey(wallet.address)}` : "Connect Crossmint";
-
-  return (
-    <button
-      type="button"
-      onClick={() => {
-        onStart();
-        login();
-      }}
-      disabled={isBusy}
-      className="min-h-[44px] flex-1 rounded-full bg-[#061725] px-4 text-[14px] font-black text-white transition hover:bg-[#c8ff18] hover:text-[#061725] disabled:opacity-50"
-    >
-      {label}
-    </button>
-  );
-}
-
-function SolanaConnectButton({ onWalletReady }: { onWalletReady: (address: string) => void }) {
+  const { wallet: crossmintWallet, status: walletStatus } = useWallet();
   const { connected, connecting, publicKey } = useSolanaWallet();
   const { setVisible } = useWalletModal();
-  const address = publicKey?.toBase58();
+  const solanaAddress = publicKey?.toBase58();
 
   useEffect(() => {
-    if (connected && address) {
-      onWalletReady(address);
+    if (crossmintWallet?.address) {
+      onWalletReady(crossmintWallet.address);
     }
-  }, [address, connected, onWalletReady]);
+  }, [crossmintWallet?.address, onWalletReady]);
+
+  useEffect(() => {
+    if (connected && solanaAddress) {
+      onWalletReady(solanaAddress);
+    }
+  }, [connected, onWalletReady, solanaAddress]);
+
+  const isBusy = authStatus === "in-progress" || walletStatus === "in-progress";
+  const connectedWallet = externalWallet || crossmintWallet?.address || solanaAddress || "";
+  const label = isBusy || connecting ? "Connecting..." : connectedWallet ? `Wallet ${shortKey(connectedWallet)}` : "Connect wallet";
 
   return (
-    <button
-      type="button"
-      onClick={() => {
-        if (connected && address) {
-          onWalletReady(address);
-          return;
-        }
-        setVisible(true);
-      }}
-      disabled={connecting}
-      className="min-h-[44px] flex-1 rounded-full border border-[#dfe7ef] bg-white px-4 text-[14px] font-black text-[#061725] transition hover:border-[#6b4cff] disabled:opacity-50"
-    >
-      {connecting ? "Connecting..." : connected && address ? `Solana ${shortKey(address)}` : "Connect Solana"}
-    </button>
+    <>
+      <button
+        type="button"
+        onClick={() => {
+          if (connectedWallet) return;
+          onChooserOpenChange(!chooserOpen);
+        }}
+        disabled={isBusy || connecting}
+        className={`min-h-[44px] w-full rounded-full px-4 text-[14px] font-black transition disabled:opacity-50 ${
+          connectedWallet ? "bg-[#c8ff18] text-[#061725]" : "bg-[#061725] text-white hover:bg-[#c8ff18] hover:text-[#061725]"
+        }`}
+      >
+        {label}
+      </button>
+
+      {chooserOpen && !connectedWallet && (
+        <div className="absolute left-1/2 top-[calc(100%+8px)] z-30 grid w-full max-w-[360px] -translate-x-1/2 gap-2 rounded-[24px] border border-[#e4eaf0] bg-white/96 p-2 shadow-[0_22px_60px_rgba(6,23,37,0.16)] backdrop-blur-xl">
+          <button
+            type="button"
+            onClick={() => {
+              onCrossmintStart();
+              if (crossmintConfigured) login();
+              onChooserOpenChange(false);
+            }}
+            className="rounded-[18px] bg-[#061725] px-4 py-3 text-left text-[13px] font-black text-white transition hover:bg-[#c8ff18] hover:text-[#061725]"
+          >
+            Crossmint
+            <span className="mt-1 block text-[11px] font-bold opacity-70">Email or social wallet</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setVisible(true);
+              onChooserOpenChange(false);
+            }}
+            className="rounded-[18px] border border-[#dfe7ef] bg-white px-4 py-3 text-left text-[13px] font-black text-[#061725] transition hover:border-[#6b4cff]"
+          >
+            Solana wallet
+            <span className="mt-1 block text-[11px] font-bold text-[#607489]">Phantom, Backpack, Solflare</span>
+          </button>
+        </div>
+      )}
+    </>
   );
 }
 
