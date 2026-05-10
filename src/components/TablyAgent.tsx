@@ -1,6 +1,7 @@
 "use client";
 
-import { type FormEvent, useMemo, useRef, useState } from "react";
+import { useCrossmintAuth, useWallet } from "@crossmint/client-sdk-react-ui";
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { COMMUNITY_ITEMS } from "@/lib/store";
 import { RentalItem } from "@/lib/types";
 
@@ -40,8 +41,7 @@ const categoryKeywords: Array<[string, string[]]> = [
 ];
 
 const categories = ["All", "Power", "Audio", "Video", "Workspace", "Adapters", "Connectivity"];
-const demoWalletAddress = "demo_crossmint_wallet";
-const crossmintLive = false;
+const crossmintConfigured = Boolean(process.env.NEXT_PUBLIC_CROSSMINT_API_KEY);
 
 export function TablyAgent() {
   const availableItems = COMMUNITY_ITEMS.filter((item) => item.status === "available");
@@ -77,13 +77,11 @@ export function TablyAgent() {
       ? "Confirm return"
       : sessionActive
         ? "Request return"
-        : requestUrl
-          ? "Start rental"
-          : wallet
-            ? "Prepare rental"
-            : crossmintLive
-              ? "Connect wallet"
-              : "Demo connect";
+          : requestUrl
+            ? "Start rental"
+            : wallet
+              ? "Prepare rental"
+              : "Connect Crossmint";
 
   function mark(name: string, status: StepStatus, detail?: string) {
     setSteps((current) => current.map((step) => (step.name === name ? { ...step, status, detail: detail ?? step.detail } : step)));
@@ -148,13 +146,20 @@ export function TablyAgent() {
     setInput("");
   }
 
-  async function startCrossmint() {
+  function startCrossmint() {
     mark("start_crossmint_login", "running");
-    setStatusMessage("Preparing renter wallet.");
-    await wait(300);
-    setWallet(demoWalletAddress);
-    mark("start_crossmint_login", "done", "Demo wallet ready");
-    setStatusMessage(`Wallet ready. Escrow needed: ${selectedItem.buyoutCap} USDC.`);
+    setStatusMessage(
+      crossmintConfigured
+        ? "Open Crossmint sign-in to create a renter wallet."
+        : "Crossmint is not configured. Add NEXT_PUBLIC_CROSSMINT_API_KEY to enable live wallet login."
+    );
+  }
+
+  function handleCrossmintWallet(address: string) {
+    if (!address || address === wallet) return;
+    setWallet(address);
+    mark("start_crossmint_login", "done", `Wallet ${shortKey(address)}`);
+    setStatusMessage(`Crossmint wallet ${shortKey(address)} ready. Escrow needed: ${selectedItem.buyoutCap} USDC.`);
   }
 
   async function quoteLifi() {
@@ -170,6 +175,8 @@ export function TablyAgent() {
           targetChain: "solana",
           targetToken: "USDC",
           amount: selectedItem.buyoutCap,
+          toAddress: wallet,
+          renterWallet: wallet,
         }),
       });
       const data = await res.json();
@@ -189,7 +196,7 @@ export function TablyAgent() {
       const res = await fetch("/api/solana-pay/start-rental", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ itemId: selectedItem.id, renterWallet: wallet || demoWalletAddress, hours: rentalHours }),
+        body: JSON.stringify({ itemId: selectedItem.id, renterWallet: wallet, hours: rentalHours }),
       });
       const data = await res.json();
       setRequestUrl(data.solanaPayUrl);
@@ -207,7 +214,7 @@ export function TablyAgent() {
     const res = await fetch("/api/rent", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ itemId: selectedItem.id, renterWallet: wallet || demoWalletAddress, hours: rentalHours }),
+      body: JSON.stringify({ itemId: selectedItem.id, renterWallet: wallet, hours: rentalHours }),
     });
     if (!res.ok) {
       mark("mint_rental_token", "pending", "Rental start failed");
@@ -310,7 +317,10 @@ export function TablyAgent() {
 
           <RentalSummary
             actionLabel={actionLabel}
+            crossmintConfigured={crossmintConfigured}
             expectedFee={expectedFee}
+            onCrossmintStart={startCrossmint}
+            onCrossmintWallet={handleCrossmintWallet}
             onAdvance={() => void advanceRentalFlow()}
             receipt={receipt}
             refundable={refundable}
@@ -324,6 +334,7 @@ export function TablyAgent() {
             statusMessage={statusMessage}
             steps={steps}
             txPreview={txPreview}
+            wallet={wallet}
           />
         </div>
       </div>
@@ -375,7 +386,10 @@ function SmallMetric({ label, value }: { label: string; value: string }) {
 
 function RentalSummary({
   actionLabel,
+  crossmintConfigured,
   expectedFee,
+  onCrossmintStart,
+  onCrossmintWallet,
   onAdvance,
   receipt,
   refundable,
@@ -386,9 +400,13 @@ function RentalSummary({
   statusMessage,
   steps,
   txPreview,
+  wallet,
 }: {
   actionLabel: string;
+  crossmintConfigured: boolean;
   expectedFee: number;
+  onCrossmintStart: () => void;
+  onCrossmintWallet: (address: string) => void;
   onAdvance: () => void;
   receipt: string;
   refundable: number;
@@ -399,6 +417,7 @@ function RentalSummary({
   statusMessage: string;
   steps: ToolStep[];
   txPreview: string;
+  wallet: string;
 }) {
   return (
     <aside className="h-fit rounded-[6px] bg-white p-5 shadow-[0_20px_70px_rgba(7,24,39,0.1)] lg:sticky lg:top-28">
@@ -440,15 +459,63 @@ function RentalSummary({
         {receipt && <p>{receipt}</p>}
       </div>
 
-      <button
-        type="button"
-        onClick={onAdvance}
-        disabled={Boolean(receipt)}
-        className="mt-5 h-12 w-full rounded-full bg-[#071827] text-[12px] font-black uppercase tracking-[0.12em] text-white transition hover:bg-[#c8ff2e] hover:text-[#071827] disabled:opacity-50"
-      >
-        {actionLabel}
-      </button>
+      {!wallet && !receipt ? (
+        crossmintConfigured ? (
+          <CrossmintConnectButton onStart={onCrossmintStart} onWalletReady={onCrossmintWallet} />
+        ) : (
+          <button
+            type="button"
+            onClick={onCrossmintStart}
+            className="mt-5 h-12 w-full rounded-full bg-[#071827] text-[12px] font-black uppercase tracking-[0.12em] text-white transition hover:bg-[#c8ff2e] hover:text-[#071827]"
+          >
+            Connect Crossmint
+          </button>
+        )
+      ) : (
+        <button
+          type="button"
+          onClick={onAdvance}
+          disabled={Boolean(receipt)}
+          className="mt-5 h-12 w-full rounded-full bg-[#071827] text-[12px] font-black uppercase tracking-[0.12em] text-white transition hover:bg-[#c8ff2e] hover:text-[#071827] disabled:opacity-50"
+        >
+          {actionLabel}
+        </button>
+      )}
     </aside>
+  );
+}
+
+function CrossmintConnectButton({
+  onStart,
+  onWalletReady,
+}: {
+  onStart: () => void;
+  onWalletReady: (address: string) => void;
+}) {
+  const { login, status: authStatus } = useCrossmintAuth();
+  const { wallet, status: walletStatus } = useWallet();
+
+  useEffect(() => {
+    if (wallet?.address) {
+      onWalletReady(wallet.address);
+    }
+  }, [onWalletReady, wallet?.address]);
+
+  const isBusy = authStatus === "initializing" || authStatus === "in-progress" || walletStatus === "in-progress";
+  const label = isBusy ? "Connecting..." : wallet?.address ? `Wallet ${shortKey(wallet.address)}` : "Connect Crossmint";
+
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        onStart();
+        login();
+      }}
+      disabled={isBusy}
+      className="mt-5 h-12 w-full rounded-full bg-[#071827] text-[12px] font-black uppercase tracking-[0.12em] text-white transition hover:bg-[#c8ff2e] hover:text-[#071827] disabled:opacity-50"
+    >
+      {label}
+    </button>
   );
 }
 
@@ -471,8 +538,4 @@ function FlowRow({ step }: { step: ToolStep }) {
 function shortKey(value: unknown) {
   if (typeof value !== "string" || value.length < 10) return "wallet";
   return `${value.slice(0, 4)}...${value.slice(-4)}`;
-}
-
-function wait(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

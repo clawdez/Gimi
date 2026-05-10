@@ -31,6 +31,11 @@ export async function POST(req: NextRequest) {
   const solanaPayUrl = `solana:https://rentproof.local/api/solana-pay/start-rental?draftId=${draftId}`;
   const hours = body.hours ?? item.expectedHours;
   const renterWallet = body.account ?? body.renterWallet;
+
+  if (!renterWallet) {
+    return NextResponse.json({ error: "Missing renter wallet" }, { status: 400 });
+  }
+
   const rentalSeconds = Math.ceil(hours * 3600);
   const rentProof = deriveRentProofAccounts({
     itemId: item.id,
@@ -89,7 +94,7 @@ export async function POST(req: NextRequest) {
       name: item.name,
       escrowAmount: item.buyoutCap,
       expectedHours: hours,
-      renterWallet: renterWallet ?? "crossmint_embedded_wallet",
+      renterWallet,
     },
   });
 }

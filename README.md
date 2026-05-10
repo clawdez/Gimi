@@ -10,7 +10,7 @@ Tably is one product: an agentic rental marketplace with Solana settlement built
 User asks for an item
 -> Agent searches community inventory
 -> Agent selects the best available item
--> Demo Crossmint wallet path prepares a renter wallet
+-> Crossmint embedded wallet login creates/loads the renter wallet
 -> LI.FI quote routes Base USDC into Solana USDC when real wallet addresses are supplied
 -> Solana Pay endpoint returns an unsigned serialized devnet transaction
 -> Tably Anchor program locks escrow and creates rental session state
@@ -32,6 +32,7 @@ The MVP is designed for physical-world rentals where the agent helps people borr
 - LI.FI quote endpoint at `/api/lifi/quote` using live LI.FI REST quotes when real source/destination wallets are supplied, with demo fallback for local UI mode.
 - ElevenLabs server tools endpoint at `/api/elevenlabs/tools`.
 - MCP-style read/prepare endpoint at `/api/mcp`.
+- Crossmint React provider and wallet CTA for real embedded-wallet onboarding. The UI does not mint a fake renter wallet when Crossmint is not configured.
 
 ## Track Alignment
 
@@ -43,7 +44,7 @@ The MVP is designed for physical-world rentals where the agent helps people borr
 | Virtuals | Agent perceives inventory, decides best item, and acts around physical-world handoff/return workflows |
 | MCP | `/api/mcp` exposes read/prepare rental tools for external agents |
 | Solana Pay | `/api/solana-pay/start-rental` returns a Solana Pay request plus program id, PDA accounts, and instruction args |
-| Crossmint | Non-web3 onboarding is represented as demo embedded-wallet mode; live SDK wiring is the next integration step |
+| Crossmint | `@crossmint/client-sdk-react-ui` provides real email/social login and creates/loads a Solana renter wallet through `NEXT_PUBLIC_CROSSMINT_API_KEY` |
 
 ## Local Development
 
@@ -165,14 +166,13 @@ Serves the generated Anchor IDL.
 This repo now has a deployed devnet Anchor settlement program, a product-ready demo surface, live LI.FI quote support, ElevenLabs server-tool endpoints, and unsigned serialized Solana transaction generation. It still does not sign or send user transactions by itself.
 
 - Program id: `AVL316tYxrg8MhEeWtaxbwdShMWybzRAH1zNQWvX355K`.
+- Crossmint wallet login requires a client API key with Wallet API scopes in `NEXT_PUBLIC_CROSSMINT_API_KEY`.
 - LI.FI live quotes require valid source and destination wallet addresses; local demo mode falls back when those are missing.
 - ElevenLabs is server-tool ready, but the hosted ElevenLabs agent still needs to be configured with this endpoint and `ELEVENLABS_API_KEY`.
-- Crossmint is demo embedded-wallet mode until the Crossmint React SDK and `NEXT_PUBLIC_CROSSMINT_API_KEY` are wired.
 - MCP never signs or moves funds; it only exposes read/prepare tools.
 
 ## Next Steps
 
 1. Register `/api/elevenlabs/tools` in the ElevenLabs agent console.
-2. Wire Crossmint embedded wallets for non-web3 renters.
-3. Add wallet UI signing for the returned `transaction`.
-4. Add serialized `confirm_return` and `auto_buyout` transactions.
+2. Add wallet UI signing for the returned `transaction`.
+3. Add serialized `confirm_return` and `auto_buyout` transactions.
