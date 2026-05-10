@@ -336,7 +336,11 @@ function FloatingInventory({
     "bg-[#ffd77c]",
   ];
   const icons = ["+", "z", "c", "n", "m", "b"];
-  const displayItems = items.slice(0, 6);
+  const preferredIds = ["power_bank_18", "charger_07", "camera_04", "mic_11", "adapter_03", "tripod_09"];
+  const displayItems = preferredIds
+    .map((id) => items.find((item) => item.id === id))
+    .filter((item): item is RentalItem => Boolean(item))
+    .slice(0, 6);
 
   return (
     <div className="pointer-events-none absolute inset-0 hidden xl:block">
@@ -364,15 +368,86 @@ function FloatingInventory({
               ${item.ratePerHour}/h
             </span>
             <span className="block p-8">
-              <span
-                className="block aspect-[1.22] rounded-[30px] bg-contain bg-center bg-no-repeat drop-shadow-[0_24px_34px_rgba(6,23,37,0.28)]"
-                style={{ backgroundImage: `url(${item.imageUrl})` }}
-              />
+              <ProductVisual item={item} variant="floating" />
             </span>
           </button>
         );
       })}
     </div>
+  );
+}
+
+function ProductVisual({ item, variant = "floating" }: { item: RentalItem; variant?: "floating" | "hero" }) {
+  const large = variant === "hero";
+  const frameClass = large ? "h-[280px] sm:h-[300px]" : "h-[132px]";
+  const visualKey = `${item.id} ${item.category}`.toLowerCase();
+
+  if (visualKey.includes("charger")) {
+    return (
+      <span className={`relative block ${frameClass} w-full drop-shadow-[0_24px_34px_rgba(6,23,37,0.22)]`}>
+        <span className="absolute left-[18%] top-[12%] h-[54%] w-[58%] rounded-full border-[10px] border-[#e7edf4]" />
+        <span className="absolute left-[30%] top-[31%] h-4 w-[46%] -rotate-[20deg] rounded-full bg-[#d8e1ea]" />
+        <span className="absolute bottom-[24%] left-[38%] h-[28%] w-[34%] rotate-[-16deg] rounded-[18px] bg-white shadow-[inset_0_0_0_2px_#dce5ed]" />
+        <span className="absolute bottom-[29%] left-[30%] h-5 w-12 rotate-[-16deg] rounded-[8px] bg-white shadow-[inset_0_0_0_2px_#dce5ed]" />
+        <span className="absolute bottom-[43%] right-[18%] h-5 w-10 rotate-[-16deg] rounded-[7px] bg-white shadow-[inset_0_0_0_2px_#dce5ed]" />
+      </span>
+    );
+  }
+
+  if (visualKey.includes("tripod")) {
+    return (
+      <span className={`relative block ${frameClass} w-full drop-shadow-[0_24px_34px_rgba(6,23,37,0.3)]`}>
+        <span className="absolute left-[41%] top-[14%] h-[18%] w-[18%] rounded-[10px] bg-[#111823]" />
+        <span className="absolute left-[48%] top-[30%] h-[44%] w-3 rounded-full bg-[#111823]" />
+        <span className="absolute left-[49%] top-[60%] h-[34%] w-2 origin-top rotate-[24deg] rounded-full bg-[#111823]" />
+        <span className="absolute left-[49%] top-[60%] h-[34%] w-2 origin-top rotate-[-24deg] rounded-full bg-[#111823]" />
+        <span className="absolute left-[49%] top-[60%] h-[34%] w-2 origin-top rounded-full bg-[#111823]" />
+      </span>
+    );
+  }
+
+  if (visualKey.includes("camera") || visualKey.includes("video")) {
+    return (
+      <span className={`relative block ${frameClass} w-full drop-shadow-[0_24px_34px_rgba(6,23,37,0.3)]`}>
+        <span className="absolute left-[12%] top-[24%] h-[48%] w-[70%] rounded-[26px] bg-[#111823] shadow-[inset_0_0_0_2px_#263140]" />
+        <span className="absolute left-[18%] top-[18%] h-[16%] w-[26%] rounded-t-[14px] bg-[#111823]" />
+        <span className="absolute left-[38%] top-[30%] h-[42%] w-[42%] rounded-full bg-[#05080d] shadow-[inset_0_0_0_8px_#273443]" />
+        <span className="absolute left-[47%] top-[39%] h-[24%] w-[24%] rounded-full bg-[#0b1018] shadow-[inset_0_0_0_5px_#1e93b9]" />
+        <span className="absolute left-[22%] top-[35%] h-5 w-8 rounded-full bg-[#303b4a]" />
+      </span>
+    );
+  }
+
+  if (visualKey.includes("mic") || visualKey.includes("audio")) {
+    return (
+      <span className={`relative block ${frameClass} w-full drop-shadow-[0_24px_34px_rgba(6,23,37,0.28)]`}>
+        <span className="absolute left-[38%] top-[10%] h-[48%] w-[26%] rounded-[999px] bg-[#111823] shadow-[inset_0_-12px_0_#05080d]" />
+        <span className="absolute left-[43%] top-[55%] h-[26%] w-[16%] rounded-full border-[7px] border-[#111823] border-t-0" />
+        <span className="absolute left-[49%] top-[73%] h-[18%] w-2 rounded-full bg-[#111823]" />
+        <span className="absolute bottom-[5%] left-[32%] h-4 w-[42%] rounded-full bg-[#111823]" />
+      </span>
+    );
+  }
+
+  if (visualKey.includes("adapter")) {
+    return (
+      <span className={`relative block ${frameClass} w-full drop-shadow-[0_24px_34px_rgba(6,23,37,0.22)]`}>
+        <span className="absolute left-[18%] top-[30%] h-4 w-[62%] rotate-[18deg] rounded-full bg-[#d8e1ea]" />
+        <span className="absolute left-[15%] top-[24%] h-[28%] w-[32%] rotate-[18deg] rounded-[16px] bg-white shadow-[inset_0_0_0_2px_#dce5ed]" />
+        <span className="absolute right-[15%] top-[39%] h-[22%] w-[28%] rotate-[18deg] rounded-[10px] bg-[#cfd8e3] shadow-[inset_0_0_0_2px_#9aa9b8]" />
+      </span>
+    );
+  }
+
+  return (
+    <span className={`relative block ${frameClass} w-full drop-shadow-[0_24px_34px_rgba(6,23,37,0.3)]`}>
+      <span className="absolute left-[33%] top-[10%] h-[76%] w-[34%] rotate-[-24deg] rounded-[24px] bg-[#151b22] shadow-[inset_0_0_0_2px_#303b45]" />
+      <span className="absolute left-[39%] top-[18%] rotate-[-24deg] text-[10px] font-black tracking-[0.12em] text-white/75">
+        ANKER
+      </span>
+      <span className="absolute bottom-[18%] left-[47%] h-2 w-10 rotate-[-24deg] rounded-full bg-[#2f83ff]" />
+      <span className="absolute bottom-[15%] left-[56%] h-3 w-8 rotate-[-24deg] rounded-full bg-[#05080d]" />
+    </span>
   );
 }
 
@@ -479,10 +554,7 @@ function GeneratedCheckout({
             >
               o
             </button>
-            <div
-              className="aspect-[0.9] rounded-[24px] bg-contain bg-center bg-no-repeat"
-              style={{ backgroundImage: `url(${selectedItem.imageUrl})` }}
-            />
+            <ProductVisual item={selectedItem} variant="hero" />
             <div className="absolute bottom-5 left-5 rounded-full bg-[#c8ff18] px-4 py-2 text-[12px] font-black text-[#061725] shadow-[0_12px_28px_rgba(84,128,0,0.22)]">
               {Math.max(88, Math.min(99, selectedItem.ownerScore))}% match
             </div>
