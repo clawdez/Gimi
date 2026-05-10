@@ -1,4 +1,12 @@
-# RentChain — Agentic Tokenized Rental Marketplace
+# Tably / RentProof — Agentic Community Rental MVP
+
+> Current direction: Tably is a consumer AI rental agent for school, community, and hackathon items. RentProof is the settlement layer: refundable escrow, temporary rental token, return-confirm burn, receipt, and reputation.
+>
+> The current implementation keeps all sponsor-facing surfaces in scope: Crossmint onboarding, LI.FI funding, Solana Pay transaction request, Solana escrow/token/receipt path, ElevenLabs voice/chat workflow, Virtuals physical-world agent framing, and MCP read/prepare tools.
+
+---
+
+# Historical PRD — RentChain Tokenized Rental Marketplace
 
 **Hackathon:** Web3 Dev3pack (9-hour sprint)
 **Tracks:** Solana, Solana Mobile, Virtuals, 11 Labs, LiFi

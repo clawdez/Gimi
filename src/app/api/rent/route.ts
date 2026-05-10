@@ -1,25 +1,31 @@
 import { NextRequest, NextResponse } from "next/server";
+import { startRental } from "@/lib/store";
 
-// POST /api/rent — rent an item (would interact with escrow contract in production)
+// POST /api/rent — starts a RentProof rental session for the demo surface.
 export async function POST(req: NextRequest) {
   const body = await req.json();
 
-  const { itemId, renterWallet, rentalDays } = body;
+  const { itemId, renterWallet, hours } = body;
 
-  if (!itemId || !renterWallet || !rentalDays) {
+  if (!itemId || !renterWallet || !hours) {
     return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
   }
 
-  // In production: call Solana program to transfer funds to escrow
+  const item = startRental(itemId, renterWallet, hours);
+  if (!item) {
+    return NextResponse.json({ error: "Item not found" }, { status: 404 });
+  }
+
   const rental = {
-    id: crypto.randomUUID(),
+    id: `session_${itemId}`,
     itemId,
     renter: renterWallet,
-    rentalDays,
+    hours,
     rentalStart: Date.now(),
     status: "active",
-    // Would include: escrowAddress, transactionSignature
-    txSignature: `mock_${crypto.randomUUID().substring(0, 12)}`,
+    escrowAmount: item.buyoutCap,
+    rentalTokenMint: `rent_${crypto.randomUUID().substring(0, 8)}`,
+    txSignature: `devnet_mock_${crypto.randomUUID().substring(0, 12)}`,
   };
 
   return NextResponse.json({ rental, message: "Item rented successfully" });

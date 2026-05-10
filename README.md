@@ -1,36 +1,58 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Tably / RentProof
 
-## Getting Started
+AI rental agent for school, community, and hackathon items.
 
-First, run the development server:
+Tably is the consumer app. RentProof is the settlement layer underneath: refundable escrow, temporary rental token, return-confirm burn, receipt, and reputation.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## Demo Flow
+
+```text
+User asks for a power bank
+-> Agent checks inventory and selects the best available item
+-> Demo Crossmint wallet is prepared unless live Crossmint SDK is configured
+-> Agent quotes LI.FI funding into Solana USDC
+-> Agent creates a Solana Pay start_rental request
+-> RentProof locks refundable escrow and mints a rental token
+-> Agent monitors the meter
+-> Owner confirms return
+-> Rental token burns
+-> Receipt and reputation update
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Track Integrations
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| Track | Implementation in this repo |
+| --- | --- |
+| Solana | Devnet-oriented rental state, escrow/token transaction plan, receipt state, wallet adapter support |
+| LI.FI | `/api/lifi/quote` returns a route tied to required rental escrow |
+| ElevenLabs | Voice/chat agent surface and workflow-ready tool calls |
+| Virtuals | Perceive/decide/act agent runtime for physical-world rentals |
+| MCP | `/api/mcp` exposes read/prepare rental tools for external agents |
+| Solana Pay | `/api/solana-pay/start-rental` creates a rental transaction request payload |
+| Crossmint | Non-web3 onboarding step is shown as explicit demo wallet mode; live login requires the Crossmint React SDK and `NEXT_PUBLIC_CROSSMINT_API_KEY` |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Local Development
 
-## Learn More
+```bash
+npm install
+npm run dev
+```
 
-To learn more about Next.js, take a look at the following resources:
+Open [http://localhost:3000](http://localhost:3000).
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Current Boundary
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+This sprint implements the full product surface and mocked integration adapters. The irreversible operations remain approval-gated:
 
-## Deploy on Vercel
+- MCP never signs or moves funds.
+- LI.FI endpoint is a demo quote adapter until keys/network execution are configured.
+- Solana Pay endpoint returns a transaction request plan; wiring real serialized transactions requires the Anchor program.
+- Crossmint is not live-connected in this build. The agent uses an explicit demo embedded wallet path until `@crossmint/client-sdk-react-ui`, `CrossmintProvider`, `CrossmintAuthProvider`, `CrossmintWalletProvider`, and `NEXT_PUBLIC_CROSSMINT_API_KEY` are wired.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Build Next
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+1. Add Crossmint embedded wallet SDK and replace demo wallet mode with live Crossmint auth/wallet creation.
+2. Replace LI.FI quote mock with SDK/REST route call.
+3. Add Anchor `RentalSession` program and serialized Solana Pay transaction.
+4. Connect ElevenLabs agent tools to the existing API routes.
+5. Serve MCP through a proper MCP transport in addition to `/api/mcp`.
