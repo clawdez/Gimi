@@ -20,6 +20,11 @@
 # production
 /build
 
+# Anchor / Solana
+/.anchor/
+/target/
+/test-ledger/
+
 # misc
 .DS_Store
 *.pem
