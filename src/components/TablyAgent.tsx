@@ -1,8 +1,10 @@
 "use client";
 
 import { useCrossmintAuth, useWallet } from "@crossmint/client-sdk-react-ui";
+import { SolanaWallet } from "@crossmint/wallets-sdk";
 import { useWallet as useSolanaWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
+import { Connection, Transaction } from "@solana/web3.js";
 import Image from "next/image";
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { COMMUNITY_ITEMS } from "@/lib/store";
@@ -15,7 +17,19 @@ interface ParsedRentalIntent {
   note?: string;
 }
 
-type RentalActionStatus = "idle" | "preparing" | "ready" | "error";
+type RentalActionStatus = "idle" | "preparing" | "ready" | "signing" | "sent" | "error";
+
+interface PreparedRentalTransaction {
+  cluster: string;
+  blockhash: string;
+  lastValidBlockHeight: number;
+  requiredSigner: string;
+  rpcUrl: string;
+  transactionBase64: string;
+}
+
+type CrossmintWalletInstance = NonNullable<ReturnType<typeof useWallet>["wallet"]>;
+type SolanaSendTransaction = ReturnType<typeof useSolanaWallet>["sendTransaction"];
 
 const categoryKeywords: Array<[string, string[]]> = [
   ["Weather", ["umbrella", "rain", "rainy", "雨傘", "下雨"]],
@@ -32,6 +46,10 @@ const crossmintConfigured = Boolean(process.env.NEXT_PUBLIC_CROSSMINT_API_KEY);
 export function TablyAgent() {
   const availableItems = COMMUNITY_ITEMS.filter((item) => item.status === "available");
   const defaultItem = availableItems[0] ?? COMMUNITY_ITEMS[0];
+  const { wallet: crossmintWallet } = useWallet();
+  const solanaWallet = useSolanaWallet();
+  const crossmintSigner = crossmintWallet?.address ?? "";
+  const solanaSigner = solanaWallet.publicKey?.toBase58() ?? "";
   const inputRef = useRef<HTMLInputElement>(null);
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [selectedItem, setSelectedItem] = useState(defaultItem);
@@ -42,6 +60,8 @@ export function TablyAgent() {
   const [isSearching, setIsSearching] = useState(false);
   const [rentalActionStatus, setRentalActionStatus] = useState<RentalActionStatus>("idle");
   const [txPreview, setTxPreview] = useState("");
+  const [preparedTx, setPreparedTx] = useState<PreparedRentalTransaction | null>(null);
+  const [txSignature, setTxSignature] = useState("");
   const [agentLine, setAgentLine] = useState("Tell Tably what you need. Recommendations appear after you ask.");
 
   const expectedFee = useMemo(
@@ -62,6 +82,8 @@ export function TablyAgent() {
     setIsSearching(false);
     setRentalActionStatus("idle");
     setTxPreview("");
+    setPreparedTx(null);
+    setTxSignature("");
     setAgentLine(`Press enter to compare ${item.name} with similar rentals.`);
     inputRef.current?.focus();
   }
@@ -74,33 +96,90 @@ export function TablyAgent() {
     setHasSearched(true);
     setRentalActionStatus("idle");
     setTxPreview("");
+    setPreparedTx(null);
+    setTxSignature("");
     setAgentLine(note ?? `${item.name} is available near ${item.locationLabel}. Estimated rental: ${fee} USDC.`);
   }
 
   async function prepareRental() {
-    if (!wallet) {
+    const renterWallet = solanaSigner || wallet;
+    if (!renterWallet) {
       setAgentLine("Connect a wallet first, then Tably can prepare the rental transaction.");
       return;
     }
 
     setRentalActionStatus("preparing");
     setTxPreview("");
+    setPreparedTx(null);
+    setTxSignature("");
     setAgentLine(`Preparing rental transaction for ${selectedItem.name}...`);
 
     try {
       const res = await fetch("/api/solana-pay/start-rental", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ itemId: selectedItem.id, renterWallet: wallet, hours: rentalHours }),
+        body: JSON.stringify({ itemId: selectedItem.id, renterWallet, hours: rentalHours }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to prepare rental");
+      const metadata = data.transactionMetadata ?? {};
+      setPreparedTx({
+        cluster: metadata.cluster ?? "devnet",
+        blockhash: metadata.blockhash,
+        lastValidBlockHeight: metadata.lastValidBlockHeight,
+        requiredSigner: metadata.requiredSigner,
+        rpcUrl: metadata.rpcUrl ?? "https://api.devnet.solana.com",
+        transactionBase64: data.transaction,
+      });
       setRentalActionStatus("ready");
-      setTxPreview(`${data.transactionMetadata?.cluster ?? "devnet"} / ${shortKey(data.transactionMetadata?.requiredSigner)} / ${String(data.transaction ?? "").length} chars`);
-      setAgentLine(`Rental transaction ready for ${selectedItem.name}.`);
-    } catch {
+      setTxPreview(`${metadata.cluster ?? "devnet"} / ${shortKey(metadata.requiredSigner)} / ${String(data.transaction ?? "").length} chars`);
+      setAgentLine(
+        solanaSigner || crossmintSigner
+          ? `Rental transaction prepared for ${selectedItem.name}. Sign with your wallet to send it.`
+          : `Rental transaction prepared for ${selectedItem.name}. Connect a Solana wallet to sign and send.`
+      );
+    } catch (error) {
       setRentalActionStatus("error");
-      setAgentLine("Could not prepare the rental transaction. Try again.");
+      setAgentLine(error instanceof Error ? `Could not prepare transaction: ${error.message}` : "Could not prepare the rental transaction. Try again.");
+    }
+  }
+
+  async function signAndSendRental() {
+    if (!preparedTx) {
+      await prepareRental();
+      return;
+    }
+    const canUseSolanaAdapter = solanaSigner === preparedTx.requiredSigner;
+    const canUseCrossmintWallet = Boolean(crossmintWallet && crossmintSigner === preparedTx.requiredSigner);
+
+    if (!canUseSolanaAdapter && !canUseCrossmintWallet) {
+      setAgentLine("Connected signer does not match this prepared transaction. Prepare again with the wallet you want to use.");
+      return;
+    }
+
+    setRentalActionStatus("signing");
+    setAgentLine("Waiting for wallet signature...");
+
+    try {
+      const connection = new Connection(preparedTx.rpcUrl, "confirmed");
+      const signature = canUseSolanaAdapter
+        ? await sendWithSolanaAdapter(preparedTx, connection, solanaWallet.sendTransaction)
+        : await sendWithCrossmintWallet(preparedTx, crossmintWallet);
+      await connection.confirmTransaction(
+        {
+          signature,
+          blockhash: preparedTx.blockhash,
+          lastValidBlockHeight: preparedTx.lastValidBlockHeight,
+        },
+        "confirmed"
+      );
+      setTxSignature(signature);
+      setTxPreview(`${preparedTx.cluster} / ${shortKey(signature)}`);
+      setRentalActionStatus("sent");
+      setAgentLine(`Rental sent on ${preparedTx.cluster}: ${shortKey(signature)}.`);
+    } catch (error) {
+      setRentalActionStatus("error");
+      setAgentLine(error instanceof Error ? `Transaction not sent: ${error.message}` : "Transaction was not sent.");
     }
   }
 
@@ -192,6 +271,7 @@ export function TablyAgent() {
           onCrossmintStart={startCrossmint}
           onInputChange={setInput}
           onPrepareRental={() => void prepareRental()}
+          onSignAndSendRental={() => void signAndSendRental()}
           onSelectItem={selectItem}
           onSubmit={handleSubmit}
           onWalletReady={handleWalletReady}
@@ -199,6 +279,8 @@ export function TablyAgent() {
           rentalActionStatus={rentalActionStatus}
           rentalHours={rentalHours}
           selectedItem={selectedItem}
+          canSignRental={canSignPreparedRental(preparedTx, solanaSigner, crossmintSigner)}
+          txSignature={txSignature}
           txPreview={txPreview}
           wallet={wallet}
         />
@@ -275,6 +357,7 @@ function AgentChatbox({
   onCrossmintStart,
   onInputChange,
   onPrepareRental,
+  onSignAndSendRental,
   onSelectItem,
   onSubmit,
   onWalletReady,
@@ -282,10 +365,13 @@ function AgentChatbox({
   rentalActionStatus,
   rentalHours,
   selectedItem,
+  canSignRental,
+  txSignature,
   txPreview,
   wallet,
 }: {
   agentLine: string;
+  canSignRental: boolean;
   crossmintConfigured: boolean;
   expectedFee: number;
   hasSearched: boolean;
@@ -295,6 +381,7 @@ function AgentChatbox({
   onCrossmintStart: () => void;
   onInputChange: (value: string) => void;
   onPrepareRental: () => void;
+  onSignAndSendRental: () => void;
   onSelectItem: (item: RentalItem, hours?: number, note?: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onWalletReady: (address: string) => void;
@@ -302,10 +389,12 @@ function AgentChatbox({
   rentalActionStatus: RentalActionStatus;
   rentalHours: number;
   selectedItem: RentalItem;
+  txSignature: string;
   txPreview: string;
   wallet: string;
 }) {
   const [walletChooserOpen, setWalletChooserOpen] = useState(false);
+  const { setVisible: setSolanaWalletVisible } = useWalletModal();
 
   return (
     <div className="w-full max-w-[620px] rounded-[34px] bg-white/72 p-3 shadow-[0_30px_100px_rgba(6,23,37,0.16)] ring-1 ring-white/80 backdrop-blur-2xl sm:rounded-[44px] sm:p-4">
@@ -389,9 +478,14 @@ function AgentChatbox({
           <SelectedRentalPanel
             expectedFee={expectedFee}
             onPrepareRental={onPrepareRental}
+            onRequestSolanaSigner={() => setSolanaWalletVisible(true)}
+            onRequestWalletConnect={() => setWalletChooserOpen(true)}
+            onSignAndSendRental={onSignAndSendRental}
             rentalActionStatus={rentalActionStatus}
             rentalHours={rentalHours}
             selectedItem={selectedItem}
+            canSignRental={canSignRental}
+            txSignature={txSignature}
             txPreview={txPreview}
             wallet={wallet}
           />
@@ -402,29 +496,66 @@ function AgentChatbox({
 }
 
 function SelectedRentalPanel({
+  canSignRental,
   expectedFee,
   onPrepareRental,
+  onRequestSolanaSigner,
+  onRequestWalletConnect,
+  onSignAndSendRental,
   rentalActionStatus,
   rentalHours,
   selectedItem,
+  txSignature,
   txPreview,
   wallet,
 }: {
+  canSignRental: boolean;
   expectedFee: number;
   onPrepareRental: () => void;
+  onRequestSolanaSigner: () => void;
+  onRequestWalletConnect: () => void;
+  onSignAndSendRental: () => void;
   rentalActionStatus: RentalActionStatus;
   rentalHours: number;
   selectedItem: RentalItem;
+  txSignature: string;
   txPreview: string;
   wallet: string;
 }) {
-  const buttonLabel = !wallet
+  const explorerUrl = txSignature ? `https://explorer.solana.com/tx/${txSignature}?cluster=devnet` : "";
+  const buttonLabel = !wallet && !canSignRental
     ? "Connect wallet first"
     : rentalActionStatus === "preparing"
       ? "Preparing..."
+      : rentalActionStatus === "signing"
+        ? "Signing..."
+        : rentalActionStatus === "sent"
+          ? "View transaction"
       : rentalActionStatus === "ready"
-        ? "Transaction ready"
+        ? canSignRental
+          ? "Sign and send"
+          : "Connect matching wallet"
         : "Prepare rental";
+
+  function handlePrimaryAction() {
+    if (!wallet && !canSignRental) {
+      onRequestWalletConnect();
+      return;
+    }
+    if (rentalActionStatus === "sent" && explorerUrl) {
+      window.open(explorerUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
+    if (rentalActionStatus === "ready") {
+      if (canSignRental) {
+        onSignAndSendRental();
+      } else {
+        onRequestSolanaSigner();
+      }
+      return;
+    }
+    onPrepareRental();
+  }
 
   return (
     <div className="tably-results-enter mt-3 rounded-[22px] border border-[#e8edf2] bg-white/82 p-3">
@@ -458,8 +589,8 @@ function SelectedRentalPanel({
 
       <button
         type="button"
-        onClick={onPrepareRental}
-        disabled={rentalActionStatus === "preparing" || rentalActionStatus === "ready"}
+        onClick={handlePrimaryAction}
+        disabled={rentalActionStatus === "preparing" || rentalActionStatus === "signing"}
         className="mt-3 min-h-[42px] w-full rounded-full bg-[#061725] px-4 text-[13px] font-black text-white transition hover:bg-[#c8ff18] hover:text-[#061725] disabled:cursor-default disabled:bg-[#c8ff18] disabled:text-[#061725]"
       >
         {buttonLabel}
@@ -467,7 +598,7 @@ function SelectedRentalPanel({
 
       {(txPreview || rentalActionStatus === "error") && (
         <p className={`mt-2 truncate text-[11px] font-bold ${rentalActionStatus === "error" ? "text-[#ff4c36]" : "text-[#607489]"}`}>
-          {rentalActionStatus === "error" ? "Transaction preparation failed." : `Tx ${txPreview}`}
+          {rentalActionStatus === "error" ? "Transaction failed." : `Tx ${txPreview}`}
         </p>
       )}
     </div>
@@ -610,4 +741,35 @@ function getRecommendations(items: RentalItem[], selectedItem: RentalItem) {
 function shortKey(value: unknown) {
   if (typeof value !== "string" || value.length < 10) return "wallet";
   return `${value.slice(0, 4)}...${value.slice(-4)}`;
+}
+
+async function sendWithSolanaAdapter(
+  preparedTx: PreparedRentalTransaction,
+  connection: Connection,
+  sendTransaction: SolanaSendTransaction
+) {
+  const transaction = Transaction.from(base64ToUint8Array(preparedTx.transactionBase64));
+  return sendTransaction(transaction, connection);
+}
+
+async function sendWithCrossmintWallet(preparedTx: PreparedRentalTransaction, wallet: CrossmintWalletInstance | undefined) {
+  if (!wallet) throw new Error("Crossmint wallet is not loaded.");
+  const solanaWallet = SolanaWallet.from(wallet);
+  const result = await solanaWallet.sendTransaction({ serializedTransaction: preparedTx.transactionBase64 });
+  if (!result.hash) throw new Error("Crossmint did not return a transaction hash.");
+  return result.hash;
+}
+
+function canSignPreparedRental(preparedTx: PreparedRentalTransaction | null, solanaSigner: string, crossmintSigner: string) {
+  if (!preparedTx) return Boolean(solanaSigner || crossmintSigner);
+  return preparedTx.requiredSigner === solanaSigner || preparedTx.requiredSigner === crossmintSigner;
+}
+
+function base64ToUint8Array(value: string) {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
 }
