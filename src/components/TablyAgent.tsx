@@ -47,15 +47,15 @@ const categoryKeywords: Array<[string, string[]]> = [
 ];
 
 const floatingProductSlots = [
-  "left-[-3vw] top-[9vh] h-[160px] w-[210px] rotate-[-8deg] sm:h-[210px] sm:w-[270px] lg:h-[260px] lg:w-[330px]",
-  "left-[30vw] top-[56vh] h-[190px] w-[220px] rotate-[2deg] sm:h-[250px] sm:w-[280px] lg:left-[31vw] lg:h-[320px] lg:w-[350px]",
-  "left-[50vw] top-[6vh] h-[120px] w-[190px] rotate-[3deg] sm:h-[155px] sm:w-[240px] lg:h-[205px] lg:w-[310px]",
-  "right-[4vw] top-[16vh] h-[210px] w-[230px] rotate-[5deg] sm:h-[290px] sm:w-[310px] lg:h-[390px] lg:w-[410px]",
-  "right-[18vw] top-[52vh] h-[160px] w-[190px] rotate-[-4deg] sm:h-[220px] sm:w-[260px] lg:h-[300px] lg:w-[340px]",
-  "left-[6vw] bottom-[-8vh] h-[170px] w-[210px] rotate-[7deg] sm:h-[250px] sm:w-[300px] lg:h-[330px] lg:w-[390px]",
-  "right-[4vw] bottom-[-10vh] h-[160px] w-[220px] rotate-[-6deg] sm:h-[240px] sm:w-[320px] lg:h-[320px] lg:w-[420px]",
-  "left-[66vw] top-[2vh] hidden h-[105px] w-[150px] rotate-[-3deg] sm:block lg:h-[150px] lg:w-[220px]",
-  "left-[15vw] top-[34vh] hidden h-[130px] w-[180px] rotate-[5deg] md:block lg:h-[180px] lg:w-[250px]",
+  "left-[-2vw] top-[15vh] h-[145px] w-[190px] rotate-[-10deg] sm:h-[210px] sm:w-[265px] lg:h-[250px] lg:w-[320px]",
+  "left-[24vw] top-[61vh] h-[160px] w-[190px] rotate-[4deg] sm:h-[220px] sm:w-[250px] lg:h-[275px] lg:w-[310px]",
+  "left-[51vw] top-[13vh] h-[110px] w-[170px] rotate-[3deg] sm:h-[145px] sm:w-[225px] lg:h-[185px] lg:w-[285px]",
+  "right-[2vw] top-[19vh] h-[195px] w-[215px] rotate-[5deg] sm:h-[275px] sm:w-[295px] lg:h-[360px] lg:w-[380px]",
+  "right-[15vw] top-[58vh] h-[140px] w-[170px] rotate-[-5deg] sm:h-[195px] sm:w-[235px] lg:h-[265px] lg:w-[305px]",
+  "left-[4vw] bottom-[-11vh] h-[150px] w-[190px] rotate-[8deg] sm:h-[230px] sm:w-[285px] lg:h-[310px] lg:w-[365px]",
+  "right-[0vw] bottom-[-14vh] h-[145px] w-[205px] rotate-[-7deg] sm:h-[225px] sm:w-[305px] lg:h-[300px] lg:w-[390px]",
+  "left-[70vw] top-[7vh] hidden h-[95px] w-[140px] rotate-[-4deg] sm:block lg:h-[140px] lg:w-[205px]",
+  "left-[13vw] top-[39vh] hidden h-[115px] w-[165px] rotate-[5deg] md:block lg:h-[165px] lg:w-[235px]",
 ];
 
 const crossmintApiKeyConfigured = Boolean(process.env.NEXT_PUBLIC_CROSSMINT_API_KEY);
@@ -83,7 +83,7 @@ export function TablyAgent() {
   const [returnRequested, setReturnRequested] = useState(false);
   const [receipt, setReceipt] = useState("");
   const [agentOpen, setAgentOpen] = useState(false);
-  const [agentNotice, setAgentNotice] = useState("Tell me what you need. I will check inventory and prepare the rental.");
+  const [agentNotice, setAgentNotice] = useState("Main hall inventory is live.");
 
   const expectedFee = useMemo(
     () => Math.max(selectedItem.minimumFee, rentalHours * selectedItem.ratePerHour),
@@ -93,6 +93,8 @@ export function TablyAgent() {
   const isSearching = input.trim().length > 0;
   const actionLabel = isSearching
     ? "Search"
+    : !agentOpen
+      ? "Search"
     : receipt
       ? "Done"
       : returnRequested
@@ -364,60 +366,75 @@ export function TablyAgent() {
   }
 
   return (
-    <section id="agent" className="relative min-h-[calc(100vh-48px)] overflow-hidden border-b border-black bg-[#9bd2e5]">
+    <section id="agent" className="relative min-h-screen overflow-hidden bg-[#99d8ec]">
       <ProductWall selectedItemId={selectedItem.id} onBorrowItem={borrowItem} />
 
-      <div className="pointer-events-none relative z-30 flex min-h-[calc(100vh-48px)] items-end justify-center px-4 py-7 sm:px-6">
-        {!agentOpen ? (
-          <button
-            type="button"
-            title={agentNotice}
-            onClick={() => setAgentOpen(true)}
-            className="pointer-events-auto border border-black/25 bg-white/35 px-5 py-3 text-[11px] font-black uppercase tracking-[0.12em] text-black/70 shadow-[0_12px_40px_rgba(5,30,38,0.12)] backdrop-blur-md transition-colors hover:bg-white/80 hover:text-black"
-          >
-            Ask Tably or click an item
-          </button>
-        ) : (
-          <form
-            onSubmit={handleSubmit}
-            className="pointer-events-auto grid w-full max-w-4xl gap-px border border-black/30 bg-black/35 shadow-[0_18px_60px_rgba(5,30,38,0.18)] backdrop-blur-xl sm:grid-cols-[190px_1fr_auto_auto]"
-          >
-            <div className="min-w-0 bg-white/86 px-4 py-3">
-              <p className="truncate text-[10px] font-black uppercase tracking-[0.12em] text-black/70">Tably agent</p>
-              <p className="mt-0.5 truncate text-sm font-bold text-black">{selectedItem.name}</p>
-              <p className="truncate text-xs text-black/50">{statusLine}</p>
+      <div className="pointer-events-none relative z-30 flex min-h-screen items-center justify-center px-4 pb-10 pt-20 sm:px-6">
+        <form
+          onSubmit={handleSubmit}
+          className={`pointer-events-auto w-full border border-black/20 bg-white/62 text-black shadow-[0_26px_90px_rgba(7,45,58,0.16)] backdrop-blur-2xl transition-all duration-300 ${
+            agentOpen ? "max-w-[760px]" : "max-w-[560px]"
+          }`}
+        >
+          <div className="grid gap-px bg-black/20 sm:grid-cols-[1fr_auto]">
+            <div className="min-w-0 bg-white/82 p-4 sm:p-5">
+              <div className="flex items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-black uppercase tracking-[0.16em] text-black/50">Tably</p>
+                  <p className="mt-1 truncate text-base font-black leading-none sm:text-lg">
+                    {agentOpen ? selectedItem.name : "What do you need?"}
+                  </p>
+                </div>
+                <span className="shrink-0 text-[10px] font-black uppercase tracking-[0.12em] text-black/45">
+                  {wallet ? "Ready" : "Agent"}
+                </span>
+              </div>
+              {agentOpen && <p className="mt-2 truncate text-xs text-black/50">{statusLine}</p>}
+              {!agentOpen && <p className="mt-2 truncate text-xs text-black/45">{agentNotice}</p>}
             </div>
+
+            <div className="bg-white/82 p-3 sm:w-[172px] sm:p-4">
+              <button
+                type="submit"
+                disabled={Boolean(receipt)}
+                className="h-11 w-full bg-black px-4 text-[11px] font-black uppercase tracking-[0.12em] text-white transition-colors hover:bg-white hover:text-black disabled:opacity-45"
+              >
+                {actionLabel}
+              </button>
+            </div>
+          </div>
+
+          <div className="grid gap-px bg-black/20 sm:grid-cols-[1fr_auto]">
             <label className="sr-only" htmlFor="agent-message">Message</label>
             <input
               id="agent-message"
               ref={inputRef}
               value={input}
+              onFocus={() => setAgentOpen(true)}
               onChange={(event) => setInput(event.target.value)}
-              placeholder="Tell me what you need"
-              className="min-h-14 bg-white/86 px-4 py-3 text-sm text-black outline-none placeholder:text-black/35 focus:bg-white sm:min-h-0"
+              placeholder="mic for 2 hours under 10"
+              className="h-14 min-w-0 bg-white/86 px-4 text-sm text-black outline-none placeholder:text-black/35 focus:bg-white sm:px-5"
             />
             <button
-              type="submit"
-              disabled={Boolean(receipt)}
-              className="bg-black px-5 py-3 text-[11px] font-bold uppercase tracking-[0.08em] text-white transition-colors hover:bg-white hover:text-black disabled:opacity-45"
-            >
-              {actionLabel}
-            </button>
-            <button
               type="button"
-              aria-label="Close agent"
+              aria-label={agentOpen ? "Close agent" : "Open agent"}
               onClick={() => {
+                if (!agentOpen) {
+                  setAgentOpen(true);
+                  inputRef.current?.focus();
+                  return;
+                }
                 setAgentOpen(false);
                 setInput("");
                 if (inputRef.current) inputRef.current.value = "";
-                setAgentNotice("Tell me what you need. I will check inventory and prepare the rental.");
+                setAgentNotice("Main hall inventory is live.");
               }}
-              className="bg-white/86 px-4 py-3 text-[11px] font-black uppercase tracking-[0.08em] text-black transition-colors hover:bg-black hover:text-white"
+              className="h-14 bg-white/86 px-5 text-[11px] font-black uppercase tracking-[0.12em] text-black/60 transition-colors hover:bg-black hover:text-white"
             >
-              Close
+              {agentOpen ? "Close" : "Open"}
             </button>
-          </form>
-        )}
+          </div>
+        </form>
       </div>
     </section>
   );
@@ -433,7 +450,7 @@ function ProductWall({
   const floatingItems = COMMUNITY_ITEMS.filter((item) => item.status === "available").slice(0, floatingProductSlots.length);
 
   return (
-    <div className="grain-field absolute inset-0 overflow-hidden bg-[radial-gradient(circle_at_45%_92%,rgba(20,70,88,0.55),transparent_26%),linear-gradient(105deg,#7dcced_0%,#a8daea_45%,#eef1ef_100%)]">
+    <div className="grain-field absolute inset-0 overflow-hidden bg-[radial-gradient(circle_at_42%_72%,rgba(18,82,101,0.42),transparent_30%),radial-gradient(circle_at_78%_18%,rgba(245,255,255,0.7),transparent_23%),linear-gradient(112deg,#70ccec_0%,#a7dfec_48%,#eef2ee_100%)]">
       {floatingItems.map((item, index) => (
         <ProductWallTile
           key={item.id}
@@ -443,7 +460,8 @@ function ProductWall({
           onBorrowItem={onBorrowItem}
         />
       ))}
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_52%,rgba(255,255,255,0.18),transparent_18%)]" />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_48%,rgba(255,255,255,0.28),transparent_20%)]" />
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-44 bg-gradient-to-t from-black/10 to-transparent" />
     </div>
   );
 }
@@ -473,98 +491,24 @@ function ProductWallTile({
           onBorrowItem(item);
         }
       }}
-      className={`absolute cursor-pointer transition-transform duration-200 hover:scale-[1.04] focus:outline-none focus-visible:scale-[1.04] focus-visible:ring-2 focus-visible:ring-black ${className} ${selected ? "z-20 opacity-95" : "z-10 opacity-72"}`}
+      className={`group absolute cursor-pointer transition duration-300 hover:scale-[1.045] hover:opacity-100 focus:outline-none focus-visible:scale-[1.045] focus-visible:ring-2 focus-visible:ring-black ${className} ${selected ? "z-20 opacity-95" : "z-10 opacity-70"}`}
     >
-      <ProductShape item={item} />
+      <ProductPhoto item={item} />
+      <span className="pointer-events-none absolute left-1/2 top-full mt-1 hidden -translate-x-1/2 whitespace-nowrap border border-black/20 bg-white/70 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-black/65 backdrop-blur-md group-hover:block group-focus-visible:block">
+        {item.name}
+      </span>
     </button>
   );
 }
 
-function ProductShape({ item }: { item: RentalItem }) {
-  if (item.id.includes("charger")) {
-    return (
-      <div className="relative h-full w-full [filter:drop-shadow(0_18px_24px_rgba(7,40,55,0.18))]">
-        <div className="absolute left-[22%] top-[27%] h-[42%] w-[38%] rounded-[16%] bg-[#f4f1ea] shadow-[inset_-18px_-18px_30px_rgba(150,160,166,0.25),inset_10px_12px_20px_rgba(255,255,255,0.75)]" />
-        <div className="absolute left-[54%] top-[42%] h-[5%] w-[28%] rounded-full bg-[#f4f1ea]" />
-        <div className="absolute left-[70%] top-[36%] h-[18%] w-[7%] rounded-full bg-[#d8d7d0]" />
-        <div className="absolute left-[80%] top-[36%] h-[18%] w-[7%] rounded-full bg-[#d8d7d0]" />
-      </div>
-    );
-  }
-
-  if (item.id.includes("adapter")) {
-    return (
-      <div className="relative h-full w-full [filter:drop-shadow(0_18px_24px_rgba(7,40,55,0.16))]">
-        <div className="absolute left-[28%] top-[26%] h-[38%] w-[44%] rounded-[18%] bg-[#e8e4f7] shadow-[inset_-12px_-16px_24px_rgba(113,103,155,0.25),inset_12px_10px_22px_rgba(255,255,255,0.65)]" />
-        <div className="absolute left-[42%] top-[39%] h-[9%] w-[16%] rounded-sm border border-[#8680a8]" />
-        <div className="absolute left-[10%] top-[44%] h-[5%] w-[22%] rounded-full bg-[#d8d3ef]" />
-        <div className="absolute left-[66%] top-[43%] h-[7%] w-[24%] rounded-full bg-[#d8d3ef]" />
-      </div>
-    );
-  }
-
-  if (item.id.includes("umbrella")) {
-    return (
-      <div className="relative h-full w-full [filter:drop-shadow(0_18px_24px_rgba(7,40,55,0.16))]">
-        <div className="absolute left-[12%] top-[18%] h-[42%] w-[76%] rounded-t-full bg-[#d4f23d] shadow-[inset_-18px_-22px_28px_rgba(80,110,0,0.16),inset_15px_14px_24px_rgba(255,255,255,0.28)]" />
-        <div className="absolute left-[49%] top-[56%] h-[32%] w-[4%] rounded-full bg-[#7f8460]" />
-        <div className="absolute left-[46%] top-[84%] h-[12%] w-[18%] rounded-b-full border-b-[7px] border-r-[7px] border-[#7f8460]" />
-      </div>
-    );
-  }
-
-  if (item.id.includes("mic")) {
-    return (
-      <div className="relative h-full w-full [filter:drop-shadow(0_20px_24px_rgba(7,40,55,0.22))]">
-        <div className="absolute left-[44%] top-[12%] h-[47%] w-[18%] rounded-full bg-[#c7b9f4] shadow-[inset_-10px_-14px_22px_rgba(91,83,125,0.28),inset_8px_10px_18px_rgba(255,255,255,0.5)]" />
-        <div className="absolute left-[49%] top-[57%] h-[30%] w-[6%] rounded-full bg-[#36383c]" />
-        <div className="absolute left-[35%] top-[81%] h-[6%] w-[34%] rounded-full bg-[#36383c]" />
-        <div className="absolute left-[47%] top-[20%] h-[3%] w-[12%] rounded-full bg-white/55" />
-        <div className="absolute left-[47%] top-[30%] h-[3%] w-[12%] rounded-full bg-white/40" />
-      </div>
-    );
-  }
-
-  if (item.id.includes("camera")) {
-    return (
-      <div className="relative h-full w-full [filter:drop-shadow(0_20px_24px_rgba(7,40,55,0.2))]">
-        <div className="absolute left-[18%] top-[28%] h-[42%] w-[64%] rounded-[18%] bg-[#30343a] shadow-[inset_-15px_-18px_24px_rgba(0,0,0,0.32),inset_12px_10px_18px_rgba(255,255,255,0.08)]" />
-        <div className="absolute left-[37%] top-[35%] h-[28%] w-[28%] rounded-full bg-[#171a1f] ring-[10px] ring-[#4c525c]" />
-        <div className="absolute left-[45%] top-[43%] h-[12%] w-[12%] rounded-full bg-[#88d8ec]" />
-        <div className="absolute left-[25%] top-[21%] h-[12%] w-[22%] rounded-t-lg bg-[#30343a]" />
-      </div>
-    );
-  }
-
-  if (item.id.includes("tripod")) {
-    return (
-      <div className="relative h-full w-full [filter:drop-shadow(0_18px_24px_rgba(7,40,55,0.16))]">
-        <div className="absolute left-[45%] top-[12%] h-[18%] w-[14%] rounded-md bg-[#d6f13f]" />
-        <div className="absolute left-[50%] top-[29%] h-[44%] w-[4%] rounded-full bg-[#30343a]" />
-        <div className="absolute left-[50%] top-[65%] h-[34%] w-[4%] origin-top rotate-[24deg] rounded-full bg-[#30343a]" />
-        <div className="absolute left-[50%] top-[65%] h-[34%] w-[4%] origin-top rotate-[-24deg] rounded-full bg-[#30343a]" />
-      </div>
-    );
-  }
-
-  if (item.id.includes("keyboard")) {
-    return (
-      <div className="relative h-full w-full [filter:drop-shadow(0_18px_24px_rgba(7,40,55,0.15))]">
-        <div className="absolute left-[10%] top-[34%] h-[34%] w-[80%] rounded-[12%] bg-[#d6cef5] shadow-[inset_-18px_-18px_25px_rgba(89,80,130,0.18),inset_16px_13px_24px_rgba(255,255,255,0.48)]" />
-        <div className="absolute left-[18%] top-[43%] grid w-[64%] grid-cols-8 gap-[3%]">
-          {Array.from({ length: 24 }).map((_, index) => (
-            <span key={index} className="aspect-square rounded-sm bg-white/52" />
-          ))}
-        </div>
-      </div>
-    );
-  }
-
+function ProductPhoto({ item }: { item: RentalItem }) {
   return (
-    <div className="relative h-full w-full [filter:drop-shadow(0_20px_24px_rgba(7,40,55,0.18))]">
-      <div className="absolute left-[26%] top-[18%] h-[62%] w-[48%] rounded-[18%] bg-[#d6f13f] shadow-[inset_-20px_-24px_32px_rgba(65,95,0,0.2),inset_14px_13px_24px_rgba(255,255,255,0.28)]" />
-      <div className="absolute left-[40%] top-[33%] h-[16%] w-[20%] rounded-md border-2 border-white/65" />
-      <div className="absolute left-[44%] top-[54%] h-[4%] w-[12%] rounded-full bg-white/65" />
+    <div className="relative h-full w-full [filter:drop-shadow(0_22px_30px_rgba(7,40,55,0.2))]">
+      <div
+        className="h-full w-full rounded-[18%] bg-cover bg-center opacity-90 saturate-[0.9] transition duration-300 [mix-blend-mode:multiply] group-hover:opacity-100 group-hover:saturate-100"
+        style={{ backgroundImage: `url(${item.imageUrl})` }}
+      />
+      <div className="pointer-events-none absolute inset-0 rounded-[18%] bg-[radial-gradient(circle_at_35%_25%,rgba(255,255,255,0.42),transparent_35%),linear-gradient(135deg,rgba(255,255,255,0.18),rgba(0,0,0,0.08))]" />
     </div>
   );
 }
