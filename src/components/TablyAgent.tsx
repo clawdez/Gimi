@@ -249,23 +249,11 @@ export function TablyAgent() {
   }
 
   return (
-    <section id="agent" className="relative min-h-screen overflow-hidden bg-[#eaf3f8] px-5 pb-10 pt-24 text-[#071827] sm:px-8 sm:pt-28">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_35%,rgba(202,255,46,0.18),transparent_24%),linear-gradient(115deg,#dff2fb_0%,#edf6fa_46%,#c8e4f3_100%)]" />
-      <div className="absolute inset-0 opacity-[0.14] [background-image:linear-gradient(rgba(7,24,39,0.18)_1px,transparent_1px),linear-gradient(90deg,rgba(7,24,39,0.18)_1px,transparent_1px)] [background-size:52px_52px]" />
+    <section id="agent" className="relative min-h-screen overflow-hidden bg-[#edf5f9] px-5 pb-10 pt-24 text-[#071827] sm:px-8 sm:pt-28">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_38%,rgba(202,255,46,0.16),transparent_22%),linear-gradient(180deg,#f5fbff_0%,#e4f1f8_100%)]" />
+      <div className="absolute inset-x-0 top-0 h-40 bg-white/35" />
 
-      <div className="relative mx-auto flex min-h-[calc(100vh-8.5rem)] max-w-7xl items-center justify-center">
-        <div className="pointer-events-none absolute inset-0 hidden md:block">
-          {availableItems.slice(0, 8).map((item, index) => (
-            <FloatingItem
-              key={item.id}
-              item={item}
-              index={index}
-              selected={item.id === selectedItem.id}
-              onSelect={selectItem}
-            />
-          ))}
-        </div>
-
+      <div className="relative mx-auto flex min-h-[calc(100vh-8.5rem)] max-w-4xl items-center justify-center">
         <div className="relative z-10 w-full max-w-[560px]">
           <ChatDialog
             actionLabel={actionLabel}
@@ -448,44 +436,6 @@ function ChatDialog({
         </button>
       </form>
     </div>
-  );
-}
-
-function FloatingItem({
-  item,
-  index,
-  selected,
-  onSelect,
-}: {
-  item: RentalItem;
-  index: number;
-  selected: boolean;
-  onSelect: (item: RentalItem) => void;
-}) {
-  const positions = [
-    "left-[5%] top-[13%] w-36",
-    "right-[8%] top-[14%] w-40",
-    "left-[10%] bottom-[15%] w-40",
-    "right-[13%] bottom-[12%] w-36",
-    "left-[3%] bottom-[6%] w-32",
-    "right-[4%] bottom-[6%] w-32",
-    "left-[3%] top-[50%] w-32",
-    "right-[3%] top-[52%] w-32",
-  ];
-
-  return (
-    <button
-      type="button"
-      onClick={() => onSelect(item)}
-      className={`pointer-events-auto absolute ${positions[index % positions.length]} group rounded-[18px] p-2 text-left transition duration-300 hover:-translate-y-1 ${
-        selected ? "bg-white/74 shadow-[0_20px_55px_rgba(7,24,39,0.18)]" : "hover:bg-white/52"
-      }`}
-    >
-      <div className="aspect-[4/3] overflow-hidden rounded-[14px] bg-white/40">
-        <div className="h-full bg-cover bg-center transition duration-300 group-hover:scale-105" style={{ backgroundImage: `url(${item.imageUrl})` }} />
-      </div>
-      <p className="mt-2 truncate text-[11px] font-black uppercase tracking-[0.08em] text-[#071827]">{item.name}</p>
-    </button>
   );
 }
 
