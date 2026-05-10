@@ -4,6 +4,7 @@ import {
   AUTO_BUYOUT_GRACE_SECONDS,
   PLATFORM_FEE_BPS,
   deriveRentProofAccounts,
+  buildStartRentalTransaction,
   ratePerSecondBaseUnits,
   usdcBaseUnits,
 } from "@/lib/rentproofProgram";
@@ -26,24 +27,41 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Item not found" }, { status: 404 });
   }
 
-  const draftId = `draft_${item.id}`;
+  const draftId = body.draftId ?? `draft_${item.id}_${crypto.randomUUID()}`;
   const solanaPayUrl = `solana:https://rentproof.local/api/solana-pay/start-rental?draftId=${draftId}`;
   const hours = body.hours ?? item.expectedHours;
+  const renterWallet = body.account ?? body.renterWallet;
+  const rentalSeconds = Math.ceil(hours * 3600);
   const rentProof = deriveRentProofAccounts({
     itemId: item.id,
     ownerWallet: item.owner,
-    renterWallet: body.renterWallet,
+    renterWallet,
     rentalId: draftId,
+  });
+  const serialized = await buildStartRentalTransaction({
+    itemId: item.id,
+    ownerWallet: item.owner,
+    renterWallet,
+    rentalId: draftId,
+    rentalSeconds,
   });
 
   return NextResponse.json({
     draftId,
     solanaPayUrl,
     rentProof,
-    programStatus: "anchor_program_builds_transaction_plan_not_signed",
+    programStatus: "devnet_program_deployed_unsigned_transaction_serialized",
+    transaction: serialized.transactionBase64,
+    message: `Start Tably rental for ${item.name}. This unsigned devnet transaction locks ${item.buyoutCap} demo USDC escrow.`,
+    transactionMetadata: {
+      cluster: serialized.cluster,
+      rpcUrl: serialized.rpcUrl,
+      blockhash: serialized.blockhash,
+      lastValidBlockHeight: serialized.lastValidBlockHeight,
+      feePayer: serialized.rentProof.accounts.renter,
+      requiredSigner: serialized.rentProof.accounts.renter,
+    },
     transactionPlan: [
-      "initialize_config_if_needed",
-      "initialize_item_if_needed",
       "start_rental",
       `lock_${item.buyoutCap}_usdc_escrow`,
       "create_rental_session",
@@ -63,7 +81,7 @@ export async function POST(req: NextRequest) {
       },
       startRental: {
         rentalIdHash: rentProof.rentalIdHash,
-        rentalSeconds: Math.ceil(hours * 3600),
+        rentalSeconds,
       },
     },
     item: {
@@ -71,7 +89,7 @@ export async function POST(req: NextRequest) {
       name: item.name,
       escrowAmount: item.buyoutCap,
       expectedHours: hours,
-      renterWallet: body.renterWallet ?? "crossmint_embedded_wallet",
+      renterWallet: renterWallet ?? "crossmint_embedded_wallet",
     },
   });
 }
