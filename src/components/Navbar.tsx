@@ -1,16 +1,25 @@
 export function Navbar() {
   return (
     <nav className="fixed inset-x-0 top-0 z-50">
-      <div className="grid h-14 grid-cols-[1fr_auto_1fr] items-center px-4 text-[11px] font-semibold uppercase tracking-[0.12em] text-black sm:px-6">
-        <div className="flex items-center gap-4">
-          <a href="#agent" className="transition-opacity hover:opacity-55">Agent</a>
+      <div className="grid h-20 grid-cols-[auto_1fr_auto] items-center gap-5 px-5 text-[11px] font-black uppercase tracking-[0.16em] text-white sm:px-8">
+        <div className="flex items-center gap-2">
+          <a href="#" className="rounded-full border border-white/80 px-4 py-2 text-lg leading-none tracking-[0.22em] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.35)]">
+            TABLY
+          </a>
+          <span className="rounded-full border border-white/55 px-3 py-2 leading-none text-white/90">0 +</span>
         </div>
 
-        <a href="#" className="text-base font-black tracking-[0.22em]">TABLY</a>
+        <div className="hidden items-center justify-center gap-10 md:flex">
+          <a href="#agent" className="transition-opacity hover:opacity-60">Agent</a>
+          <a href="#agent" className="transition-opacity hover:opacity-60">Inventory</a>
+          <a href="#agent" className="transition-opacity hover:opacity-60">Receipts</a>
+          <a href="#agent" className="transition-opacity hover:opacity-60">About</a>
+        </div>
 
-        <div className="flex items-center justify-end gap-3">
-          <span className="hidden sm:inline text-black/55">USDC</span>
-          <a href="#agent" className="border border-black/35 bg-white/35 px-3 py-2 backdrop-blur-md transition-colors hover:bg-black hover:text-white">Rent</a>
+        <div className="flex items-center justify-end gap-5 text-white/95">
+          <a href="#agent" className="hidden transition-opacity hover:opacity-60 sm:inline">Search</a>
+          <a href="#agent" className="hidden transition-opacity hover:opacity-60 sm:inline">Account</a>
+          <a href="#agent" className="transition-opacity hover:opacity-60">Cart (0)</a>
         </div>
       </div>
     </nav>

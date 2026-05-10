@@ -95,19 +95,19 @@ export function TablyAgent() {
     ? "Search"
     : !agentOpen
       ? "Search"
-    : receipt
-      ? "Done"
-      : returnRequested
-        ? "Confirm"
-        : sessionActive
-          ? "Return"
-          : requestUrl
-            ? "Approve"
-            : wallet
-              ? "Prepare"
-              : crossmintLive
-                ? "Connect"
-                : "Demo Connect";
+      : receipt
+        ? "Done"
+        : returnRequested
+          ? "Confirm"
+          : sessionActive
+            ? "Return"
+            : requestUrl
+              ? "Approve"
+              : wallet
+                ? "Prepare"
+                : crossmintLive
+                  ? "Connect"
+                  : "Demo Connect";
   const statusLine = receipt
     ? "Receipt ready"
     : returnRequested
@@ -366,45 +366,66 @@ export function TablyAgent() {
   }
 
   return (
-    <section id="agent" className="relative min-h-screen overflow-hidden bg-[#99d8ec]">
+    <section id="agent" className="relative min-h-screen overflow-hidden bg-[#83cdea] text-white">
       <ProductWall selectedItemId={selectedItem.id} onBorrowItem={borrowItem} />
 
-      <div className="pointer-events-none relative z-30 flex min-h-screen items-center justify-center px-4 pb-10 pt-20 sm:px-6">
+      <div className="pointer-events-none relative z-20 flex min-h-screen items-start px-8 pb-10 pt-[34vh] sm:px-12 lg:px-[10vw]">
+        <div className="max-w-[430px]">
+          <h1 className="text-[38px] font-black uppercase leading-[0.92] tracking-[0.12em] text-white drop-shadow-[0_1px_8px_rgba(0,30,45,0.18)] sm:text-[48px]">
+            Rent gear<br />for the day
+          </h1>
+          <p className="mt-5 text-base font-semibold tracking-[0.04em] text-white/90">
+            Technical gear for modern communities.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setAgentOpen(true);
+              inputRef.current?.focus();
+            }}
+            className="pointer-events-auto mt-8 border-b border-white pb-2 text-[12px] font-black uppercase tracking-[0.16em] text-white transition-opacity hover:opacity-65"
+          >
+            Ask now
+          </button>
+        </div>
+      </div>
+
+      <div className="pointer-events-none absolute inset-x-0 bottom-[8vh] z-30 flex justify-start px-5 sm:px-8 lg:px-[10vw]">
         <form
           onSubmit={handleSubmit}
-          className={`pointer-events-auto w-full border border-black/20 bg-white/62 text-black shadow-[0_26px_90px_rgba(7,45,58,0.16)] backdrop-blur-2xl transition-all duration-300 ${
-            agentOpen ? "max-w-[760px]" : "max-w-[560px]"
+          className={`pointer-events-auto w-full border border-white/30 bg-white/18 text-white shadow-[0_26px_90px_rgba(0,25,40,0.16)] backdrop-blur-2xl transition-all duration-300 ${
+            agentOpen ? "max-w-[640px]" : "max-w-[460px]"
           }`}
         >
-          <div className="grid gap-px bg-black/20 sm:grid-cols-[1fr_auto]">
-            <div className="min-w-0 bg-white/82 p-4 sm:p-5">
+          <div className="grid gap-px bg-white/28 sm:grid-cols-[1fr_auto]">
+            <div className="min-w-0 bg-[#0c3446]/34 p-4 sm:p-5">
               <div className="flex items-center justify-between gap-4">
                 <div className="min-w-0">
-                  <p className="text-[10px] font-black uppercase tracking-[0.16em] text-black/50">Tably</p>
-                  <p className="mt-1 truncate text-base font-black leading-none sm:text-lg">
+                  <p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/58">Tably agent</p>
+                  <p className="mt-1 truncate text-base font-black leading-none text-white sm:text-lg">
                     {agentOpen ? selectedItem.name : "What do you need?"}
                   </p>
                 </div>
-                <span className="shrink-0 text-[10px] font-black uppercase tracking-[0.12em] text-black/45">
+                <span className="shrink-0 text-[10px] font-black uppercase tracking-[0.12em] text-white/55">
                   {wallet ? "Ready" : "Agent"}
                 </span>
               </div>
-              {agentOpen && <p className="mt-2 truncate text-xs text-black/50">{statusLine}</p>}
-              {!agentOpen && <p className="mt-2 truncate text-xs text-black/45">{agentNotice}</p>}
+              {agentOpen && <p className="mt-2 truncate text-xs text-white/62">{statusLine}</p>}
+              {!agentOpen && <p className="mt-2 truncate text-xs text-white/58">{agentNotice}</p>}
             </div>
 
-            <div className="bg-white/82 p-3 sm:w-[172px] sm:p-4">
+            <div className="bg-[#0c3446]/34 p-3 sm:w-[158px] sm:p-4">
               <button
                 type="submit"
                 disabled={Boolean(receipt)}
-                className="h-11 w-full bg-black px-4 text-[11px] font-black uppercase tracking-[0.12em] text-white transition-colors hover:bg-white hover:text-black disabled:opacity-45"
+                className="h-11 w-full bg-white px-4 text-[11px] font-black uppercase tracking-[0.12em] text-[#0b3446] transition-colors hover:bg-[#0b3446] hover:text-white disabled:opacity-45"
               >
                 {actionLabel}
               </button>
             </div>
           </div>
 
-          <div className="grid gap-px bg-black/20 sm:grid-cols-[1fr_auto]">
+          <div className="grid gap-px bg-white/28 sm:grid-cols-[1fr_auto]">
             <label className="sr-only" htmlFor="agent-message">Message</label>
             <input
               id="agent-message"
@@ -413,7 +434,7 @@ export function TablyAgent() {
               onFocus={() => setAgentOpen(true)}
               onChange={(event) => setInput(event.target.value)}
               placeholder="mic for 2 hours under 10"
-              className="h-14 min-w-0 bg-white/86 px-4 text-sm text-black outline-none placeholder:text-black/35 focus:bg-white sm:px-5"
+              className="h-14 min-w-0 bg-white/16 px-4 text-sm text-white outline-none placeholder:text-white/48 focus:bg-white/24 sm:px-5"
             />
             <button
               type="button"
@@ -429,7 +450,7 @@ export function TablyAgent() {
                 if (inputRef.current) inputRef.current.value = "";
                 setAgentNotice("Main hall inventory is live.");
               }}
-              className="h-14 bg-white/86 px-5 text-[11px] font-black uppercase tracking-[0.12em] text-black/60 transition-colors hover:bg-black hover:text-white"
+              className="h-14 bg-white/16 px-5 text-[11px] font-black uppercase tracking-[0.12em] text-white/70 transition-colors hover:bg-white hover:text-[#0b3446]"
             >
               {agentOpen ? "Close" : "Open"}
             </button>
@@ -450,7 +471,7 @@ function ProductWall({
   const floatingItems = COMMUNITY_ITEMS.filter((item) => item.status === "available").slice(0, floatingProductSlots.length);
 
   return (
-    <div className="grain-field absolute inset-0 overflow-hidden bg-[radial-gradient(circle_at_42%_72%,rgba(18,82,101,0.42),transparent_30%),radial-gradient(circle_at_78%_18%,rgba(245,255,255,0.7),transparent_23%),linear-gradient(112deg,#70ccec_0%,#a7dfec_48%,#eef2ee_100%)]">
+    <div className="grain-field absolute inset-0 overflow-hidden bg-[radial-gradient(circle_at_62%_95%,rgba(255,255,255,0.85),transparent_21%),linear-gradient(105deg,#062f45_0%,#155574_28%,#74c9ee_61%,#8dd7f5_100%)]">
       {floatingItems.map((item, index) => (
         <ProductWallTile
           key={item.id}
@@ -460,8 +481,7 @@ function ProductWall({
           onBorrowItem={onBorrowItem}
         />
       ))}
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_48%,rgba(255,255,255,0.28),transparent_20%)]" />
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-44 bg-gradient-to-t from-black/10 to-transparent" />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_65%_46%,rgba(255,255,255,0.2),transparent_21%)]" />
     </div>
   );
 }
