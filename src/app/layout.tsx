@@ -4,7 +4,7 @@ import { WalletProviderWrapper } from "@/components/WalletProvider";
 
 export const metadata: Metadata = {
   title: "Tably — Agentic Rentals",
-  description: "AI rental agent for communities, powered by RentProof settlement.",
+  description: "AI rental agent for communities with Solana escrow, receipts, and reputation.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -1,8 +1,8 @@
-# Tably / RentProof
+# Tably
 
 AI rental agent for school, community, and hackathon inventory.
 
-Tably is the consumer-facing agent interface. RentProof is the Solana settlement layer underneath it: refundable escrow, temporary rental-token state, return-confirm burn, on-chain receipt events, and reputation-ready outcomes.
+Tably is one product: an agentic rental marketplace with Solana settlement built in. It handles community inventory search, refundable escrow, temporary rental-token state, return-confirm burn, on-chain receipt events, and reputation-ready outcomes.
 
 ## Product Loop
 
@@ -13,7 +13,7 @@ User asks for an item
 -> Demo Crossmint wallet path prepares a renter wallet
 -> LI.FI quote routes Base USDC into Solana USDC when real wallet addresses are supplied
 -> Solana Pay endpoint returns an unsigned serialized devnet transaction
--> RentProof Anchor program locks escrow and creates rental session state
+-> Tably Anchor program locks escrow and creates rental session state
 -> Renter receives a program-owned rental token PDA
 -> Owner confirms physical return, or auto-buyout triggers after grace
 -> Rental token closes, escrow settles, receipt event is emitted
@@ -102,7 +102,7 @@ The rental token is intentionally a program-owned PDA account, not a transferabl
 
 ### `POST /api/solana-pay/start-rental`
 
-Returns a Solana Pay request payload, RentProof PDA metadata, and an unsigned serialized devnet transaction for the renter wallet to sign.
+Returns a Solana Pay request payload, Tably PDA metadata, and an unsigned serialized devnet transaction for the renter wallet to sign.
 
 Example request:
 
@@ -154,7 +154,7 @@ Handles tool calls:
 
 ### `POST /api/rent`
 
-Starts the local demo rental state and returns the same RentProof PDA metadata used by the agent UI.
+Starts the local demo rental state and returns the same Tably PDA metadata used by the agent UI.
 
 ### `GET /idl/rental_session.json`
 
