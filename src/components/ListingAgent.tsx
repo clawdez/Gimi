@@ -132,7 +132,9 @@ export function ListingAgent({ onDone }: ListingAgentProps) {
 
     await new Promise((r) => setTimeout(r, 2500));
 
-    const fakeMint = `${Math.random().toString(36).substring(2, 8)}...${Math.random().toString(36).substring(2, 6)}`;
+    const mintSeed = `${state.category}-${state.itemName}-${state.brand}-${state.model}`.toLowerCase();
+    const mintId = Array.from(mintSeed).reduce((sum, char) => sum + char.charCodeAt(0), 0).toString(36);
+    const fakeMint = `rent_${mintId.padStart(6, "0")}...demo`;
     setMessages((prev) => [
       ...prev,
       {

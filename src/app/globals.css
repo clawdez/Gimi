@@ -1,57 +1,41 @@
 @import "tailwindcss";
 
 :root {
-  --rc-green: #00ff88;
-  --rc-purple: #8b5cf6;
-  --rc-orange: #f97316;
-  --rc-red: #ef4444;
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: #fff;
+  scroll-behavior: smooth;
 }
 
 body {
-  background: #030712;
+  margin: 0;
+  background: #fff;
+  color: #050505;
+  font-family: Arial, Helvetica, sans-serif;
 }
 
-.glow-green {
-  box-shadow: 0 0 20px rgba(0, 255, 136, 0.3);
+button,
+a,
+input {
+  outline-offset: 2px;
 }
 
-.glow-purple {
-  box-shadow: 0 0 20px rgba(139, 92, 246, 0.3);
-}
-
-.gradient-text {
-  background: linear-gradient(135deg, #00ff88, #8b5cf6);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-.card-hover {
-  transition: transform 0.2s, box-shadow 0.2s;
-}
-.card-hover:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 8px 30px rgba(0, 255, 136, 0.15);
-}
-
-@keyframes pulse-green {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
-.animate-pulse-green {
-  animation: pulse-green 2s ease-in-out infinite;
-}
-
-.chat-bubble-agent {
-  background: linear-gradient(135deg, #1a1a2e, #16213e);
-  border: 1px solid rgba(0, 255, 136, 0.2);
-}
-
-.chat-bubble-user {
-  background: linear-gradient(135deg, #1e1b4b, #312e81);
-  border: 1px solid rgba(139, 92, 246, 0.3);
-}
-
-.trust-bar {
-  background: linear-gradient(90deg, #ef4444 0%, #f97316 30%, #eab308 50%, #22c55e 75%, #00ff88 100%);
+.grain-field::before {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  content: "";
+  opacity: 0.34;
+  background-image:
+    radial-gradient(circle at 12% 24%, rgba(255, 255, 255, 0.55) 0 1px, transparent 1px),
+    radial-gradient(circle at 72% 42%, rgba(0, 0, 0, 0.28) 0 1px, transparent 1px),
+    radial-gradient(circle at 36% 88%, rgba(255, 255, 255, 0.35) 0 1px, transparent 1px);
+  background-size: 3px 3px, 4px 4px, 5px 5px;
+  mix-blend-mode: soft-light;
 }

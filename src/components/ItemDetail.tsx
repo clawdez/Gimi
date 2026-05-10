@@ -1,9 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { RentalItem } from "@/lib/types";
-import { useWallet } from "@solana/wallet-adapter-react";
-import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
+import Image from "next/image";
+import { RentalItem, RentalReceipt } from "@/lib/types";
 
 interface ItemDetailProps {
   item: RentalItem;
@@ -11,176 +10,158 @@ interface ItemDetailProps {
 }
 
 export function ItemDetail({ item, onBack }: ItemDetailProps) {
-  const { connected, publicKey } = useWallet();
-  const [rentalDays, setRentalDays] = useState(3);
-  const [renting, setRenting] = useState(false);
-  const [rented, setRented] = useState(item.status === "rented");
+  const [hours, setHours] = useState(item.expectedHours);
+  const [status, setStatus] = useState(item.status);
+  const [receipt, setReceipt] = useState<RentalReceipt | null>(null);
 
-  const totalCost = item.dailyRate * rentalDays;
-  const depositAmount = Math.round(item.retailPrice * 0.5);
+  const grossFee = Math.min(Math.max(item.minimumFee, hours * item.ratePerHour), item.buyoutCap);
+  const refundable = Math.max(0, item.buyoutCap - grossFee);
+  const platformFee = Number((grossFee * 0.05).toFixed(2));
 
-  const pricingTiers = [
-    { label: `Days 1-${rentalDays}`, rate: `$${item.dailyRate}/day`, total: `$${totalCost}`, highlight: true },
-    { label: `Days ${rentalDays + 1}-${rentalDays + 2}`, rate: `$${Math.round(item.dailyRate * item.overageMultiplier)}/day (+${Math.round((item.overageMultiplier - 1) * 100)}%)`, total: "Overage", highlight: false },
-    { label: `Days ${rentalDays + 3}+`, rate: `$${Math.round(item.dailyRate * item.overageMultiplier * 1.5)}/day`, total: "Late penalty", highlight: false },
-    { label: "30+ days", rate: "Full retail price", total: `$${item.retailPrice.toLocaleString()}`, highlight: false },
-  ];
+  async function startRental() {
+    setStatus("rented");
+  }
 
-  async function handleRent() {
-    if (!connected) return;
-    setRenting(true);
-    // Simulate on-chain transaction
-    await new Promise((r) => setTimeout(r, 2000));
-    setRenting(false);
-    setRented(true);
+  function requestReturn() {
+    setStatus("return_requested");
+  }
+
+  function confirmReturn() {
+    setStatus("available");
+    setReceipt({
+      id: "receipt_returned_ok",
+      sessionId: `session_${item.id}`,
+      itemId: item.id,
+      outcome: "returned_ok",
+      grossFee,
+      platformFee,
+      ownerPayout: Number((grossFee - platformFee).toFixed(2)),
+      renterRefund: refundable,
+      rentalTokenStatus: "burned",
+      createdAt: Date.now(),
+    });
+  }
+
+  function buyout() {
+    setStatus("buyout");
+    setReceipt({
+      id: "receipt_auto_buyout",
+      sessionId: `session_${item.id}`,
+      itemId: item.id,
+      outcome: "auto_buyout",
+      grossFee: item.buyoutCap,
+      platformFee: Number((item.buyoutCap * 0.05).toFixed(2)),
+      ownerPayout: Number((item.buyoutCap * 0.95).toFixed(2)),
+      renterRefund: 0,
+      rentalTokenStatus: "burned",
+      createdAt: Date.now(),
+    });
   }
 
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <button onClick={onBack} className="flex items-center gap-2 text-gray-400 hover:text-white mb-6 transition-colors">
-        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-        </svg>
-        Back to marketplace
+    <div className="px-3 py-5 sm:px-5">
+      <button onClick={onBack} className="mb-5 text-[11px] font-bold uppercase tracking-[0.08em] text-black underline underline-offset-4">
+        Back to inventory
       </button>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Image */}
-        <div className="rounded-2xl overflow-hidden bg-gray-800 aspect-[4/3]">
-          <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
+      <div className="grid gap-5 lg:grid-cols-[1.08fr_0.92fr]">
+        <div className="relative aspect-[4/5] overflow-hidden border border-black bg-neutral-100 lg:aspect-[5/4]">
+          <Image
+            src={item.imageUrl}
+            alt={item.name}
+            fill
+            sizes="(min-width: 1024px) 55vw, 100vw"
+            className="object-cover"
+          />
         </div>
 
-        {/* Details */}
-        <div>
-          <div className="flex items-center gap-2 mb-2">
-            <span className="px-2 py-1 rounded-full text-xs font-medium bg-gray-800 text-gray-400">
-              {item.category}
-            </span>
-            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-              rented ? "bg-orange-500/20 text-orange-400" : "bg-green-500/20 text-green-400"
-            }`}>
-              {rented ? "Rented" : "Available"}
-            </span>
+        <div className="border-y border-black py-4 lg:border-y-0 lg:border-l lg:pl-5">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-black/55">{item.locationLabel}</p>
+          <h1 className="mt-3 text-5xl font-black uppercase leading-[0.9] tracking-[-0.05em] text-black sm:text-7xl">{item.name}</h1>
+          <p className="mt-3 text-[11px] font-semibold uppercase tracking-[0.08em] text-black/55">{item.brand} {item.model} / condition {item.condition}/10</p>
+          <p className="mt-5 max-w-xl text-sm leading-6 text-black/70">{item.description}</p>
+
+          <div className="mt-6 grid grid-cols-2 gap-px border border-black bg-black">
+            <Metric label="Rate" value={`${item.ratePerHour} USDC/hr`} />
+            <Metric label="Refundable escrow" value={`${item.buyoutCap} USDC`} />
+            <Metric label="Expected fee" value={`${grossFee} USDC`} />
+            <Metric label="Refund on return" value={`${refundable} USDC`} />
           </div>
 
-          <h1 className="text-3xl font-bold mb-2">{item.name}</h1>
-          <p className="text-gray-400 mb-1">{item.brand} · {item.model}</p>
-          <p className="text-gray-500 mb-6">{item.description}</p>
-
-          {/* Condition & Trust */}
-          <div className="grid grid-cols-2 gap-4 mb-6">
-            <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-              <div className="text-sm text-gray-500 mb-1">Condition</div>
-              <div className="flex items-center gap-2">
-                <div className="flex-1 h-2 bg-gray-800 rounded-full overflow-hidden">
-                  <div className="h-full bg-green-500 rounded-full" style={{ width: `${item.condition * 10}%` }} />
-                </div>
-                <span className="text-sm font-medium">{item.condition}/10</span>
-              </div>
-            </div>
-            <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-              <div className="text-sm text-gray-500 mb-1">Owner Trust</div>
-              <div className="flex items-center gap-2">
-                <div className="flex-1 h-2 bg-gray-800 rounded-full overflow-hidden">
-                  <div className="h-full trust-bar rounded-full" style={{ width: `${item.trustScore}%` }} />
-                </div>
-                <span className="text-sm font-medium text-green-400">{item.trustScore}</span>
-              </div>
+          <div className="mt-5 border border-black p-4">
+            <label className="text-[11px] font-bold uppercase tracking-[0.08em] text-black">Rental hours</label>
+            <div className="mt-3 flex gap-2">
+              {[1, 2, 3, 4, 6, 8].map((value) => (
+                <button
+                  key={value}
+                  onClick={() => setHours(value)}
+                  className={`border border-black px-3 py-2 text-[11px] font-bold uppercase tracking-[0.08em] ${
+                    hours === value ? "bg-black text-white" : "bg-white text-black hover:bg-black hover:text-white"
+                  }`}
+                >
+                  {value}h
+                </button>
+              ))}
             </div>
           </div>
 
-          {/* Pricing */}
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-6 mb-6">
-            <div className="flex items-end gap-1 mb-4">
-              <span className="text-4xl font-bold text-green-400">${item.dailyRate}</span>
-              <span className="text-gray-500 mb-1">/day</span>
+          <div className="mt-5 border border-black p-4">
+            <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-black">Agent settlement plan</p>
+            <div className="mt-3 space-y-2 text-sm text-black/70">
+              <p>Lock {item.buyoutCap} USDC refundable escrow.</p>
+              <p>Mint non-transferable rental token to renter wallet.</p>
+              <p>Meter runs at {item.ratePerHour} USDC/hr, then return or auto-buyout burns the token.</p>
             </div>
+          </div>
 
-            {/* Rental duration selector */}
-            <div className="mb-4">
-              <label className="text-sm text-gray-400 mb-2 block">Rental duration</label>
-              <div className="flex gap-2">
-                {[1, 3, 5, 7, 14].map((d) => (
-                  <button
-                    key={d}
-                    onClick={() => setRentalDays(d)}
-                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                      rentalDays === d
-                        ? "bg-green-500 text-black"
-                        : "bg-gray-800 text-gray-400 hover:bg-gray-700"
-                    }`}
-                  >
-                    {d}d
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Cost breakdown */}
-            <div className="space-y-2 mb-4">
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-400">Rental ({rentalDays} days)</span>
-                <span>${totalCost}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-400">Security deposit (refundable)</span>
-                <span>${depositAmount.toLocaleString()}</span>
-              </div>
-              <div className="border-t border-gray-700 pt-2 flex justify-between font-medium">
-                <span>Total due now</span>
-                <span className="text-green-400">${(totalCost + depositAmount).toLocaleString()}</span>
-              </div>
-            </div>
-
-            {/* Rent button */}
-            {rented ? (
-              <div className="w-full py-3 rounded-xl bg-orange-500/20 text-orange-400 text-center font-medium">
-                Currently Rented
-              </div>
-            ) : !connected ? (
-              <div className="flex justify-center">
-                <WalletMultiButton className="!bg-purple-600 !rounded-xl !h-12 !text-base !w-full !justify-center" />
-              </div>
-            ) : (
-              <button
-                onClick={handleRent}
-                disabled={renting}
-                className="w-full py-3 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-400 hover:to-emerald-500 text-black font-bold text-lg transition-all glow-green disabled:opacity-50"
-              >
-                {renting ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
-                    Confirming on Solana...
-                  </span>
-                ) : (
-                  `Rent for $${totalCost} + deposit`
-                )}
+          <div className="mt-6 flex flex-wrap gap-2">
+            {status === "available" && (
+              <button onClick={startRental} className="border border-black bg-black px-5 py-3 text-[11px] font-bold uppercase tracking-[0.08em] text-white hover:bg-white hover:text-black">
+                Start rental demo
+              </button>
+            )}
+            {status === "rented" && (
+              <>
+                <button onClick={requestReturn} className="border border-black bg-black px-5 py-3 text-[11px] font-bold uppercase tracking-[0.08em] text-white hover:bg-white hover:text-black">
+                  Request return
+                </button>
+                <button onClick={buyout} className="border border-black px-5 py-3 text-[11px] font-bold uppercase tracking-[0.08em] text-black hover:bg-black hover:text-white">
+                  Keep it / buy out
+                </button>
+              </>
+            )}
+            {status === "return_requested" && (
+              <button onClick={confirmReturn} className="border border-black bg-black px-5 py-3 text-[11px] font-bold uppercase tracking-[0.08em] text-white hover:bg-white hover:text-black">
+                Owner confirms return
               </button>
             )}
           </div>
 
-          {/* Dynamic pricing table */}
-          <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-            <h3 className="text-sm font-medium text-gray-400 mb-3">Dynamic Pricing (Redbox-style)</h3>
-            <div className="space-y-2">
-              {pricingTiers.map((tier, i) => (
-                <div key={i} className={`flex items-center justify-between text-sm rounded-lg px-3 py-2 ${
-                  tier.highlight ? "bg-green-500/10 text-green-400" : "text-gray-500"
-                }`}>
-                  <span>{tier.label}</span>
-                  <span>{tier.rate}</span>
-                </div>
-              ))}
+          {receipt && (
+            <div className="mt-6 border border-black bg-white p-4">
+              <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-black">Onchain receipt</p>
+              <p className="mt-2 text-lg font-black uppercase text-black">{receipt.outcome}</p>
+              <div className="mt-3 grid grid-cols-2 gap-3 text-sm text-black/70">
+                <span>Fee: {receipt.grossFee} USDC</span>
+                <span>Platform: {receipt.platformFee} USDC</span>
+                <span>Owner: {receipt.ownerPayout} USDC</span>
+                <span>Refund: {receipt.renterRefund} USDC</span>
+                <span>Rental token: burned</span>
+                <span>Reputation: +1 receipt</span>
+              </div>
             </div>
-            <p className="text-xs text-gray-600 mt-3">
-              Retail backstop: ${item.retailPrice.toLocaleString()} — if not returned after 30 days, full retail price is charged.
-            </p>
-          </div>
+          )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="bg-white p-4">
+      <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-black/45">{label}</p>
+      <p className="mt-2 text-lg font-black text-black">{value}</p>
     </div>
   );
 }

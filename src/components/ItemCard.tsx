@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { RentalItem } from "@/lib/types";
 
 interface ItemCardProps {
@@ -7,62 +8,55 @@ interface ItemCardProps {
   onClick: () => void;
 }
 
+const statusCopy: Record<RentalItem["status"], string> = {
+  available: "Available",
+  rented: "Meter active",
+  return_requested: "Return pending",
+  buyout: "Bought out",
+  disputed: "Frozen",
+};
+
 export function ItemCard({ item, onClick }: ItemCardProps) {
-  const statusColors = {
-    available: "bg-green-500/20 text-green-400 border-green-500/30",
-    rented: "bg-orange-500/20 text-orange-400 border-orange-500/30",
-    overdue: "bg-red-500/20 text-red-400 border-red-500/30",
-  };
+  const expectedFee = Math.max(item.minimumFee, item.expectedHours * item.ratePerHour);
+  const isAvailable = item.status === "available";
 
   return (
     <button
       onClick={onClick}
-      className="card-hover rounded-2xl bg-gray-900 border border-gray-800 overflow-hidden text-left w-full"
+      className="group text-left"
     >
-      {/* Image */}
-      <div className="relative h-48 bg-gray-800 overflow-hidden">
-        <img
+      <div className="relative aspect-[4/5] overflow-hidden border border-black bg-neutral-100">
+        <Image
           src={item.imageUrl}
           alt={item.name}
-          className="w-full h-full object-cover"
+          fill
+          sizes="(min-width: 1024px) 25vw, (min-width: 640px) 50vw, 100vw"
+          className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
         />
-        <div className="absolute top-3 left-3">
-          <span className={`px-2 py-1 rounded-full text-xs font-medium border ${statusColors[item.status]}`}>
-            {item.status === "available" ? "Available" : item.status === "rented" ? "Rented" : "Overdue"}
-          </span>
-        </div>
-        <div className="absolute top-3 right-3 bg-black/60 backdrop-blur-sm rounded-lg px-2 py-1">
-          <span className="text-xs text-gray-300">{item.category}</span>
-        </div>
+        <span
+          className={`absolute left-2 top-2 border border-black px-2 py-1 text-[10px] font-bold uppercase tracking-[0.08em] ${
+            isAvailable ? "bg-white text-black" : "bg-black text-white"
+          }`}
+        >
+          {statusCopy[item.status]}
+        </span>
       </div>
 
-      {/* Content */}
-      <div className="p-4">
-        <h3 className="font-semibold text-white mb-1 truncate">{item.name}</h3>
-        <p className="text-sm text-gray-500 mb-3">{item.brand} · Condition {item.condition}/10</p>
-
-        <div className="flex items-end justify-between">
+      <div className="pt-2">
+        <div className="flex items-start justify-between gap-3">
           <div>
-            <span className="text-2xl font-bold text-green-400">${item.dailyRate}</span>
-            <span className="text-sm text-gray-500">/day</span>
+            <h3 className="text-sm font-bold uppercase leading-tight tracking-[-0.02em] text-black">{item.name}</h3>
+            <p className="mt-1 text-[11px] uppercase tracking-[0.06em] text-black/50">{item.locationLabel}</p>
           </div>
-          <div className="flex items-center gap-1">
-            <TrustBadge score={item.trustScore} />
-          </div>
+          <span className="text-[11px] font-bold text-black">{item.ownerScore}</span>
+        </div>
+
+        <div className="mt-2 space-y-1 text-[11px] font-semibold uppercase tracking-[0.05em] text-black">
+          <p>{item.ratePerHour} USDC/hr</p>
+          <p className="text-black/50">Escrow {item.buyoutCap} / expected {expectedFee}</p>
+          <p className="text-black/50">{item.returnedOkCount} returns ok</p>
         </div>
       </div>
     </button>
-  );
-}
-
-function TrustBadge({ score }: { score: number }) {
-  const color = score >= 90 ? "text-green-400" : score >= 70 ? "text-yellow-400" : "text-red-400";
-  return (
-    <div className="flex items-center gap-1">
-      <svg className={`w-4 h-4 ${color}`} fill="currentColor" viewBox="0 0 20 20">
-        <path d="M10 1l2.39 4.84L17.3 6.7l-3.65 3.56.86 5.02L10 13.01l-4.51 2.37.86-5.02L2.7 6.8l4.91-.86L10 1z" />
-      </svg>
-      <span className={`text-xs font-medium ${color}`}>{score}</span>
-    </div>
   );
 }
