@@ -93,34 +93,30 @@ export function TablyAgent() {
   const isSearching = input.trim().length > 0;
   const actionLabel = isSearching
     ? "Search"
-    : !agentOpen
-      ? "Search"
-      : receipt
-        ? "Done"
-        : returnRequested
-          ? "Confirm"
-          : sessionActive
-            ? "Return"
-            : requestUrl
-              ? "Approve"
-              : wallet
-                ? "Prepare"
-                : crossmintLive
-                  ? "Connect"
-                  : "Demo Connect";
-  const statusLine = !agentOpen
-    ? agentNotice
     : receipt
-      ? "Receipt ready"
+      ? "Done"
       : returnRequested
-        ? "Waiting for owner confirmation"
+        ? "Confirm"
         : sessionActive
-          ? `Active rental / refund ${refundable} USDC`
+          ? "Return"
           : requestUrl
-            ? "Solana Pay request ready"
+            ? "Approve"
             : wallet
-              ? "Wallet ready"
-              : `${rentalHours}h / ${expectedFee} USDC fee / ${selectedItem.buyoutCap} USDC escrow / ${crossmintLive ? "Crossmint login required" : "demo wallet mode"}`;
+              ? "Prepare"
+              : crossmintLive
+                ? "Connect"
+                : "Demo Connect";
+  const statusLine = receipt
+    ? "Receipt ready"
+    : returnRequested
+      ? "Waiting for owner confirmation"
+      : sessionActive
+        ? `Active rental / refund ${refundable} USDC`
+        : requestUrl
+          ? "Solana Pay request ready"
+          : wallet
+            ? "Wallet ready"
+            : `${rentalHours}h / ${expectedFee} USDC fee / ${selectedItem.buyoutCap} USDC escrow / ${crossmintLive ? "Crossmint login required" : "demo wallet mode"}`;
 
   function addMessage(role: ChatRole, text: string) {
     setMessages((current) => [
@@ -371,46 +367,57 @@ export function TablyAgent() {
     <section id="agent" className="relative min-h-[calc(100vh-48px)] overflow-hidden border-b border-black bg-[#9bd2e5]">
       <ProductWall selectedItemId={selectedItem.id} onBorrowItem={borrowItem} />
 
-      <div className="pointer-events-none relative z-30 flex min-h-[calc(100vh-48px)] items-end justify-center px-3 py-5 sm:px-6">
-        <form
-          onSubmit={handleSubmit}
-          className="pointer-events-auto grid w-full max-w-5xl gap-px border border-black/35 bg-black/45 shadow-[0_18px_70px_rgba(5,30,38,0.2)] backdrop-blur-xl sm:grid-cols-[220px_1fr_auto_auto]"
-        >
-          <div className="min-w-0 bg-white/88 px-4 py-3">
-            <p className="truncate text-[11px] font-black uppercase tracking-[0.12em] text-black">Tably agent</p>
-            <p className="mt-1 truncate text-sm font-bold text-black">{agentOpen ? selectedItem.name : "Inventory search"}</p>
-            <p className="truncate text-xs text-black/55">{statusLine}</p>
-          </div>
-          <label className="sr-only" htmlFor="agent-message">Message</label>
-          <input
-            id="agent-message"
-            ref={inputRef}
-            value={input}
-            onChange={(event) => setInput(event.target.value)}
-            placeholder="Try: 我要一個麥克風用 2 小時，低於 10 USDC"
-            className="min-h-16 bg-white/88 px-4 py-3 text-sm text-black outline-none placeholder:text-black/35 focus:bg-white sm:min-h-0"
-          />
-          <button
-            type="submit"
-            disabled={Boolean(receipt)}
-            className="bg-black px-5 py-3 text-[11px] font-bold uppercase tracking-[0.08em] text-white transition-colors hover:bg-white hover:text-black disabled:opacity-45"
-          >
-            {actionLabel}
-          </button>
+      <div className="pointer-events-none relative z-30 flex min-h-[calc(100vh-48px)] items-end justify-center px-4 py-7 sm:px-6">
+        {!agentOpen ? (
           <button
             type="button"
-            aria-label="Reset agent"
-            onClick={() => {
-              setAgentOpen(false);
-              setInput("");
-              if (inputRef.current) inputRef.current.value = "";
-              setAgentNotice("Tell me what you need. I will check inventory and prepare the rental.");
-            }}
-            className="bg-white/88 px-4 py-3 text-[11px] font-black uppercase tracking-[0.08em] text-black hover:bg-black hover:text-white"
+            title={agentNotice}
+            onClick={() => setAgentOpen(true)}
+            className="pointer-events-auto border border-black/25 bg-white/35 px-5 py-3 text-[11px] font-black uppercase tracking-[0.12em] text-black/70 shadow-[0_12px_40px_rgba(5,30,38,0.12)] backdrop-blur-md transition-colors hover:bg-white/80 hover:text-black"
           >
-            Reset
+            Ask Tably or click an item
           </button>
-        </form>
+        ) : (
+          <form
+            onSubmit={handleSubmit}
+            className="pointer-events-auto grid w-full max-w-4xl gap-px border border-black/30 bg-black/35 shadow-[0_18px_60px_rgba(5,30,38,0.18)] backdrop-blur-xl sm:grid-cols-[190px_1fr_auto_auto]"
+          >
+            <div className="min-w-0 bg-white/86 px-4 py-3">
+              <p className="truncate text-[10px] font-black uppercase tracking-[0.12em] text-black/70">Tably agent</p>
+              <p className="mt-0.5 truncate text-sm font-bold text-black">{selectedItem.name}</p>
+              <p className="truncate text-xs text-black/50">{statusLine}</p>
+            </div>
+            <label className="sr-only" htmlFor="agent-message">Message</label>
+            <input
+              id="agent-message"
+              ref={inputRef}
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              placeholder="Tell me what you need"
+              className="min-h-14 bg-white/86 px-4 py-3 text-sm text-black outline-none placeholder:text-black/35 focus:bg-white sm:min-h-0"
+            />
+            <button
+              type="submit"
+              disabled={Boolean(receipt)}
+              className="bg-black px-5 py-3 text-[11px] font-bold uppercase tracking-[0.08em] text-white transition-colors hover:bg-white hover:text-black disabled:opacity-45"
+            >
+              {actionLabel}
+            </button>
+            <button
+              type="button"
+              aria-label="Close agent"
+              onClick={() => {
+                setAgentOpen(false);
+                setInput("");
+                if (inputRef.current) inputRef.current.value = "";
+                setAgentNotice("Tell me what you need. I will check inventory and prepare the rental.");
+              }}
+              className="bg-white/86 px-4 py-3 text-[11px] font-black uppercase tracking-[0.08em] text-black transition-colors hover:bg-black hover:text-white"
+            >
+              Close
+            </button>
+          </form>
+        )}
       </div>
     </section>
   );
