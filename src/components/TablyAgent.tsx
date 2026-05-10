@@ -15,6 +15,8 @@ interface ParsedRentalIntent {
   note?: string;
 }
 
+type RentalActionStatus = "idle" | "preparing" | "ready" | "error";
+
 const categoryKeywords: Array<[string, string[]]> = [
   ["Weather", ["umbrella", "rain", "rainy", "雨傘", "下雨"]],
   ["Adapters", ["adapter", "hdmi", "dongle", "轉接", "轉接頭"]],
@@ -38,6 +40,8 @@ export function TablyAgent() {
   const [wallet, setWallet] = useState("");
   const [hasSearched, setHasSearched] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
+  const [rentalActionStatus, setRentalActionStatus] = useState<RentalActionStatus>("idle");
+  const [txPreview, setTxPreview] = useState("");
   const [agentLine, setAgentLine] = useState("Tell Tably what you need. Recommendations appear after you ask.");
 
   const expectedFee = useMemo(
@@ -56,6 +60,8 @@ export function TablyAgent() {
     setInput(`${item.name} for ${item.expectedHours}h`);
     setHasSearched(false);
     setIsSearching(false);
+    setRentalActionStatus("idle");
+    setTxPreview("");
     setAgentLine(`Press enter to compare ${item.name} with similar rentals.`);
     inputRef.current?.focus();
   }
@@ -66,7 +72,36 @@ export function TablyAgent() {
     setRentalHours(hours);
     setIsSearching(false);
     setHasSearched(true);
+    setRentalActionStatus("idle");
+    setTxPreview("");
     setAgentLine(note ?? `${item.name} is available near ${item.locationLabel}. Estimated rental: ${fee} USDC.`);
+  }
+
+  async function prepareRental() {
+    if (!wallet) {
+      setAgentLine("Connect a wallet first, then Tably can prepare the rental transaction.");
+      return;
+    }
+
+    setRentalActionStatus("preparing");
+    setTxPreview("");
+    setAgentLine(`Preparing rental transaction for ${selectedItem.name}...`);
+
+    try {
+      const res = await fetch("/api/solana-pay/start-rental", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itemId: selectedItem.id, renterWallet: wallet, hours: rentalHours }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to prepare rental");
+      setRentalActionStatus("ready");
+      setTxPreview(`${data.transactionMetadata?.cluster ?? "devnet"} / ${shortKey(data.transactionMetadata?.requiredSigner)} / ${String(data.transaction ?? "").length} chars`);
+      setAgentLine(`Rental transaction ready for ${selectedItem.name}.`);
+    } catch {
+      setRentalActionStatus("error");
+      setAgentLine("Could not prepare the rental transaction. Try again.");
+    }
   }
 
   function parseIntent(text: string): ParsedRentalIntent {
@@ -156,12 +191,15 @@ export function TablyAgent() {
           isSearching={isSearching}
           onCrossmintStart={startCrossmint}
           onInputChange={setInput}
+          onPrepareRental={() => void prepareRental()}
           onSelectItem={selectItem}
           onSubmit={handleSubmit}
           onWalletReady={handleWalletReady}
           recommendations={recommendations}
+          rentalActionStatus={rentalActionStatus}
           rentalHours={rentalHours}
           selectedItem={selectedItem}
+          txPreview={txPreview}
           wallet={wallet}
         />
       </div>
@@ -236,12 +274,15 @@ function AgentChatbox({
   isSearching,
   onCrossmintStart,
   onInputChange,
+  onPrepareRental,
   onSelectItem,
   onSubmit,
   onWalletReady,
   recommendations,
+  rentalActionStatus,
   rentalHours,
   selectedItem,
+  txPreview,
   wallet,
 }: {
   agentLine: string;
@@ -253,12 +294,15 @@ function AgentChatbox({
   isSearching: boolean;
   onCrossmintStart: () => void;
   onInputChange: (value: string) => void;
+  onPrepareRental: () => void;
   onSelectItem: (item: RentalItem, hours?: number, note?: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onWalletReady: (address: string) => void;
   recommendations: RentalItem[];
+  rentalActionStatus: RentalActionStatus;
   rentalHours: number;
   selectedItem: RentalItem;
+  txPreview: string;
   wallet: string;
 }) {
   const [walletChooserOpen, setWalletChooserOpen] = useState(false);
@@ -338,11 +382,93 @@ function AgentChatbox({
                 key={item.id}
                 item={item}
                 selected={item.id === selectedItem.id}
-                onClick={() => onSelectItem(item, item.expectedHours, `${item.name} selected. Wallet stays connected for checkout.`)}
+                onClick={() => onSelectItem(item, item.expectedHours, `${item.name} selected. ${wallet ? "Ready to prepare rental." : "Connect wallet to prepare rental."}`)}
               />
             ))}
           </div>
+          <SelectedRentalPanel
+            expectedFee={expectedFee}
+            onPrepareRental={onPrepareRental}
+            rentalActionStatus={rentalActionStatus}
+            rentalHours={rentalHours}
+            selectedItem={selectedItem}
+            txPreview={txPreview}
+            wallet={wallet}
+          />
         </div>
+      )}
+    </div>
+  );
+}
+
+function SelectedRentalPanel({
+  expectedFee,
+  onPrepareRental,
+  rentalActionStatus,
+  rentalHours,
+  selectedItem,
+  txPreview,
+  wallet,
+}: {
+  expectedFee: number;
+  onPrepareRental: () => void;
+  rentalActionStatus: RentalActionStatus;
+  rentalHours: number;
+  selectedItem: RentalItem;
+  txPreview: string;
+  wallet: string;
+}) {
+  const buttonLabel = !wallet
+    ? "Connect wallet first"
+    : rentalActionStatus === "preparing"
+      ? "Preparing..."
+      : rentalActionStatus === "ready"
+        ? "Transaction ready"
+        : "Prepare rental";
+
+  return (
+    <div className="tably-results-enter mt-3 rounded-[22px] border border-[#e8edf2] bg-white/82 p-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-[13px] font-black text-[#061725]">{selectedItem.name}</p>
+          <p className="mt-1 truncate text-[11px] font-bold text-[#607489]">
+            {selectedItem.locationLabel} / {selectedItem.ownerScore}% trust
+          </p>
+        </div>
+        <div className="shrink-0 text-right">
+          <p className="text-[13px] font-black text-[#061725]">${expectedFee}</p>
+          <p className="text-[10px] font-bold text-[#607489]">{rentalHours}h fee</p>
+        </div>
+      </div>
+
+      <div className="mt-3 grid grid-cols-3 overflow-hidden rounded-[16px] border border-[#edf1f5] text-center">
+        <div className="border-r border-[#edf1f5] bg-[#f8fafb] px-2 py-2">
+          <p className="text-[12px] font-black text-[#061725]">${selectedItem.buyoutCap}</p>
+          <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-[#607489]">Escrow</p>
+        </div>
+        <div className="border-r border-[#edf1f5] bg-white px-2 py-2">
+          <p className="text-[12px] font-black text-[#061725]">${Math.max(0, selectedItem.buyoutCap - expectedFee)}</p>
+          <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-[#607489]">Refund</p>
+        </div>
+        <div className="bg-[#f8fafb] px-2 py-2">
+          <p className="text-[12px] font-black text-[#061725]">{selectedItem.returnedOkCount}</p>
+          <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-[#607489]">Returns</p>
+        </div>
+      </div>
+
+      <button
+        type="button"
+        onClick={onPrepareRental}
+        disabled={rentalActionStatus === "preparing" || rentalActionStatus === "ready"}
+        className="mt-3 min-h-[42px] w-full rounded-full bg-[#061725] px-4 text-[13px] font-black text-white transition hover:bg-[#c8ff18] hover:text-[#061725] disabled:cursor-default disabled:bg-[#c8ff18] disabled:text-[#061725]"
+      >
+        {buttonLabel}
+      </button>
+
+      {(txPreview || rentalActionStatus === "error") && (
+        <p className={`mt-2 truncate text-[11px] font-bold ${rentalActionStatus === "error" ? "text-[#ff4c36]" : "text-[#607489]"}`}>
+          {rentalActionStatus === "error" ? "Transaction preparation failed." : `Tx ${txPreview}`}
+        </p>
       )}
     </div>
   );
