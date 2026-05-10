@@ -1,35 +1,48 @@
 # Tably / RentProof
 
-AI rental agent for school, community, and hackathon items.
+AI rental agent for school, community, and hackathon inventory.
 
-Tably is the consumer app. RentProof is the settlement layer underneath: refundable escrow, temporary rental token, return-confirm burn, receipt, and reputation.
+Tably is the consumer-facing agent interface. RentProof is the Solana settlement layer underneath it: refundable escrow, temporary rental-token state, return-confirm burn, on-chain receipt events, and reputation-ready outcomes.
 
-## Demo Flow
+## Product Loop
 
 ```text
-User asks for a power bank
--> Agent checks inventory and selects the best available item
--> Demo Crossmint wallet is prepared unless live Crossmint SDK is configured
--> Agent quotes LI.FI funding into Solana USDC
--> Agent creates a Solana Pay start_rental request
--> RentProof locks refundable escrow and mints a rental token
--> Agent monitors the meter
--> Owner confirms return
--> Rental token burns
--> Receipt and reputation update
+User asks for an item
+-> Agent searches community inventory
+-> Agent selects the best available item
+-> Demo Crossmint wallet path prepares a renter wallet
+-> LI.FI quote estimates funding into Solana USDC
+-> Solana Pay endpoint prepares the rental transaction plan
+-> RentProof Anchor program locks escrow and creates rental session state
+-> Renter receives a program-owned rental token PDA
+-> Owner confirms physical return, or auto-buyout triggers after grace
+-> Rental token closes, escrow settles, receipt event is emitted
 ```
 
-## Track Integrations
+The MVP is designed for physical-world rentals where the agent helps people borrow real items from a school, community, apartment, coworking space, or hackathon venue.
 
-| Track | Implementation in this repo |
+## What Is Implemented
+
+- SKYLRK-inspired storefront page with clickable floating inventory.
+- Usable chat agent that can parse natural-language item requests.
+- Demo inventory, rental session state, return flow, receipt copy, and reputation-ready result.
+- Anchor `rental_session` program for SPL-token escrow and rental lifecycle.
+- Public generated IDL at `/idl/rental_session.json`.
+- Program-aware Solana Pay planning endpoint at `/api/solana-pay/start-rental`.
+- Demo LI.FI quote endpoint at `/api/lifi/quote`.
+- MCP-style read/prepare endpoint at `/api/mcp`.
+
+## Track Alignment
+
+| Track | Implementation |
 | --- | --- |
-| Solana | Anchor `rental_session` program for SPL-token escrow, rental-session state, rental-token PDA lifecycle, receipts, and auto-buyout |
-| LI.FI | `/api/lifi/quote` returns a route tied to required rental escrow |
-| ElevenLabs | Voice/chat agent surface and workflow-ready tool calls |
-| Virtuals | Perceive/decide/act agent runtime for physical-world rentals |
+| Solana | Anchor program for escrow, rental sessions, rental-token PDA lifecycle, receipt events, and auto-buyout |
+| LI.FI | `/api/lifi/quote` quotes cross-chain funding into the required Solana escrow amount |
+| ElevenLabs | Chat/voice-ready agent workflow with tool-call boundaries for inventory, funding, rental, return, and receipt |
+| Virtuals | Agent perceives inventory, decides best item, and acts around physical-world handoff/return workflows |
 | MCP | `/api/mcp` exposes read/prepare rental tools for external agents |
-| Solana Pay | `/api/solana-pay/start-rental` creates a rental transaction request payload |
-| Crossmint | Non-web3 onboarding step is shown as explicit demo wallet mode; live login requires the Crossmint React SDK and `NEXT_PUBLIC_CROSSMINT_API_KEY` |
+| Solana Pay | `/api/solana-pay/start-rental` returns a Solana Pay request plus program id, PDA accounts, and instruction args |
+| Crossmint | Non-web3 onboarding is represented as demo embedded-wallet mode; live SDK wiring is the next integration step |
 
 ## Local Development
 
@@ -40,13 +53,20 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
-## RentProof Anchor Program
-
-The on-chain MVP lives in `programs/rental_session`.
+Useful checks:
 
 ```bash
-npm run anchor:build
+npm run lint
+npm run build
 npm run test:anchor
+```
+
+## Anchor Program
+
+Program path:
+
+```text
+programs/rental_session
 ```
 
 Program id:
@@ -55,29 +75,74 @@ Program id:
 AVL316tYxrg8MhEeWtaxbwdShMWybzRAH1zNQWvX355K
 ```
 
-The program supports:
+Build:
 
-- `initialize_config` — sets platform fee authority and fee bps.
-- `initialize_item` — records an owner, payment mint, metered rate, minimum fee, buyout cap, and auto-buyout grace window.
-- `start_rental` — transfers the full SPL-token buyout cap from renter into escrow, creates a `RentalSession`, and mints a non-transferable program-owned `RentalToken` PDA.
-- `confirm_return` — owner-confirmed physical return; settles metered fee, platform fee, renter refund, closes escrow, closes the rental token PDA, and emits a receipt event.
-- `auto_buyout` — after due time plus grace, owner can claim the buyout cap less platform fee; renter refund is zero, escrow closes, rental token PDA closes, and the item is marked bought out.
+```bash
+npm run anchor:build
+```
 
-The generated IDL is served at `/idl/rental_session.json`. `/api/solana-pay/start-rental` now returns the program id, PDA addresses, and instruction args needed to assemble the real wallet transaction.
+Instructions:
+
+- `initialize_config` sets platform fee authority and fee bps.
+- `initialize_item` records owner, payment mint, metered rate, minimum fee, buyout cap, and auto-buyout grace window.
+- `start_rental` transfers the full SPL-token buyout cap from renter to escrow, creates `RentalSession`, and creates the non-transferable `RentalToken` PDA.
+- `confirm_return` settles metered fee, platform fee, owner payout, renter refund, closes escrow, closes rental token, and emits `RentalReturned`.
+- `auto_buyout` lets the owner claim the buyout cap after due time plus grace, closes escrow/token state, marks the item bought out, and emits `RentalBoughtOut`.
+
+The rental token is intentionally a program-owned PDA account, not a transferable SPL token. That keeps the rental right bound to the session and prevents a renter from transferring away the obligation.
+
+## API Surface
+
+### `POST /api/solana-pay/start-rental`
+
+Returns a Solana Pay request payload and the program metadata needed to build the real transaction.
+
+Example request:
+
+```bash
+curl -s -X POST http://localhost:3000/api/solana-pay/start-rental \
+  -H 'content-type: application/json' \
+  -d '{"itemId":"mic_11","renterWallet":"5pNLovuXAbyKM8UGDKZg9Qqe85Sqt1kMPNaippombvwC","hours":2}'
+```
+
+Response includes:
+
+- `rentProof.programId`
+- `rentProof.accounts.config`
+- `rentProof.accounts.item`
+- `rentProof.accounts.session`
+- `rentProof.accounts.rentalToken`
+- `rentProof.accounts.escrowTokenAccount`
+- `instructionArgs.initializeConfig`
+- `instructionArgs.initializeItem`
+- `instructionArgs.startRental`
+
+### `POST /api/lifi/quote`
+
+Returns a demo LI.FI route for funding the Solana escrow amount.
+
+### `POST /api/rent`
+
+Starts the local demo rental state and returns the same RentProof PDA metadata used by the agent UI.
+
+### `GET /idl/rental_session.json`
+
+Serves the generated Anchor IDL.
 
 ## Current Boundary
 
-This sprint implements the full product surface plus a buildable Anchor settlement program. The irreversible operations remain approval-gated:
+This repo now has a buildable Anchor settlement program and a product-ready demo surface. It still does not sign or send real user transactions by itself.
 
-- MCP never signs or moves funds.
-- LI.FI endpoint is a demo quote adapter until keys/network execution are configured.
-- Solana Pay endpoint returns a program-aware transaction request plan; final wallet serialization/signing still needs live renter token accounts and a deployed program.
-- Crossmint is not live-connected in this build. The agent uses an explicit demo embedded wallet path until `@crossmint/client-sdk-react-ui`, `CrossmintProvider`, `CrossmintAuthProvider`, `CrossmintWalletProvider`, and `NEXT_PUBLIC_CROSSMINT_API_KEY` are wired.
+- The Anchor program builds and has unit tests, but has not been deployed to devnet from this repo.
+- The Solana Pay endpoint is program-aware, but still returns a transaction plan instead of a serialized wallet transaction.
+- LI.FI is a demo quote adapter until live LI.FI SDK/API execution is configured.
+- Crossmint is demo embedded-wallet mode until the Crossmint React SDK and `NEXT_PUBLIC_CROSSMINT_API_KEY` are wired.
+- MCP never signs or moves funds; it only exposes read/prepare tools.
 
-## Build Next
+## Next Steps
 
-1. Add Crossmint embedded wallet SDK and replace demo wallet mode with live Crossmint auth/wallet creation.
-2. Replace LI.FI quote mock with SDK/REST route call.
-3. Deploy `rental_session` to devnet and replace the Solana Pay plan with a serialized transaction.
-4. Connect ElevenLabs agent tools to the existing API routes.
-5. Serve MCP through a proper MCP transport in addition to `/api/mcp`.
+1. Deploy `rental_session` to devnet and publish the matching IDL.
+2. Replace the Solana Pay plan with a serialized transaction request using live token accounts.
+3. Wire Crossmint embedded wallets for non-web3 renters.
+4. Replace the LI.FI mock with real route execution.
+5. Connect ElevenLabs voice agent tools to the same API flow.
