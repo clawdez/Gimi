@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useRef, useState } from "react";
+import { type FormEvent, type RefObject, useMemo, useRef, useState } from "react";
 import { COMMUNITY_ITEMS } from "@/lib/store";
 import { RentalItem } from "@/lib/types";
 
@@ -47,15 +47,29 @@ const categoryKeywords: Array<[string, string[]]> = [
 ];
 
 const floatingProductSlots = [
-  "left-[-2vw] top-[15vh] h-[145px] w-[190px] rotate-[-10deg] sm:h-[210px] sm:w-[265px] lg:h-[250px] lg:w-[320px]",
-  "left-[24vw] top-[61vh] h-[160px] w-[190px] rotate-[4deg] sm:h-[220px] sm:w-[250px] lg:h-[275px] lg:w-[310px]",
-  "left-[51vw] top-[13vh] h-[110px] w-[170px] rotate-[3deg] sm:h-[145px] sm:w-[225px] lg:h-[185px] lg:w-[285px]",
-  "right-[2vw] top-[19vh] h-[195px] w-[215px] rotate-[5deg] sm:h-[275px] sm:w-[295px] lg:h-[360px] lg:w-[380px]",
-  "right-[15vw] top-[58vh] h-[140px] w-[170px] rotate-[-5deg] sm:h-[195px] sm:w-[235px] lg:h-[265px] lg:w-[305px]",
-  "left-[4vw] bottom-[-11vh] h-[150px] w-[190px] rotate-[8deg] sm:h-[230px] sm:w-[285px] lg:h-[310px] lg:w-[365px]",
-  "right-[0vw] bottom-[-14vh] h-[145px] w-[205px] rotate-[-7deg] sm:h-[225px] sm:w-[305px] lg:h-[300px] lg:w-[390px]",
-  "left-[70vw] top-[7vh] hidden h-[95px] w-[140px] rotate-[-4deg] sm:block lg:h-[140px] lg:w-[205px]",
-  "left-[13vw] top-[39vh] hidden h-[115px] w-[165px] rotate-[5deg] md:block lg:h-[165px] lg:w-[235px]",
+  "left-[4vw] top-[15vh] h-[110px] w-[150px] rotate-[-8deg] sm:h-[150px] sm:w-[205px] lg:h-[175px] lg:w-[235px]",
+  "left-[31vw] top-[54vh] h-[165px] w-[190px] rotate-[3deg] sm:h-[230px] sm:w-[260px] lg:h-[330px] lg:w-[360px]",
+  "left-[48vw] top-[13vh] h-[95px] w-[145px] rotate-[2deg] sm:h-[135px] sm:w-[205px] lg:h-[175px] lg:w-[265px]",
+  "right-[19vw] top-[33vh] h-[145px] w-[165px] rotate-[3deg] sm:h-[210px] sm:w-[245px] lg:h-[285px] lg:w-[330px]",
+  "right-[6vw] top-[19vh] h-[165px] w-[185px] rotate-[5deg] sm:h-[230px] sm:w-[260px] lg:h-[315px] lg:w-[345px]",
+  "left-[45vw] bottom-[7vh] h-[95px] w-[150px] rotate-[1deg] sm:h-[125px] sm:w-[210px] lg:h-[160px] lg:w-[270px]",
+  "right-[21vw] bottom-[8vh] h-[135px] w-[165px] rotate-[-3deg] sm:h-[195px] sm:w-[240px] lg:h-[265px] lg:w-[315px]",
+  "right-[4vw] bottom-[-10vh] hidden h-[150px] w-[210px] rotate-[-7deg] lg:block lg:h-[280px] lg:w-[370px]",
+  "left-[13vw] top-[40vh] hidden h-[105px] w-[145px] rotate-[5deg] md:block lg:h-[150px] lg:w-[220px]",
+];
+
+const quickPrompts = [
+  "What's available now?",
+  "Help me find a mic",
+  "Best gear for travel",
+  "Return my rental",
+];
+
+const trustFeatures = [
+  { icon: "globe", label: "CROSS-CHAIN FUNDING", detail: "LI.FI to Solana USDC" },
+  { icon: "return", label: "EASY RETURNS", detail: "Owner-confirmed burn" },
+  { icon: "shield", label: "SECURE ESCROW", detail: "Refundable buyout cap" },
+  { icon: "headset", label: "AGENT SUPPORT", detail: "Voice or chat workflow" },
 ];
 
 const crossmintApiKeyConfigured = Boolean(process.env.NEXT_PUBLIC_CROSSMINT_API_KEY);
@@ -65,12 +79,12 @@ const demoWalletAddress = "demo_crossmint_wallet";
 
 export function TablyAgent() {
   const defaultItem = COMMUNITY_ITEMS[0];
-  const [, setSteps] = useState(initialSteps);
-  const [, setMessages] = useState<ChatMessage[]>([
+  const [steps, setSteps] = useState(initialSteps);
+  const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: "agent_intro",
       role: "agent",
-      text: "Tell me what you need, for how long, and any budget. I can match an item, prepare funding, create a Solana Pay rental request, and start the RentProof session.",
+      text: "Hi, I'm your Tably agent. Tell me what you need, for how long, and any budget.",
     },
   ]);
   const [input, setInput] = useState("");
@@ -82,7 +96,7 @@ export function TablyAgent() {
   const [sessionActive, setSessionActive] = useState(false);
   const [returnRequested, setReturnRequested] = useState(false);
   const [receipt, setReceipt] = useState("");
-  const [agentOpen, setAgentOpen] = useState(false);
+  const [agentOpen, setAgentOpen] = useState(true);
   const [agentNotice, setAgentNotice] = useState("Main hall inventory is live.");
 
   const expectedFee = useMemo(
@@ -366,16 +380,16 @@ export function TablyAgent() {
   }
 
   return (
-    <section id="agent" className="relative min-h-screen overflow-hidden bg-[#83cdea] text-white">
+    <section id="agent" className="relative h-screen overflow-hidden bg-[#83cdea] text-white">
       <ProductWall selectedItemId={selectedItem.id} onBorrowItem={borrowItem} />
 
-      <div className="pointer-events-none relative z-20 flex min-h-screen items-start px-8 pb-10 pt-[34vh] sm:px-12 lg:px-[10vw]">
-        <div className="max-w-[430px]">
-          <h1 className="text-[38px] font-black uppercase leading-[0.92] tracking-[0.12em] text-white drop-shadow-[0_1px_8px_rgba(0,30,45,0.18)] sm:text-[48px]">
-            Rent gear<br />for the day
+      <div className="pointer-events-none absolute inset-0 z-20 flex items-start px-7 pb-28 pt-[38vh] sm:px-12 lg:px-[5vw]">
+        <div className="max-w-[470px]">
+          <h1 className="text-[38px] font-black uppercase leading-[0.98] tracking-[0.14em] text-white drop-shadow-[0_2px_10px_rgba(0,23,42,0.28)] sm:text-[52px] lg:text-[58px]">
+            Built for<br />the borrow
           </h1>
-          <p className="mt-5 text-base font-semibold tracking-[0.04em] text-white/90">
-            Technical gear for modern communities.
+          <p className="mt-5 text-base font-semibold tracking-[0.06em] text-white/92">
+            Technical gear for the modern community.
           </p>
           <button
             type="button"
@@ -383,81 +397,253 @@ export function TablyAgent() {
               setAgentOpen(true);
               inputRef.current?.focus();
             }}
-            className="pointer-events-auto mt-8 border-b border-white pb-2 text-[12px] font-black uppercase tracking-[0.16em] text-white transition-opacity hover:opacity-65"
+            className="pointer-events-auto mt-8 inline-flex h-12 items-center gap-8 bg-white px-7 text-[12px] font-black uppercase tracking-[0.13em] text-[#071a28] shadow-[0_12px_28px_rgba(0,22,35,0.2)] transition duration-200 hover:-translate-y-0.5 hover:bg-[#071a28] hover:text-white"
           >
             Ask now
+            <span aria-hidden="true" className="text-xl leading-none">→</span>
           </button>
+
+          <div className="mt-[24vh] hidden sm:block">
+            <p className="text-[12px] font-black uppercase tracking-[0.16em] text-white">Scroll to explore</p>
+            <p className="mt-3 text-3xl leading-none text-white">↓</p>
+          </div>
         </div>
       </div>
 
-      <div className="pointer-events-none absolute inset-x-0 bottom-[8vh] z-30 flex justify-start px-5 sm:px-8 lg:px-[10vw]">
-        <form
+      {agentOpen ? (
+        <AgentPanel
+          actionLabel={actionLabel}
+          input={input}
+          inputRef={inputRef}
+          messages={messages}
+          onClose={() => setAgentOpen(false)}
+          onPrompt={runAgent}
           onSubmit={handleSubmit}
-          className={`pointer-events-auto w-full border border-white/30 bg-white/18 text-white shadow-[0_26px_90px_rgba(0,25,40,0.16)] backdrop-blur-2xl transition-all duration-300 ${
-            agentOpen ? "max-w-[640px]" : "max-w-[460px]"
-          }`}
+          receipt={receipt}
+          selectedItem={selectedItem}
+          setInput={setInput}
+          statusLine={statusLine}
+          steps={steps}
+        />
+      ) : (
+        <button
+          type="button"
+          title={agentNotice}
+          onClick={() => {
+            setAgentOpen(true);
+            inputRef.current?.focus();
+          }}
+          className="absolute bottom-28 right-6 z-40 inline-flex h-14 items-center gap-3 rounded-full border border-white/40 bg-[#071a28]/90 px-5 text-[12px] font-black uppercase tracking-[0.13em] text-white shadow-[0_18px_60px_rgba(0,12,24,0.32)] backdrop-blur-xl transition hover:-translate-y-0.5 hover:bg-white hover:text-[#071a28] lg:right-12"
         >
-          <div className="grid gap-px bg-white/28 sm:grid-cols-[1fr_auto]">
-            <div className="min-w-0 bg-[#0c3446]/34 p-4 sm:p-5">
-              <div className="flex items-center justify-between gap-4">
-                <div className="min-w-0">
-                  <p className="text-[10px] font-black uppercase tracking-[0.16em] text-white/58">Tably agent</p>
-                  <p className="mt-1 truncate text-base font-black leading-none text-white sm:text-lg">
-                    {agentOpen ? selectedItem.name : "What do you need?"}
-                  </p>
-                </div>
-                <span className="shrink-0 text-[10px] font-black uppercase tracking-[0.12em] text-white/55">
-                  {wallet ? "Ready" : "Agent"}
-                </span>
-              </div>
-              {agentOpen && <p className="mt-2 truncate text-xs text-white/62">{statusLine}</p>}
-              {!agentOpen && <p className="mt-2 truncate text-xs text-white/58">{agentNotice}</p>}
-            </div>
+          <AgentIcon />
+          Ask Tably
+        </button>
+      )}
 
-            <div className="bg-[#0c3446]/34 p-3 sm:w-[158px] sm:p-4">
-              <button
-                type="submit"
-                disabled={Boolean(receipt)}
-                className="h-11 w-full bg-white px-4 text-[11px] font-black uppercase tracking-[0.12em] text-[#0b3446] transition-colors hover:bg-[#0b3446] hover:text-white disabled:opacity-45"
+      <TrustBar />
+    </section>
+  );
+}
+
+function AgentPanel({
+  actionLabel,
+  input,
+  inputRef,
+  messages,
+  onClose,
+  onPrompt,
+  onSubmit,
+  receipt,
+  selectedItem,
+  setInput,
+  statusLine,
+  steps,
+}: {
+  actionLabel: string;
+  input: string;
+  inputRef: RefObject<HTMLInputElement | null>;
+  messages: ChatMessage[];
+  onClose: () => void;
+  onPrompt: (text: string) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  receipt: string;
+  selectedItem: RentalItem;
+  setInput: (value: string) => void;
+  statusLine: string;
+  steps: ToolStep[];
+}) {
+  const visibleMessages = messages.slice(-3);
+  const runningStep = steps.find((step) => step.status === "running");
+  const doneCount = steps.filter((step) => step.status === "done").length;
+
+  return (
+    <div className="pointer-events-none absolute inset-x-0 bottom-28 top-24 z-40 overflow-y-auto px-4 sm:bottom-28 sm:px-6 lg:bottom-auto lg:left-auto lg:right-[4.5vw] lg:top-[31vh] lg:w-[380px] lg:overflow-visible lg:px-0">
+      <div className="pointer-events-auto overflow-hidden rounded-[22px] border border-white/12 bg-[#071827]/95 text-white shadow-[0_32px_90px_rgba(0,12,24,0.45)] backdrop-blur-2xl">
+        <div className="flex items-center justify-between border-b border-white/8 px-5 py-4">
+          <div className="flex items-center gap-3">
+            <div className="grid h-10 w-10 place-items-center rounded-full border border-white/15 bg-white/7">
+              <AgentIcon />
+            </div>
+            <div>
+              <p className="text-[12px] font-black tracking-[0.04em]">Tably Agent</p>
+              <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-white/74">
+                <span className="h-1.5 w-1.5 rounded-full bg-[#50d47d]" />
+                Online
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            aria-label="Close agent"
+            onClick={onClose}
+            className="grid h-8 w-8 place-items-center rounded-full text-lg text-white/70 transition hover:bg-white/10 hover:text-white"
+          >
+            −
+          </button>
+        </div>
+
+        <div className="px-5 py-5">
+          <div className="space-y-3">
+            {visibleMessages.map((message) => (
+              <div
+                key={message.id}
+                className={`max-w-[88%] rounded-2xl px-4 py-3 text-[13px] leading-5 shadow-[0_10px_26px_rgba(0,0,0,0.12)] ${
+                  message.role === "user"
+                    ? "ml-auto bg-white text-[#071827]"
+                    : message.role === "tool"
+                      ? "bg-[#0d2940] text-white/72"
+                      : "bg-white/9 text-white"
+                }`}
               >
-                {actionLabel}
+                {message.text}
+              </div>
+            ))}
+          </div>
+
+          <p className="mt-3 text-[11px] text-white/48">{runningStep ? runningStep.detail : statusLine}</p>
+
+          <div className="mt-5 grid gap-2 border-l border-white/14 pl-4">
+            {quickPrompts.map((prompt) => (
+              <button
+                key={prompt}
+                type="button"
+                onClick={() => onPrompt(prompt)}
+                className="w-fit rounded-full bg-white/8 px-4 py-2 text-left text-[13px] font-semibold text-white/90 transition hover:bg-white hover:text-[#071827]"
+              >
+                {prompt}
               </button>
+            ))}
+          </div>
+
+          <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="truncate text-[12px] font-black">{selectedItem.name}</p>
+                <p className="mt-1 truncate text-[11px] text-white/55">
+                  {doneCount}/6 tools ready · {statusLine}
+                </p>
+              </div>
+              <span className="shrink-0 rounded-full bg-white/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.1em] text-white/70">
+                {receipt ? "Receipt" : "Rent"}
+              </span>
             </div>
           </div>
 
-          <div className="grid gap-px bg-white/28 sm:grid-cols-[1fr_auto]">
+          <form onSubmit={onSubmit} className="mt-5 flex items-center gap-2 rounded-2xl border border-white/18 bg-white/[0.04] p-2">
             <label className="sr-only" htmlFor="agent-message">Message</label>
             <input
               id="agent-message"
               ref={inputRef}
               value={input}
-              onFocus={() => setAgentOpen(true)}
               onChange={(event) => setInput(event.target.value)}
-              placeholder="mic for 2 hours under 10"
-              className="h-14 min-w-0 bg-white/16 px-4 text-sm text-white outline-none placeholder:text-white/48 focus:bg-white/24 sm:px-5"
+              placeholder="Ask anything..."
+              className="h-10 min-w-0 flex-1 bg-transparent px-2 text-sm text-white outline-none placeholder:text-white/45"
             />
             <button
-              type="button"
-              aria-label={agentOpen ? "Close agent" : "Open agent"}
-              onClick={() => {
-                if (!agentOpen) {
-                  setAgentOpen(true);
-                  inputRef.current?.focus();
-                  return;
-                }
-                setAgentOpen(false);
-                setInput("");
-                if (inputRef.current) inputRef.current.value = "";
-                setAgentNotice("Main hall inventory is live.");
-              }}
-              className="h-14 bg-white/16 px-5 text-[11px] font-black uppercase tracking-[0.12em] text-white/70 transition-colors hover:bg-white hover:text-[#0b3446]"
+              type="submit"
+              disabled={Boolean(receipt)}
+              aria-label={actionLabel}
+              className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white text-lg font-black text-[#071827] transition hover:scale-105 disabled:opacity-45"
             >
-              {agentOpen ? "Close" : "Open"}
+              →
             </button>
-          </div>
-        </form>
+          </form>
+
+          <p className="mt-3 text-center text-[11px] text-white/50">Escrow, receipt, and reputation handled by RentProof</p>
+        </div>
       </div>
-    </section>
+
+      <button
+        type="button"
+        aria-label="Close agent"
+        onClick={onClose}
+        className="ml-auto mt-3 grid h-14 w-14 place-items-center rounded-full bg-[#071827] text-3xl leading-none text-white shadow-[0_18px_45px_rgba(0,12,24,0.35)] transition hover:bg-white hover:text-[#071827]"
+      >
+        ×
+      </button>
+    </div>
+  );
+}
+
+function TrustBar() {
+  return (
+    <div className="absolute inset-x-0 bottom-0 z-30 border-t border-white/18 bg-[#061420]/78 px-6 py-5 text-white shadow-[0_-18px_70px_rgba(0,15,28,0.2)] backdrop-blur-xl">
+      <div className="mx-auto grid max-w-7xl grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-5 lg:grid-cols-4">
+        {trustFeatures.map((feature, index) => (
+          <div key={feature.label} className={`flex items-center gap-4 ${index > 0 ? "lg:border-l lg:border-white/18 lg:pl-12" : ""}`}>
+            <FeatureIcon icon={feature.icon} />
+            <div>
+              <p className="text-[11px] font-black uppercase tracking-[0.1em]">{feature.label}</p>
+              <p className="mt-1 text-xs text-white/68">{feature.detail}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AgentIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5" fill="none">
+      <path d="M8 9h8a4 4 0 0 1 4 4v1a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4v-1a4 4 0 0 1 4-4Z" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M12 9V5M9.5 5h5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M9 13h.01M15 13h.01M10 16h4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M19 8l1.4-1.4M20.4 9.4 19 8l1.4-1.4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function FeatureIcon({ icon }: { icon: string }) {
+  if (icon === "return") {
+    return (
+      <svg aria-hidden="true" viewBox="0 0 24 24" className="h-7 w-7 shrink-0" fill="none">
+        <path d="M7 7h8a5 5 0 1 1 0 10H8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        <path d="M7 7l3-3M7 7l3 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+  }
+  if (icon === "shield") {
+    return (
+      <svg aria-hidden="true" viewBox="0 0 24 24" className="h-7 w-7 shrink-0" fill="none">
+        <path d="M12 3 19 6v5c0 4.5-2.8 7.8-7 10-4.2-2.2-7-5.5-7-10V6l7-3Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+        <path d="m9 12 2 2 4-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+  }
+  if (icon === "headset") {
+    return (
+      <svg aria-hidden="true" viewBox="0 0 24 24" className="h-7 w-7 shrink-0" fill="none">
+        <path d="M5 13a7 7 0 0 1 14 0v4a3 3 0 0 1-3 3h-2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        <path d="M5 13v4h3v-5H6a1 1 0 0 0-1 1ZM19 13v4h-3v-5h2a1 1 0 0 1 1 1Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+      </svg>
+    );
+  }
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" className="h-7 w-7 shrink-0" fill="none">
+      <path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z" stroke="currentColor" strokeWidth="1.8" />
+      <path d="M3.5 12h17M12 3c2.2 2.4 3.3 5.4 3.3 9S14.2 18.6 12 21M12 3c-2.2 2.4-3.3 5.4-3.3 9S9.8 18.6 12 21" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
   );
 }
 
@@ -471,7 +657,7 @@ function ProductWall({
   const floatingItems = COMMUNITY_ITEMS.filter((item) => item.status === "available").slice(0, floatingProductSlots.length);
 
   return (
-    <div className="grain-field absolute inset-0 overflow-hidden bg-[radial-gradient(circle_at_62%_95%,rgba(255,255,255,0.85),transparent_21%),linear-gradient(105deg,#062f45_0%,#155574_28%,#74c9ee_61%,#8dd7f5_100%)]">
+    <div className="grain-field absolute inset-0 overflow-hidden bg-[radial-gradient(circle_at_58%_88%,rgba(245,248,250,0.8),transparent_18%),radial-gradient(circle_at_58%_40%,rgba(209,234,255,0.7),transparent_25%),linear-gradient(105deg,#03101b_0%,#12324a_27%,#6eaee2_63%,#8ac9ef_100%)]">
       {floatingItems.map((item, index) => (
         <ProductWallTile
           key={item.id}
@@ -481,7 +667,8 @@ function ProductWall({
           onBorrowItem={onBorrowItem}
         />
       ))}
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_65%_46%,rgba(255,255,255,0.2),transparent_21%)]" />
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(90deg,rgba(0,5,12,0.34),transparent_42%,rgba(255,255,255,0.05)),radial-gradient(circle_at_55%_83%,rgba(0,5,12,0.18),transparent_10%)]" />
+      <div className="pointer-events-none absolute right-[4vw] top-[14vh] text-[12px] font-black tracking-[0.16em] text-white/86">[ $USDC ]</div>
     </div>
   );
 }
@@ -511,11 +698,11 @@ function ProductWallTile({
           onBorrowItem(item);
         }
       }}
-      className={`group absolute cursor-pointer transition duration-300 hover:scale-[1.045] hover:opacity-100 focus:outline-none focus-visible:scale-[1.045] focus-visible:ring-2 focus-visible:ring-black ${className} ${selected ? "z-20 opacity-95" : "z-10 opacity-70"}`}
+      className={`group absolute cursor-pointer transition duration-300 hover:scale-[1.045] hover:opacity-100 focus:outline-none focus-visible:scale-[1.045] focus-visible:ring-2 focus-visible:ring-white ${className} ${selected ? "z-20 opacity-100" : "z-10 opacity-78"}`}
     >
       <ProductPhoto item={item} />
-      <span className="pointer-events-none absolute left-1/2 top-full mt-1 hidden -translate-x-1/2 whitespace-nowrap border border-black/20 bg-white/70 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-black/65 backdrop-blur-md group-hover:block group-focus-visible:block">
-        {item.name}
+      <span className="pointer-events-none absolute left-1/2 top-full mt-1 hidden -translate-x-1/2 whitespace-nowrap rounded-full bg-white/84 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.08em] text-[#071827] shadow-[0_8px_22px_rgba(0,0,0,0.14)] backdrop-blur-md group-hover:block group-focus-visible:block">
+        Borrow {item.name}
       </span>
     </button>
   );
@@ -523,12 +710,12 @@ function ProductWallTile({
 
 function ProductPhoto({ item }: { item: RentalItem }) {
   return (
-    <div className="relative h-full w-full [filter:drop-shadow(0_22px_30px_rgba(7,40,55,0.2))]">
+    <div className="relative h-full w-full [filter:drop-shadow(0_24px_32px_rgba(7,35,50,0.22))]">
       <div
-        className="h-full w-full rounded-[18%] bg-cover bg-center opacity-90 saturate-[0.9] transition duration-300 [mix-blend-mode:multiply] group-hover:opacity-100 group-hover:saturate-100"
+        className="h-full w-full rounded-[18%] bg-cover bg-center opacity-88 saturate-[0.92] transition duration-300 [mix-blend-mode:multiply] group-hover:opacity-100 group-hover:saturate-100"
         style={{ backgroundImage: `url(${item.imageUrl})` }}
       />
-      <div className="pointer-events-none absolute inset-0 rounded-[18%] bg-[radial-gradient(circle_at_35%_25%,rgba(255,255,255,0.42),transparent_35%),linear-gradient(135deg,rgba(255,255,255,0.18),rgba(0,0,0,0.08))]" />
+      <div className="pointer-events-none absolute inset-0 rounded-[18%] bg-[radial-gradient(circle_at_35%_25%,rgba(255,255,255,0.45),transparent_34%),linear-gradient(135deg,rgba(255,255,255,0.18),rgba(0,0,0,0.06))]" />
     </div>
   );
 }
