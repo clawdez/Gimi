@@ -1,15 +1,29 @@
 export function Navbar() {
   return (
-    <nav className="fixed inset-x-0 top-0 z-50 border-b border-[#dce7ee]/80 bg-[#eef4f8]/86 backdrop-blur-xl">
-      <div className="flex h-20 items-center justify-between gap-5 px-5 text-[11px] font-black uppercase tracking-[0.16em] text-[#071827] sm:px-8">
-        <div className="flex items-center gap-2">
-          <a href="#" className="rounded-full border border-[#071827]/75 px-5 py-2 text-lg leading-none tracking-[0.24em] shadow-[inset_0_0_0_1px_rgba(7,24,39,0.12)]">
-            TABLY
+    <nav className="fixed inset-x-0 top-0 z-50 bg-transparent">
+      <div className="flex h-24 items-center justify-between gap-4 px-5 text-[11px] font-black uppercase tracking-[0.16em] text-[#061725] sm:px-8">
+        <div className="flex items-center gap-3">
+          <a
+            href="#"
+            className="rounded-full bg-[#c8ff18] px-6 py-3 text-[22px] leading-none tracking-[0.16em] shadow-[0_14px_34px_rgba(100,139,0,0.18)]"
+          >
+            TABLY+
           </a>
-          <span className="rounded-full border border-[#071827]/30 px-3 py-2 leading-none text-[#071827]/80">0 +</span>
+          <span className="hidden rounded-full border border-white/70 bg-white/66 px-5 py-3 text-[13px] normal-case tracking-normal text-[#6b4cff] shadow-[0_14px_34px_rgba(83,83,180,0.12)] backdrop-blur-xl sm:inline-flex">
+            GenUI
+          </span>
         </div>
 
-        <a href="#agent" className="transition-opacity hover:opacity-60">Community rentals</a>
+        <div className="flex items-center gap-5">
+          <a href="#agent" className="hidden transition-opacity hover:opacity-60 sm:block">
+            Community rentals
+          </a>
+          <button className="flex items-center gap-2 rounded-full bg-[#061725] px-3 py-2 text-[13px] font-black normal-case tracking-normal text-white shadow-[0_14px_34px_rgba(6,23,37,0.18)]">
+            <span className="grid h-8 w-8 place-items-center rounded-full bg-[linear-gradient(135deg,#ffb199,#6b83ff)] text-[12px]">J</span>
+            0.00 USDC
+            <span className="text-white/60">v</span>
+          </button>
+        </div>
       </div>
     </nav>
   );
