@@ -5,7 +5,7 @@ import { TablyAgent } from "@/components/TablyAgent";
 
 export default function Home() {
   return (
-    <main className="min-h-screen">
+    <main className="h-[100svh] overflow-hidden">
       <Navbar />
       <TablyAgent />
     </main>
