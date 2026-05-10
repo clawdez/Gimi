@@ -53,6 +53,10 @@ input {
   animation-play-state: paused;
 }
 
+.tably-results-enter {
+  animation: tably-results-enter 260ms ease-out both;
+}
+
 @keyframes inventory-row-left {
   from {
     transform: translateX(0);
@@ -71,9 +75,21 @@ input {
   }
 }
 
+@keyframes tably-results-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .inventory-row-left,
-  .inventory-row-right {
+  .inventory-row-right,
+  .tably-results-enter {
     animation: none;
   }
 }
