@@ -1,13 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getItem, getItems } from "@/lib/store";
 import { quoteLifiFunding } from "@/lib/lifi";
-import { buildStartRentalTransaction, publicKeyOrFallback, DEMO_RENTER_WALLET } from "@/lib/rentproofProgram";
+import {
+  buildSettleRentalTransaction,
+  buildStartRentalTransaction,
+  publicKeyOrFallback,
+  DEMO_RENTER_WALLET,
+} from "@/lib/rentproofProgram";
 
 const tools = [
   "rentproof.find_offers",
   "rentproof.draft_terms",
   "rentproof.quote_funding",
   "rentproof.create_rental_request",
+  "rentproof.prepare_return",
+  "rentproof.prepare_auto_buyout",
 ] as const;
 
 function appUrl(req: NextRequest) {
@@ -36,8 +43,12 @@ export async function GET(req: NextRequest) {
           : tool === "rentproof.draft_terms"
             ? "Draft rental terms for an item."
             : tool === "rentproof.quote_funding"
-              ? "Quote cross-chain funding into Solana USDC using LI.FI."
-              : "Create an unsigned serialized Solana devnet start_rental transaction.",
+            ? "Quote cross-chain funding into Solana USDC using LI.FI."
+              : tool === "rentproof.create_rental_request"
+                ? "Create an unsigned serialized Solana devnet start_rental transaction."
+                : tool === "rentproof.prepare_return"
+                  ? "Create an unsigned serialized Solana devnet confirm_return transaction for the owner to sign."
+                  : "Create an unsigned serialized Solana devnet auto_buyout transaction for the owner to sign.",
     })),
     request_body_schema: {
       type: "object",
@@ -113,6 +124,35 @@ export async function POST(req: NextRequest) {
 
   const renter = publicKeyOrFallback(body.renterWallet, DEMO_RENTER_WALLET);
   const rentalId = body.draftId ?? `elevenlabs_${item.id}_${crypto.randomUUID()}`;
+
+  if (tool === "rentproof.prepare_return" || tool === "rentproof.prepare_auto_buyout") {
+    const kind = tool === "rentproof.prepare_return" ? "confirm_return" : "auto_buyout";
+    const settleRentalId = body.rentalId ?? body.draftId ?? rentalId;
+    const serialized = await buildSettleRentalTransaction({
+      kind,
+      itemId: item.id,
+      ownerWallet: item.owner,
+      renterWallet: renter.toBase58(),
+      rentalId: settleRentalId,
+    });
+
+    return NextResponse.json({
+      rentalId: settleRentalId,
+      itemId: item.id,
+      transaction: serialized.transactionBase64,
+      transactionMetadata: {
+        cluster: serialized.cluster,
+        rpcUrl: serialized.rpcUrl,
+        blockhash: serialized.blockhash,
+        lastValidBlockHeight: serialized.lastValidBlockHeight,
+        feePayer: serialized.rentProof.accounts.owner,
+        requiredSigner: serialized.rentProof.accounts.owner,
+      },
+      rentProof: serialized.rentProof,
+      safety: "Unsigned owner transaction only. The ElevenLabs tool cannot sign or move funds.",
+    });
+  }
+
   const serialized = await buildStartRentalTransaction({
     itemId: item.id,
     ownerWallet: item.owner,

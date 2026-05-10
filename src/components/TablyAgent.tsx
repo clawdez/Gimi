@@ -18,14 +18,26 @@ interface ParsedRentalIntent {
 }
 
 type RentalActionStatus = "idle" | "preparing" | "ready" | "signing" | "sent" | "error";
+type RentalTransactionKind = "start" | "return" | "buyout";
 
 interface PreparedRentalTransaction {
+  kind: RentalTransactionKind;
   cluster: string;
   blockhash: string;
+  draftId: string;
+  itemId: string;
   lastValidBlockHeight: number;
+  renterWallet: string;
   requiredSigner: string;
   rpcUrl: string;
   transactionBase64: string;
+}
+
+interface ActiveRental {
+  draftId: string;
+  itemId: string;
+  renterWallet: string;
+  startSignature: string;
 }
 
 type CrossmintWalletInstance = NonNullable<ReturnType<typeof useWallet>["wallet"]>;
@@ -61,6 +73,7 @@ export function TablyAgent() {
   const [rentalActionStatus, setRentalActionStatus] = useState<RentalActionStatus>("idle");
   const [txPreview, setTxPreview] = useState("");
   const [preparedTx, setPreparedTx] = useState<PreparedRentalTransaction | null>(null);
+  const [activeRental, setActiveRental] = useState<ActiveRental | null>(null);
   const [txSignature, setTxSignature] = useState("");
   const [agentLine, setAgentLine] = useState("Tell Tably what you need. Recommendations appear after you ask.");
 
@@ -83,6 +96,7 @@ export function TablyAgent() {
     setRentalActionStatus("idle");
     setTxPreview("");
     setPreparedTx(null);
+    setActiveRental(null);
     setTxSignature("");
     setAgentLine(`Press enter to compare ${item.name} with similar rentals.`);
     inputRef.current?.focus();
@@ -97,12 +111,13 @@ export function TablyAgent() {
     setRentalActionStatus("idle");
     setTxPreview("");
     setPreparedTx(null);
+    setActiveRental(null);
     setTxSignature("");
     setAgentLine(note ?? `${item.name} is available near ${item.locationLabel}. Estimated rental: ${fee} USDC.`);
   }
 
   async function prepareRental() {
-    const renterWallet = solanaSigner || wallet;
+    const renterWallet = solanaSigner || crossmintSigner || wallet;
     if (!renterWallet) {
       setAgentLine("Connect a wallet first, then Tably can prepare the rental transaction.");
       return;
@@ -124,9 +139,13 @@ export function TablyAgent() {
       if (!res.ok) throw new Error(data.error ?? "Failed to prepare rental");
       const metadata = data.transactionMetadata ?? {};
       setPreparedTx({
+        kind: "start",
         cluster: metadata.cluster ?? "devnet",
         blockhash: metadata.blockhash,
+        draftId: data.draftId,
+        itemId: selectedItem.id,
         lastValidBlockHeight: metadata.lastValidBlockHeight,
+        renterWallet,
         requiredSigner: metadata.requiredSigner,
         rpcUrl: metadata.rpcUrl ?? "https://api.devnet.solana.com",
         transactionBase64: data.transaction,
@@ -141,6 +160,57 @@ export function TablyAgent() {
     } catch (error) {
       setRentalActionStatus("error");
       setAgentLine(error instanceof Error ? `Could not prepare transaction: ${error.message}` : "Could not prepare the rental transaction. Try again.");
+    }
+  }
+
+  async function prepareSettlement(kind: Exclude<RentalTransactionKind, "start">) {
+    if (!activeRental) {
+      setAgentLine("Start a rental first, then the owner can prepare return or buyout settlement.");
+      return;
+    }
+
+    setRentalActionStatus("preparing");
+    setTxPreview("");
+    setPreparedTx(null);
+    setTxSignature("");
+    setAgentLine(kind === "return" ? "Preparing owner return confirmation..." : "Preparing owner auto-buyout transaction...");
+
+    try {
+      const endpoint = kind === "return" ? "/api/solana-pay/confirm-return" : "/api/solana-pay/auto-buyout";
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          itemId: activeRental.itemId,
+          rentalId: activeRental.draftId,
+          renterWallet: activeRental.renterWallet,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to prepare settlement");
+      const metadata = data.transactionMetadata ?? {};
+      setPreparedTx({
+        kind,
+        cluster: metadata.cluster ?? "devnet",
+        blockhash: metadata.blockhash,
+        draftId: data.rentalId,
+        itemId: activeRental.itemId,
+        lastValidBlockHeight: metadata.lastValidBlockHeight,
+        renterWallet: activeRental.renterWallet,
+        requiredSigner: metadata.requiredSigner,
+        rpcUrl: metadata.rpcUrl ?? "https://api.devnet.solana.com",
+        transactionBase64: data.transaction,
+      });
+      setRentalActionStatus("ready");
+      setTxPreview(`${metadata.cluster ?? "devnet"} / ${shortKey(metadata.requiredSigner)} / ${String(data.transaction ?? "").length} chars`);
+      setAgentLine(
+        kind === "return"
+          ? "Return confirmation prepared. Owner wallet must sign to settle escrow and burn the rental token."
+          : "Auto-buyout prepared. Owner wallet must sign after due time plus grace."
+      );
+    } catch (error) {
+      setRentalActionStatus("error");
+      setAgentLine(error instanceof Error ? `Could not prepare settlement: ${error.message}` : "Could not prepare settlement. Try again.");
     }
   }
 
@@ -176,7 +246,15 @@ export function TablyAgent() {
       setTxSignature(signature);
       setTxPreview(`${preparedTx.cluster} / ${shortKey(signature)}`);
       setRentalActionStatus("sent");
-      setAgentLine(`Rental sent on ${preparedTx.cluster}: ${shortKey(signature)}.`);
+      if (preparedTx.kind === "start") {
+        setActiveRental({
+          draftId: preparedTx.draftId,
+          itemId: preparedTx.itemId,
+          renterWallet: preparedTx.renterWallet,
+          startSignature: signature,
+        });
+      }
+      setAgentLine(`${transactionKindLabel(preparedTx.kind)} sent on ${preparedTx.cluster}: ${shortKey(signature)}.`);
     } catch (error) {
       setRentalActionStatus("error");
       setAgentLine(error instanceof Error ? `Transaction not sent: ${error.message}` : "Transaction was not sent.");
@@ -271,11 +349,14 @@ export function TablyAgent() {
           onCrossmintStart={startCrossmint}
           onInputChange={setInput}
           onPrepareRental={() => void prepareRental()}
+          onPrepareSettlement={(kind) => void prepareSettlement(kind)}
           onSignAndSendRental={() => void signAndSendRental()}
           onSelectItem={selectItem}
           onSubmit={handleSubmit}
           onWalletReady={handleWalletReady}
           recommendations={recommendations}
+          activeRental={activeRental}
+          preparedTxKind={preparedTx?.kind ?? null}
           rentalActionStatus={rentalActionStatus}
           rentalHours={rentalHours}
           selectedItem={selectedItem}
@@ -347,6 +428,7 @@ function ProductCard({ item, onClick }: { item: RentalItem; onClick: () => void 
 }
 
 function AgentChatbox({
+  activeRental,
   agentLine,
   crossmintConfigured,
   expectedFee,
@@ -357,11 +439,13 @@ function AgentChatbox({
   onCrossmintStart,
   onInputChange,
   onPrepareRental,
+  onPrepareSettlement,
   onSignAndSendRental,
   onSelectItem,
   onSubmit,
   onWalletReady,
   recommendations,
+  preparedTxKind,
   rentalActionStatus,
   rentalHours,
   selectedItem,
@@ -370,6 +454,7 @@ function AgentChatbox({
   txPreview,
   wallet,
 }: {
+  activeRental: ActiveRental | null;
   agentLine: string;
   canSignRental: boolean;
   crossmintConfigured: boolean;
@@ -381,11 +466,13 @@ function AgentChatbox({
   onCrossmintStart: () => void;
   onInputChange: (value: string) => void;
   onPrepareRental: () => void;
+  onPrepareSettlement: (kind: Exclude<RentalTransactionKind, "start">) => void;
   onSignAndSendRental: () => void;
   onSelectItem: (item: RentalItem, hours?: number, note?: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onWalletReady: (address: string) => void;
   recommendations: RentalItem[];
+  preparedTxKind: RentalTransactionKind | null;
   rentalActionStatus: RentalActionStatus;
   rentalHours: number;
   selectedItem: RentalItem;
@@ -476,15 +563,18 @@ function AgentChatbox({
             ))}
           </div>
           <SelectedRentalPanel
+            activeRental={activeRental}
+            canSignRental={canSignRental}
             expectedFee={expectedFee}
             onPrepareRental={onPrepareRental}
+            onPrepareSettlement={onPrepareSettlement}
             onRequestSolanaSigner={() => setSolanaWalletVisible(true)}
             onRequestWalletConnect={() => setWalletChooserOpen(true)}
             onSignAndSendRental={onSignAndSendRental}
+            preparedTxKind={preparedTxKind}
             rentalActionStatus={rentalActionStatus}
             rentalHours={rentalHours}
             selectedItem={selectedItem}
-            canSignRental={canSignRental}
             txSignature={txSignature}
             txPreview={txPreview}
             wallet={wallet}
@@ -496,12 +586,15 @@ function AgentChatbox({
 }
 
 function SelectedRentalPanel({
+  activeRental,
   canSignRental,
   expectedFee,
   onPrepareRental,
+  onPrepareSettlement,
   onRequestSolanaSigner,
   onRequestWalletConnect,
   onSignAndSendRental,
+  preparedTxKind,
   rentalActionStatus,
   rentalHours,
   selectedItem,
@@ -509,12 +602,15 @@ function SelectedRentalPanel({
   txPreview,
   wallet,
 }: {
+  activeRental: ActiveRental | null;
   canSignRental: boolean;
   expectedFee: number;
   onPrepareRental: () => void;
+  onPrepareSettlement: (kind: Exclude<RentalTransactionKind, "start">) => void;
   onRequestSolanaSigner: () => void;
   onRequestWalletConnect: () => void;
   onSignAndSendRental: () => void;
+  preparedTxKind: RentalTransactionKind | null;
   rentalActionStatus: RentalActionStatus;
   rentalHours: number;
   selectedItem: RentalItem;
@@ -533,9 +629,11 @@ function SelectedRentalPanel({
           ? "View transaction"
       : rentalActionStatus === "ready"
         ? canSignRental
-          ? "Sign and send"
+          ? `Sign ${transactionKindLabel(preparedTxKind)}`
           : "Connect matching wallet"
-        : "Prepare rental";
+        : activeRental
+          ? "Prepare return"
+          : "Prepare rental";
 
   function handlePrimaryAction() {
     if (!wallet && !canSignRental) {
@@ -552,6 +650,10 @@ function SelectedRentalPanel({
       } else {
         onRequestSolanaSigner();
       }
+      return;
+    }
+    if (activeRental && !preparedTxKind) {
+      onPrepareSettlement("return");
       return;
     }
     onPrepareRental();
@@ -595,6 +697,27 @@ function SelectedRentalPanel({
       >
         {buttonLabel}
       </button>
+
+      {activeRental && (
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => onPrepareSettlement("return")}
+            disabled={rentalActionStatus === "preparing" || rentalActionStatus === "signing"}
+            className="min-h-[36px] rounded-full border border-[#dfe7ef] bg-white px-3 text-[11px] font-black text-[#061725] transition hover:border-[#c8ff18] hover:bg-[#f7fbef] disabled:opacity-50"
+          >
+            Confirm return
+          </button>
+          <button
+            type="button"
+            onClick={() => onPrepareSettlement("buyout")}
+            disabled={rentalActionStatus === "preparing" || rentalActionStatus === "signing"}
+            className="min-h-[36px] rounded-full border border-[#dfe7ef] bg-white px-3 text-[11px] font-black text-[#061725] transition hover:border-[#ff7867] hover:bg-[#fff5f2] disabled:opacity-50"
+          >
+            Auto-buyout
+          </button>
+        </div>
+      )}
 
       {(txPreview || rentalActionStatus === "error") && (
         <p className={`mt-2 truncate text-[11px] font-bold ${rentalActionStatus === "error" ? "text-[#ff4c36]" : "text-[#607489]"}`}>
@@ -741,6 +864,12 @@ function getRecommendations(items: RentalItem[], selectedItem: RentalItem) {
 function shortKey(value: unknown) {
   if (typeof value !== "string" || value.length < 10) return "wallet";
   return `${value.slice(0, 4)}...${value.slice(-4)}`;
+}
+
+function transactionKindLabel(kind: RentalTransactionKind | null) {
+  if (kind === "return") return "return";
+  if (kind === "buyout") return "buyout";
+  return "rental";
 }
 
 async function sendWithSolanaAdapter(
