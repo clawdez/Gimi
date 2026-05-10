@@ -1,6 +1,8 @@
 "use client";
 
 import { useCrossmintAuth, useWallet } from "@crossmint/client-sdk-react-ui";
+import { useWallet as useSolanaWallet } from "@solana/wallet-adapter-react";
+import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { COMMUNITY_ITEMS } from "@/lib/store";
 import { RentalItem } from "@/lib/types";
@@ -23,7 +25,7 @@ interface ParsedRentalIntent {
 
 const initialSteps: ToolStep[] = [
   { name: "find_rental_offers", label: "Match", status: "pending", detail: "Pick an available item" },
-  { name: "start_crossmint_login", label: "Wallet", status: "pending", detail: "Embedded wallet" },
+  { name: "start_crossmint_login", label: "Wallet", status: "pending", detail: "Embedded or Solana wallet" },
   { name: "quote_lifi_funding", label: "Funding", status: "pending", detail: "LI.FI USDC route" },
   { name: "create_solana_pay_rental_request", label: "Transaction", status: "pending", detail: "Unsigned Solana tx" },
   { name: "mint_rental_token", label: "Rental", status: "pending", detail: "Escrow and token" },
@@ -154,6 +156,13 @@ export function TablyAgent() {
     setStatusMessage(`Crossmint wallet ${shortKey(address)} ready. Escrow needed: ${selectedItem.buyoutCap} USDC.`);
   }
 
+  function handleSolanaWallet(address: string) {
+    if (!address || address === wallet) return;
+    setWallet(address);
+    mark("start_crossmint_login", "done", `Wallet ${shortKey(address)}`);
+    setStatusMessage(`Solana wallet ${shortKey(address)} ready. Escrow needed: ${selectedItem.buyoutCap} USDC.`);
+  }
+
   async function quoteLifi() {
     mark("quote_lifi_funding", "running");
     setStatusMessage("Quoting escrow funding route.");
@@ -265,6 +274,7 @@ export function TablyAgent() {
             onCrossmintStart={startCrossmint}
             onCrossmintWallet={handleCrossmintWallet}
             onInputChange={setInput}
+            onSolanaWallet={handleSolanaWallet}
             onSubmit={handleSubmit}
             receipt={receipt}
             refundable={refundable}
@@ -305,6 +315,7 @@ function ChatDialog({
   onCrossmintWallet,
   onAdvance,
   onInputChange,
+  onSolanaWallet,
   onSubmit,
   receipt,
   refundable,
@@ -326,6 +337,7 @@ function ChatDialog({
   onCrossmintWallet: (address: string) => void;
   onAdvance: () => void;
   onInputChange: (value: string) => void;
+  onSolanaWallet: (address: string) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   receipt: string;
   refundable: number;
@@ -399,17 +411,20 @@ function ChatDialog({
       </div>
 
       {!wallet && !receipt ? (
-        crossmintConfigured ? (
-          <CrossmintConnectButton onStart={onCrossmintStart} onWalletReady={onCrossmintWallet} />
-        ) : (
-          <button
-            type="button"
-            onClick={onCrossmintStart}
-            className="mt-5 h-12 w-full rounded-full bg-[#071827] text-[12px] font-black uppercase tracking-[0.12em] text-white transition hover:bg-[#c8ff2e] hover:text-[#071827]"
-          >
-            Connect Crossmint
-          </button>
-        )
+        <div className="mt-5 grid gap-2">
+          {crossmintConfigured ? (
+            <CrossmintConnectButton onStart={onCrossmintStart} onWalletReady={onCrossmintWallet} />
+          ) : (
+            <button
+              type="button"
+              onClick={onCrossmintStart}
+              className="h-12 w-full rounded-full bg-[#071827] text-[12px] font-black uppercase tracking-[0.12em] text-white transition hover:bg-[#c8ff2e] hover:text-[#071827]"
+            >
+              Continue with Crossmint
+            </button>
+          )}
+          <SolanaConnectButton onWalletReady={onSolanaWallet} />
+        </div>
       ) : (
         <button
           type="button"
@@ -466,9 +481,38 @@ function CrossmintConnectButton({
         login();
       }}
       disabled={isBusy}
-      className="mt-5 h-12 w-full rounded-full bg-[#071827] text-[12px] font-black uppercase tracking-[0.12em] text-white transition hover:bg-[#c8ff2e] hover:text-[#071827] disabled:opacity-50"
+      className="h-12 w-full rounded-full bg-[#071827] text-[12px] font-black uppercase tracking-[0.12em] text-white transition hover:bg-[#c8ff2e] hover:text-[#071827] disabled:opacity-50"
     >
       {label}
+    </button>
+  );
+}
+
+function SolanaConnectButton({ onWalletReady }: { onWalletReady: (address: string) => void }) {
+  const { connected, connecting, publicKey } = useSolanaWallet();
+  const { setVisible } = useWalletModal();
+  const address = publicKey?.toBase58();
+
+  useEffect(() => {
+    if (connected && address) {
+      onWalletReady(address);
+    }
+  }, [address, connected, onWalletReady]);
+
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        if (connected && address) {
+          onWalletReady(address);
+          return;
+        }
+        setVisible(true);
+      }}
+      disabled={connecting}
+      className="h-12 w-full rounded-full border border-[#071827]/20 bg-white text-[12px] font-black uppercase tracking-[0.12em] text-[#071827] transition hover:border-[#071827] hover:bg-[#eef5f9] disabled:opacity-50"
+    >
+      {connecting ? "Connecting..." : connected && address ? `Solana ${shortKey(address)}` : "Connect Solana wallet"}
     </button>
   );
 }
