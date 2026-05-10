@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getItem, getItems } from "@/lib/store";
+import { buildSettleRentalTransaction, buildStartRentalTransaction, DEMO_RENTER_WALLET, publicKeyOrFallback } from "@/lib/rentproofProgram";
 
 const tools = [
   "rentproof.find_offers",
@@ -8,6 +9,7 @@ const tools = [
   "rentproof.create_rental_request",
   "rentproof.get_session",
   "rentproof.request_return",
+  "rentproof.prepare_auto_buyout",
   "rentproof.get_receipt",
 ];
 
@@ -53,6 +55,66 @@ export async function POST(req: NextRequest) {
         targetChain: "solana",
         riskSummary: "Low-value item, full buyout cap escrow, owner score above threshold.",
       },
+    });
+  }
+
+  if (tool === "rentproof.create_rental_request") {
+    const item = getItem(body.itemId ?? "power_bank_18") ?? getItems()[0];
+    const renter = publicKeyOrFallback(body.renterWallet, DEMO_RENTER_WALLET);
+    const hours = Number(body.hours ?? item.expectedHours);
+    const rentalId = body.rentalId ?? body.draftId ?? `mcp_${item.id}_${crypto.randomUUID()}`;
+    const serialized = await buildStartRentalTransaction({
+      itemId: item.id,
+      ownerWallet: item.owner,
+      renterWallet: renter.toBase58(),
+      rentalId,
+      rentalSeconds: Math.ceil(hours * 3600),
+    });
+
+    return NextResponse.json({
+      rentalId,
+      transaction: serialized.transactionBase64,
+      transactionMetadata: {
+        cluster: serialized.cluster,
+        rpcUrl: serialized.rpcUrl,
+        blockhash: serialized.blockhash,
+        lastValidBlockHeight: serialized.lastValidBlockHeight,
+        feePayer: serialized.rentProof.accounts.renter,
+        requiredSigner: serialized.rentProof.accounts.renter,
+      },
+      rentProof: serialized.rentProof,
+    });
+  }
+
+  if (tool === "rentproof.request_return" || tool === "rentproof.prepare_auto_buyout") {
+    const item = getItem(body.itemId ?? "power_bank_18") ?? getItems()[0];
+    const renter = publicKeyOrFallback(body.renterWallet, DEMO_RENTER_WALLET);
+    const rentalId = body.rentalId ?? body.draftId;
+
+    if (!rentalId) {
+      return NextResponse.json({ error: "Missing rental id" }, { status: 400 });
+    }
+
+    const serialized = await buildSettleRentalTransaction({
+      kind: tool === "rentproof.request_return" ? "confirm_return" : "auto_buyout",
+      itemId: item.id,
+      ownerWallet: item.owner,
+      renterWallet: renter.toBase58(),
+      rentalId,
+    });
+
+    return NextResponse.json({
+      rentalId,
+      transaction: serialized.transactionBase64,
+      transactionMetadata: {
+        cluster: serialized.cluster,
+        rpcUrl: serialized.rpcUrl,
+        blockhash: serialized.blockhash,
+        lastValidBlockHeight: serialized.lastValidBlockHeight,
+        feePayer: serialized.rentProof.accounts.owner,
+        requiredSigner: serialized.rentProof.accounts.owner,
+      },
+      rentProof: serialized.rentProof,
     });
   }
 

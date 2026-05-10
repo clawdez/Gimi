@@ -13,6 +13,7 @@ User asks for an item
 -> Crossmint embedded wallet login creates/loads the renter wallet
 -> LI.FI quote routes Base USDC into Solana USDC when real wallet addresses are supplied
 -> Solana Pay endpoint returns an unsigned serialized devnet transaction
+-> Wallet signs and sends the prepared transaction from the chat UI
 -> Tably Anchor program locks escrow and creates rental session state
 -> Renter receives a program-owned rental token PDA
 -> Owner confirms physical return, or auto-buyout triggers after grace
@@ -28,7 +29,8 @@ The MVP is designed for physical-world rentals where the agent helps people borr
 - Demo inventory, rental session state, return flow, receipt copy, and reputation-ready result.
 - Anchor `rental_session` program for SPL-token escrow and rental lifecycle.
 - Public generated IDL at `/idl/rental_session.json`.
-- Program-aware Solana Pay endpoint at `/api/solana-pay/start-rental` returning an unsigned serialized wallet transaction.
+- Program-aware Solana Pay endpoints returning unsigned serialized wallet transactions for `start_rental`, `confirm_return`, and `auto_buyout`.
+- Wallet signing/sending from the chat UI through Crossmint Solana wallets or Solana wallet adapter wallets.
 - LI.FI quote endpoint at `/api/lifi/quote` using live LI.FI REST quotes when real source/destination wallets are supplied, with demo fallback for local UI mode.
 - ElevenLabs server tools endpoint at `/api/elevenlabs/tools`.
 - MCP-style read/prepare endpoint at `/api/mcp`.
@@ -43,7 +45,7 @@ The MVP is designed for physical-world rentals where the agent helps people borr
 | ElevenLabs | `/api/elevenlabs/tools` exposes server tools for inventory search, terms drafting, LI.FI funding quotes, and unsigned Solana rental transactions |
 | Virtuals | Agent perceives inventory, decides best item, and acts around physical-world handoff/return workflows |
 | MCP | `/api/mcp` exposes read/prepare rental tools for external agents |
-| Solana Pay | `/api/solana-pay/start-rental` returns a Solana Pay request plus program id, PDA accounts, and instruction args |
+| Solana Pay | `/api/solana-pay/start-rental`, `/api/solana-pay/confirm-return`, and `/api/solana-pay/auto-buyout` return Solana Pay-style request payloads plus program id, PDA accounts, required signer, and instruction args |
 | Crossmint | `@crossmint/client-sdk-react-ui` provides real email/Google login and creates/loads a Solana renter wallet through `NEXT_PUBLIC_CROSSMINT_API_KEY` |
 
 ## Local Development
@@ -126,6 +128,30 @@ Response includes:
 - `transactionMetadata.requiredSigner`
 - `transactionMetadata.lastValidBlockHeight`
 
+### `POST /api/solana-pay/confirm-return`
+
+Returns an unsigned serialized devnet `confirm_return` transaction for the owner wallet to sign. It settles metered fee, platform fee, owner payout, renter refund, closes escrow/rental-token state, and emits the return receipt event.
+
+Example request:
+
+```bash
+curl -s -X POST http://localhost:3000/api/solana-pay/confirm-return \
+  -H 'content-type: application/json' \
+  -d '{"itemId":"mic_11","renterWallet":"5pNLovuXAbyKM8UGDKZg9Qqe85Sqt1kMPNaippombvwC","rentalId":"draft_mic_11"}'
+```
+
+### `POST /api/solana-pay/auto-buyout`
+
+Returns an unsigned serialized devnet `auto_buyout` transaction for the owner wallet to sign after due time plus grace. It claims the buyout escrow, closes rental-token state, marks the item bought out, and emits the buyout receipt event.
+
+Example request:
+
+```bash
+curl -s -X POST http://localhost:3000/api/solana-pay/auto-buyout \
+  -H 'content-type: application/json' \
+  -d '{"itemId":"mic_11","renterWallet":"5pNLovuXAbyKM8UGDKZg9Qqe85Sqt1kMPNaippombvwC","rentalId":"draft_mic_11"}'
+```
+
 ### `POST /api/lifi/quote`
 
 Returns a LI.FI route for funding the Solana escrow amount. With real wallet addresses, it calls LI.FI REST and returns the LI.FI `transactionRequest`.
@@ -152,6 +178,8 @@ Handles tool calls:
 - `rentproof.draft_terms`
 - `rentproof.quote_funding`
 - `rentproof.create_rental_request`
+- `rentproof.prepare_return`
+- `rentproof.prepare_auto_buyout`
 
 ### `POST /api/rent`
 
@@ -163,16 +191,16 @@ Serves the generated Anchor IDL.
 
 ## Current Boundary
 
-This repo now has a deployed devnet Anchor settlement program, a product-ready demo surface, live LI.FI quote support, ElevenLabs server-tool endpoints, and unsigned serialized Solana transaction generation. It still does not sign or send user transactions by itself.
+This repo now has a deployed devnet Anchor settlement program, a product-ready demo surface, live LI.FI quote support, ElevenLabs server-tool endpoints, unsigned serialized Solana transaction generation, and wallet-side signing/sending for prepared transactions.
 
 - Program id: `AVL316tYxrg8MhEeWtaxbwdShMWybzRAH1zNQWvX355K`.
 - Crossmint wallet login requires a client API key with Wallet API scopes in `NEXT_PUBLIC_CROSSMINT_API_KEY`.
 - LI.FI live quotes require valid source and destination wallet addresses; local demo mode falls back when those are missing.
 - ElevenLabs is server-tool ready, but the hosted ElevenLabs agent still needs to be configured with this endpoint and `ELEVENLABS_API_KEY`.
-- MCP never signs or moves funds; it only exposes read/prepare tools.
+- MCP and ElevenLabs tools never sign or move funds; they expose read/prepare tools only.
 
 ## Next Steps
 
 1. Register `/api/elevenlabs/tools` in the ElevenLabs agent console.
-2. Add wallet UI signing for the returned `transaction`.
-3. Add serialized `confirm_return` and `auto_buyout` transactions.
+2. Run an end-to-end devnet wallet test with funded renter/owner demo wallets.
+3. Add indexed session/receipt persistence so refreshed production pages can show prior tx state.

@@ -122,6 +122,10 @@ export function startRentalInstructionData(input: {
   return data;
 }
 
+export function settleRentalInstructionData(kind: "confirm_return" | "auto_buyout") {
+  return anchorInstructionDiscriminator(kind);
+}
+
 export async function buildStartRentalTransaction(input: {
   itemId: string;
   ownerWallet?: unknown;
@@ -159,6 +163,57 @@ export async function buildStartRentalTransaction(input: {
 
   const transaction = new Transaction({
     feePayer: renter,
+    recentBlockhash: blockhash,
+  }).add(instruction);
+
+  return {
+    rentProof,
+    transactionBase64: transaction
+      .serialize({ requireAllSignatures: false, verifySignatures: false })
+      .toString("base64"),
+    blockhash,
+    lastValidBlockHeight,
+    cluster: SOLANA_CLUSTER,
+    rpcUrl: SOLANA_RPC_URL,
+  };
+}
+
+export async function buildSettleRentalTransaction(input: {
+  kind: "confirm_return" | "auto_buyout";
+  itemId: string;
+  ownerWallet?: unknown;
+  renterWallet?: unknown;
+  rentalId: string;
+}) {
+  const rentProof = deriveRentProofAccounts(input);
+  const accounts = rentProof.accounts;
+  const owner = new PublicKey(accounts.owner);
+  const connection = new Connection(SOLANA_RPC_URL, "confirmed");
+  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+
+  const instruction = new TransactionInstruction({
+    programId: RENTAL_SESSION_PROGRAM_ID,
+    keys: [
+      { pubkey: new PublicKey(accounts.config), isSigner: false, isWritable: false },
+      { pubkey: new PublicKey(accounts.item), isSigner: false, isWritable: true },
+      { pubkey: owner, isSigner: true, isWritable: true },
+      { pubkey: new PublicKey(accounts.renter), isSigner: false, isWritable: true },
+      { pubkey: new PublicKey(accounts.feeAuthority), isSigner: false, isWritable: false },
+      { pubkey: new PublicKey(accounts.session), isSigner: false, isWritable: true },
+      { pubkey: new PublicKey(accounts.rentalToken), isSigner: false, isWritable: true },
+      { pubkey: new PublicKey(accounts.escrowTokenAccount), isSigner: false, isWritable: true },
+      { pubkey: new PublicKey(accounts.escrowAuthority), isSigner: false, isWritable: false },
+      { pubkey: new PublicKey(accounts.renterTokenAccount), isSigner: false, isWritable: true },
+      { pubkey: new PublicKey(accounts.ownerTokenAccount), isSigner: false, isWritable: true },
+      { pubkey: new PublicKey(accounts.platformFeeTokenAccount), isSigner: false, isWritable: true },
+      { pubkey: new PublicKey(accounts.paymentMint), isSigner: false, isWritable: false },
+      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+    ],
+    data: settleRentalInstructionData(input.kind),
+  });
+
+  const transaction = new Transaction({
+    feePayer: owner,
     recentBlockhash: blockhash,
   }).add(instruction);
 
