@@ -39,3 +39,41 @@ input {
   background-size: 3px 3px, 4px 4px, 5px 5px;
   mix-blend-mode: soft-light;
 }
+
+.inventory-row-left {
+  animation: inventory-row-left 52s linear infinite;
+}
+
+.inventory-row-right {
+  animation: inventory-row-right 58s linear infinite;
+}
+
+.inventory-row-left:hover,
+.inventory-row-right:hover {
+  animation-play-state: paused;
+}
+
+@keyframes inventory-row-left {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-33.333%);
+  }
+}
+
+@keyframes inventory-row-right {
+  from {
+    transform: translateX(-33.333%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .inventory-row-left,
+  .inventory-row-right {
+    animation: none;
+  }
+}
