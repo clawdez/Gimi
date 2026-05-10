@@ -47,7 +47,6 @@ const crossmintConfigured = Boolean(process.env.NEXT_PUBLIC_CROSSMINT_API_KEY);
 export function TablyAgent() {
   const availableItems = COMMUNITY_ITEMS.filter((item) => item.status === "available");
   const defaultItem = availableItems[0] ?? COMMUNITY_ITEMS[0];
-  const floatingItems = availableItems.slice(0, 6);
   const inputRef = useRef<HTMLInputElement>(null);
   const [selectedItem, setSelectedItem] = useState(defaultItem);
   const [rentalHours, setRentalHours] = useState(defaultItem.expectedHours);
@@ -268,15 +267,15 @@ export function TablyAgent() {
   return (
     <section
       id="agent"
-      className="grain-field relative min-h-screen overflow-hidden bg-[#faf7ff] px-4 pb-8 pt-28 text-[#061725] sm:px-8 sm:pt-32"
+      className="grain-field relative h-[100svh] overflow-hidden bg-[#faf7ff] px-4 pb-3 pt-20 text-[#061725] sm:px-8 sm:pb-5 sm:pt-24"
     >
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_14%_24%,rgba(197,255,24,0.34),transparent_20%),radial-gradient(circle_at_86%_23%,rgba(82,204,255,0.32),transparent_20%),radial-gradient(circle_at_12%_72%,rgba(147,109,255,0.28),transparent_22%),radial-gradient(circle_at_88%_70%,rgba(255,190,94,0.32),transparent_24%),linear-gradient(125deg,#efeaff_0%,#fff8ec_48%,#f5fbff_100%)]" />
       <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(255,255,255,0.28),rgba(255,255,255,0.1)_44%,rgba(255,255,255,0.36))]" />
 
-      <FloatingInventory items={floatingItems} selectedItem={selectedItem} onSelectItem={selectItem} />
+      <MovingProductRows items={availableItems} selectedItem={selectedItem} onSelectItem={selectItem} />
 
-      <div className="relative mx-auto flex min-h-[calc(100vh-9rem)] max-w-6xl items-center justify-center">
-        <div className="relative z-10 w-full max-w-[660px]">
+      <div className="relative mx-auto flex h-full max-w-6xl items-center justify-center">
+        <div className="relative z-10 w-full max-w-[620px]">
           <GeneratedCheckout
             actionLabel={actionLabel}
             matchCount={availableItems.length}
@@ -295,10 +294,6 @@ export function TablyAgent() {
             rentalHours={rentalHours}
             routePreview={routePreview}
             selectedItem={selectedItem}
-            setRentalHours={(hours) => {
-              setRentalHours(hours);
-              resetSettlement();
-            }}
             statusMessage={statusMessage}
             steps={steps}
             txPreview={txPreview}
@@ -310,7 +305,7 @@ export function TablyAgent() {
   );
 }
 
-function FloatingInventory({
+function MovingProductRows({
   items,
   selectedItem,
   onSelectItem,
@@ -319,14 +314,6 @@ function FloatingInventory({
   selectedItem: RentalItem;
   onSelectItem: (item: RentalItem, hours?: number, note?: string) => void;
 }) {
-  const positions = [
-    "left-[6%] top-[17%] w-48 rotate-[-12deg]",
-    "right-[8%] top-[15%] w-48 rotate-[8deg]",
-    "left-[3%] top-[43%] w-48 rotate-[3deg]",
-    "right-[5%] top-[43%] w-48 rotate-[-5deg]",
-    "left-[7%] bottom-[9%] w-48 rotate-[-4deg]",
-    "right-[9%] bottom-[8%] w-48 rotate-[7deg]",
-  ];
   const blobColors = [
     "bg-[#c8ff18]",
     "bg-[#8edfff]",
@@ -335,51 +322,59 @@ function FloatingInventory({
     "bg-[#b99cff]",
     "bg-[#ffd77c]",
   ];
-  const icons = ["+", "z", "c", "n", "m", "b"];
-  const preferredIds = ["power_bank_18", "charger_07", "camera_04", "mic_11", "adapter_03", "tripod_09"];
-  const displayItems = preferredIds
-    .map((id) => items.find((item) => item.id === id))
-    .filter((item): item is RentalItem => Boolean(item))
-    .slice(0, 6);
+  const rowIds = [
+    ["power_bank_18", "charger_07", "camera_04", "mic_11", "adapter_03", "tripod_09"],
+    ["charger_07", "adapter_03", "mic_11", "power_bank_18", "camera_04", "tripod_09"],
+    ["camera_04", "power_bank_18", "tripod_09", "charger_07", "mic_11", "adapter_03"],
+  ];
+  const rows = rowIds.map((ids) => ids.map((id) => items.find((item) => item.id === id)).filter((item): item is RentalItem => Boolean(item)));
+  const rowStyles = [
+    "top-[13%] supply-marquee-left",
+    "top-[39%] supply-marquee-right",
+    "top-[65%] supply-marquee-left supply-marquee-slow",
+  ];
 
   return (
-    <div className="pointer-events-none absolute inset-0 hidden xl:block">
-      <svg className="absolute inset-0 h-full w-full opacity-45" aria-hidden="true">
-        <path d="M190 330 C340 420 340 520 455 545" stroke="white" strokeWidth="3" fill="none" strokeDasharray="10 12" />
-        <path d="M1245 330 C1090 410 1080 520 980 545" stroke="white" strokeWidth="3" fill="none" strokeDasharray="10 12" />
-        <path d="M210 730 C345 675 370 610 455 590" stroke="white" strokeWidth="3" fill="none" strokeDasharray="10 12" />
-        <path d="M1225 735 C1090 675 1070 615 985 590" stroke="white" strokeWidth="3" fill="none" strokeDasharray="10 12" />
-      </svg>
-      {displayItems.map((item, index) => {
-        const selected = item.id === selectedItem.id;
+    <div className="pointer-events-none absolute inset-0 overflow-hidden">
+      {rows.map((row, rowIndex) => {
+        const repeated = [...row, ...row, ...row];
         return (
-          <button
-            key={item.id}
-            type="button"
-            aria-label={`Select ${item.name}`}
-            onClick={() => onSelectItem(item, item.expectedHours, `Generated checkout for ${item.name}.`)}
-            className={`pointer-events-auto absolute ${positions[index % positions.length]} group transition duration-300 hover:z-20 hover:scale-105`}
+          <div
+            key={rowIndex}
+            className={`absolute left-1/2 flex w-max -translate-x-1/2 items-center gap-8 opacity-90 ${rowStyles[rowIndex]}`}
           >
-            <span className={`absolute inset-3 -z-10 rounded-[42%_58%_48%_52%/58%_38%_62%_42%] ${blobColors[index % blobColors.length]} shadow-[0_28px_70px_rgba(75,53,140,0.16)] ${selected ? "ring-8 ring-[#c8ff18]/35" : ""}`} />
-            <span className="absolute -right-2 top-[46%] grid h-9 w-9 place-items-center rounded-full border border-white/80 bg-white/86 text-[13px] font-black text-[#6b4cff] shadow-lg backdrop-blur-md">
-              {icons[index % icons.length]}
-            </span>
-            <span className="absolute -bottom-1 left-4 rounded-[12px] bg-white px-3 py-2 text-[14px] font-black shadow-[0_14px_34px_rgba(6,23,37,0.12)]">
-              ${item.ratePerHour}/h
-            </span>
-            <span className="block p-8">
-              <ProductVisual item={item} variant="floating" />
-            </span>
-          </button>
+            {repeated.map((item, index) => {
+              const selected = item.id === selectedItem.id;
+              return (
+                <button
+                  key={`${rowIndex}-${item.id}-${index}`}
+                  type="button"
+                  aria-label={`Select ${item.name}`}
+                  onClick={() => onSelectItem(item, item.expectedHours, `Generated chat result for ${item.name}.`)}
+                  className="pointer-events-auto group relative w-36 shrink-0 transition duration-300 hover:z-20 hover:scale-105 sm:w-44 xl:w-52"
+                >
+                  <span className={`absolute inset-4 -z-10 rounded-[42%_58%_48%_52%/58%_38%_62%_42%] ${blobColors[(index + rowIndex) % blobColors.length]} shadow-[0_28px_70px_rgba(75,53,140,0.16)] ${selected ? "ring-8 ring-[#c8ff18]/35" : ""}`} />
+                  <span className="absolute -bottom-1 left-5 rounded-[12px] bg-white px-3 py-2 text-[13px] font-black shadow-[0_14px_34px_rgba(6,23,37,0.12)]">
+                    ${item.ratePerHour}/h
+                  </span>
+                  <span className="block p-7">
+                    <ProductVisual item={item} variant="floating" />
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         );
       })}
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.88)_0%,rgba(255,255,255,0.72)_22%,rgba(255,255,255,0.2)_44%,rgba(255,255,255,0)_70%)]" />
     </div>
   );
 }
 
-function ProductVisual({ item, variant = "floating" }: { item: RentalItem; variant?: "floating" | "hero" }) {
+function ProductVisual({ item, variant = "floating" }: { item: RentalItem; variant?: "floating" | "hero" | "mini" }) {
   const large = variant === "hero";
-  const frameClass = large ? "h-[280px] sm:h-[300px]" : "h-[132px]";
+  const mini = variant === "mini";
+  const frameClass = mini ? "h-16" : large ? "h-[138px] sm:h-[230px]" : "h-[132px]";
   const visualKey = `${item.id} ${item.category}`.toLowerCase();
 
   if (visualKey.includes("charger")) {
@@ -451,15 +446,6 @@ function ProductVisual({ item, variant = "floating" }: { item: RentalItem; varia
   );
 }
 
-function SmallMetric({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) {
-  return (
-    <div className="border-r border-[#e7ecf2] px-4 py-3 last:border-r-0">
-      <p className={`text-[22px] font-black leading-none ${accent ? "text-[#5f8f08]" : "text-[#061725]"}`}>{value}</p>
-      <p className={`mt-1 text-[10px] font-black uppercase tracking-[0.18em] ${accent ? "text-[#5f8f08]" : "text-[#506477]"}`}>{label}</p>
-    </div>
-  );
-}
-
 function GeneratedCheckout({
   actionLabel,
   matchCount,
@@ -478,7 +464,6 @@ function GeneratedCheckout({
   rentalHours,
   routePreview,
   selectedItem,
-  setRentalHours,
   statusMessage,
   steps,
   txPreview,
@@ -501,7 +486,6 @@ function GeneratedCheckout({
   rentalHours: number;
   routePreview: string;
   selectedItem: RentalItem;
-  setRentalHours: (hours: number) => void;
   statusMessage: string;
   steps: ToolStep[];
   txPreview: string;
@@ -511,16 +495,19 @@ function GeneratedCheckout({
   const progressSteps = steps.slice(0, 4);
 
   return (
-    <div className="relative overflow-hidden rounded-[52px] border border-white/80 bg-white/62 px-5 pb-6 pt-8 shadow-[0_38px_110px_rgba(75,53,140,0.16)] backdrop-blur-2xl sm:rounded-[72px] sm:px-10 sm:pb-8 sm:pt-12">
-      <div className="pointer-events-none absolute inset-3 rounded-[44px] border-4 border-white/54 sm:rounded-[62px]" />
+    <div className="relative max-h-full overflow-hidden rounded-[34px] border border-white/80 bg-white/72 px-5 pb-5 pt-6 shadow-[0_38px_110px_rgba(75,53,140,0.18)] backdrop-blur-2xl sm:rounded-[48px] sm:px-8 sm:pb-7 sm:pt-8">
+      <div className="pointer-events-none absolute inset-2 rounded-[27px] border-[3px] border-white/50 sm:rounded-[40px]" />
       <div className="relative">
-        <h1 className="text-center text-[42px] font-black leading-none tracking-normal text-[#061725] sm:text-[56px]">
-          What do you need?
+        <h1 className="text-center text-[34px] font-black leading-[0.95] tracking-normal text-[#061725] sm:text-[48px]">
+          Ask Tably
         </h1>
+        <p className="mx-auto mt-2 max-w-[420px] text-center text-sm font-semibold leading-6 text-[#506477]">
+          Describe what you need to borrow. The agent finds the item and prepares the rental.
+        </p>
 
         <form
           onSubmit={onSubmit}
-          className="mx-auto mt-8 flex max-w-[520px] items-center gap-2 rounded-full border border-[#dfe5ee] bg-white/86 p-2 shadow-[0_18px_44px_rgba(6,23,37,0.08)]"
+          className="mx-auto mt-5 flex max-w-[500px] items-center gap-2 rounded-full border border-[#dfe5ee] bg-white/92 p-1.5 shadow-[0_18px_44px_rgba(6,23,37,0.08)] sm:p-2"
         >
           <label className="sr-only" htmlFor="agent-command">Ask Tably</label>
           <input
@@ -528,67 +515,37 @@ function GeneratedCheckout({
             ref={inputRef}
             value={input}
             onChange={(event) => onInputChange(event.target.value)}
-            placeholder="charger for 3 hours near the library"
-            className="h-12 min-w-0 flex-1 rounded-full bg-transparent px-5 text-[17px] font-semibold text-[#061725] outline-none placeholder:text-[#061725]/70 sm:text-[20px]"
+            placeholder="charger for 3h near library"
+            className="h-10 min-w-0 flex-1 rounded-full bg-transparent px-4 text-[15px] font-semibold text-[#061725] outline-none placeholder:text-[#061725]/70 sm:h-12 sm:px-5 sm:text-[19px]"
           />
           <button
             type="submit"
-            className="grid min-h-[52px] min-w-[52px] place-items-center rounded-full bg-[#c8ff18] text-[30px] font-black leading-none text-[#061725] transition hover:scale-105 hover:bg-[#ff7867]"
+            className="grid min-h-[44px] min-w-[44px] place-items-center rounded-full bg-[#c8ff18] text-[26px] font-black leading-none text-[#061725] transition hover:scale-105 hover:bg-[#ff7867] sm:min-h-[52px] sm:min-w-[52px] sm:text-[30px]"
             aria-label={input.trim() ? "Ask Tably" : "Generate rental checkout"}
           >
             &gt;
           </button>
         </form>
 
-        <p className="mx-auto mt-7 max-w-[520px] text-[15px] font-semibold text-[#31445f]">
-          <span className="text-[#f0b100]">+</span> Found {matchCount}{" "}
-          matches. Here&apos;s the best one.
-        </p>
-
-        <div className="mx-auto mt-5 grid max-w-[560px] gap-5 sm:grid-cols-[250px_1fr]">
-          <div className="relative rounded-[28px] bg-[#f0f2f6] p-4 shadow-[inset_0_0_0_1px_rgba(6,23,37,0.05)]">
-            <button
-              type="button"
-              className="absolute right-4 top-4 grid h-11 w-11 place-items-center rounded-full bg-white text-[22px] text-[#061725] shadow-[0_10px_24px_rgba(6,23,37,0.1)]"
-              aria-label="Save item"
-            >
-              o
-            </button>
-            <ProductVisual item={selectedItem} variant="hero" />
-            <div className="absolute bottom-5 left-5 rounded-full bg-[#c8ff18] px-4 py-2 text-[12px] font-black text-[#061725] shadow-[0_12px_28px_rgba(84,128,0,0.22)]">
+        <div className="mx-auto mt-4 max-w-[500px] rounded-[24px] border border-[#e2e9f0] bg-white/76 p-3 shadow-[0_14px_40px_rgba(6,23,37,0.06)]">
+          <p className="text-[13px] font-semibold leading-6 text-[#31445f]">
+            <span className="text-[#f0b100]">+</span> Found {matchCount} matches. Best fit:
+          </p>
+          <div className="mt-2 flex items-center gap-3">
+            <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-[18px] bg-[#eef2f6]">
+              <ProductVisual item={selectedItem} variant="mini" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[16px] font-black text-[#061725]">{selectedItem.name}</p>
+              <p className="mt-0.5 truncate text-[12px] font-bold text-[#607489]">
+                ${selectedItem.ratePerHour}/h · {rentalHours}h · ${expectedFee} fee · ${refundable} refund
+              </p>
+            </div>
+            <span className="hidden rounded-full bg-[#c8ff18] px-3 py-1.5 text-[11px] font-black text-[#061725] sm:inline-flex">
               {Math.max(88, Math.min(99, selectedItem.ownerScore))}% match
-            </div>
+            </span>
           </div>
-
-          <div className="min-w-0 py-1">
-            <h2 className="text-[24px] font-black leading-tight text-[#061725] sm:text-[27px]">{selectedItem.name}</h2>
-            <p className="mt-2 text-[15px] font-semibold text-[#607489]">
-              <span className="font-black text-[#7caf0b]">4.9</span> ({selectedItem.returnedOkCount}) · {selectedItem.ownerName} ·{" "}
-              <span className="text-[#315fd6]">{selectedItem.locationLabel}</span>
-            </p>
-
-            <div className="mt-5 inline-flex items-center gap-2 rounded-full border border-[#dfe7ef] bg-white/72 px-4 py-3 text-[15px] font-black text-[#061725]">
-              <span>Clock</span>
-              <button type="button" onClick={() => setRentalHours(Math.max(1, rentalHours - 1))} className="px-1 text-[#69798a]">-</button>
-              {rentalHours} hours
-              <button type="button" onClick={() => setRentalHours(Math.min(24, rentalHours + 1))} className="px-1 text-[#69798a]">+</button>
-            </div>
-
-            <div className="mt-4 grid grid-cols-3 overflow-hidden rounded-[18px] border border-[#dfe7ef] bg-white/70">
-              <SmallMetric label="fee" value={`$${expectedFee}`} />
-              <SmallMetric label="escrow" value={`$${selectedItem.buyoutCap}`} />
-              <SmallMetric label="refund" value={`$${refundable}`} accent />
-            </div>
-
-            <div className="mt-4 flex items-center gap-3 text-[16px] font-bold text-[#061725]">
-              <span className="grid h-8 w-8 place-items-center rounded-[10px] border border-[#dfe7ef] bg-white">Cal</span>
-              Return by <span className="text-[#ff4c36]">{returnTime}</span>
-            </div>
-
-            <div className="mt-4 rounded-[18px] bg-[#eef5f9]/88 px-4 py-3 text-[12px] font-semibold leading-5 text-[#53697d]">
-              Escrow is held securely on-chain and refunded when the item is returned on time.
-            </div>
-          </div>
+          <p className="mt-2 text-[12px] font-semibold text-[#53697d]">Return by {returnTime}. Escrow is held on-chain.</p>
         </div>
 
         {(routePreview || txPreview || receipt) && (
@@ -598,14 +555,14 @@ function GeneratedCheckout({
         )}
 
         {!wallet && !receipt ? (
-          <div className="mx-auto mt-7 grid max-w-[520px] gap-3">
+          <div className="mx-auto mt-4 grid max-w-[500px] gap-2 sm:mt-6 sm:gap-3">
             {crossmintConfigured ? (
               <CrossmintConnectButton onStart={onCrossmintStart} onWalletReady={onCrossmintWallet} />
             ) : (
               <button
                 type="button"
                 onClick={onCrossmintStart}
-                className="min-h-[58px] w-full rounded-full bg-[#061725] text-[17px] font-black text-white shadow-[0_18px_40px_rgba(6,23,37,0.16)] transition hover:bg-[#c8ff18] hover:text-[#061725]"
+                className="min-h-[48px] w-full rounded-full bg-[#061725] text-[15px] font-black text-white shadow-[0_18px_40px_rgba(6,23,37,0.16)] transition hover:bg-[#c8ff18] hover:text-[#061725] sm:min-h-[56px] sm:text-[17px]"
               >
                 Continue with Crossmint
               </button>
@@ -617,13 +574,13 @@ function GeneratedCheckout({
             type="button"
             onClick={onAdvance}
             disabled={Boolean(receipt)}
-            className="mx-auto mt-7 block min-h-[58px] w-full max-w-[520px] rounded-full bg-[#061725] text-[17px] font-black text-white shadow-[0_18px_40px_rgba(6,23,37,0.16)] transition hover:bg-[#c8ff18] hover:text-[#061725] disabled:opacity-50"
+            className="mx-auto mt-4 block min-h-[48px] w-full max-w-[500px] rounded-full bg-[#061725] text-[15px] font-black text-white shadow-[0_18px_40px_rgba(6,23,37,0.16)] transition hover:bg-[#c8ff18] hover:text-[#061725] disabled:opacity-50 sm:mt-6 sm:min-h-[56px] sm:text-[17px]"
           >
             {actionLabel}
           </button>
         )}
 
-        <div className="mx-auto mt-6 flex max-w-[520px] flex-wrap items-center justify-center gap-2 text-[12px] font-bold text-[#5264b7]">
+        <div className="mx-auto mt-3 flex max-w-[500px] flex-wrap items-center justify-center gap-1.5 text-[11px] font-bold text-[#5264b7] sm:mt-5 sm:gap-2 sm:text-[12px]">
           {progressSteps.map((step) => (
             <span
               key={step.name}
@@ -636,7 +593,7 @@ function GeneratedCheckout({
           ))}
         </div>
 
-        <p className="mt-5 text-center text-[14px] font-semibold text-[#5264b7]">Secure. Decentralized. Community-owned.</p>
+        <p className="mt-2 text-center text-[12px] font-semibold text-[#5264b7] sm:mt-4 sm:text-[14px]">Secure. Decentralized. Community-owned.</p>
         <p className="sr-only">{statusMessage}</p>
       </div>
     </div>
@@ -670,7 +627,7 @@ function CrossmintConnectButton({
         login();
       }}
       disabled={isBusy}
-      className="min-h-[58px] w-full rounded-full bg-[#061725] text-[17px] font-black text-white shadow-[0_18px_40px_rgba(6,23,37,0.16)] transition hover:bg-[#c8ff18] hover:text-[#061725] disabled:opacity-50"
+      className="min-h-[48px] w-full rounded-full bg-[#061725] text-[15px] font-black text-white shadow-[0_18px_40px_rgba(6,23,37,0.16)] transition hover:bg-[#c8ff18] hover:text-[#061725] disabled:opacity-50 sm:min-h-[56px] sm:text-[17px]"
     >
       {label}
     </button>
@@ -699,7 +656,7 @@ function SolanaConnectButton({ onWalletReady }: { onWalletReady: (address: strin
         setVisible(true);
       }}
       disabled={connecting}
-      className="min-h-[58px] w-full rounded-full border border-[#dfe7ef] bg-white/82 text-[17px] font-black text-[#061725] shadow-[0_14px_34px_rgba(6,23,37,0.06)] transition hover:border-[#6b4cff] hover:bg-white disabled:opacity-50"
+      className="min-h-[48px] w-full rounded-full border border-[#dfe7ef] bg-white/82 text-[15px] font-black text-[#061725] shadow-[0_14px_34px_rgba(6,23,37,0.06)] transition hover:border-[#6b4cff] hover:bg-white disabled:opacity-50 sm:min-h-[56px] sm:text-[17px]"
     >
       {connecting ? "Connecting..." : connected && address ? `Solana ${shortKey(address)}` : "Connect Solana"}
     </button>
