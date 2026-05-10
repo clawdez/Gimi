@@ -31,11 +31,13 @@ export function TablyAgent() {
   const availableItems = COMMUNITY_ITEMS.filter((item) => item.status === "available");
   const defaultItem = availableItems[0] ?? COMMUNITY_ITEMS[0];
   const inputRef = useRef<HTMLInputElement>(null);
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [selectedItem, setSelectedItem] = useState(defaultItem);
   const [rentalHours, setRentalHours] = useState(defaultItem.expectedHours);
   const [input, setInput] = useState("");
   const [wallet, setWallet] = useState("");
   const [hasSearched, setHasSearched] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
   const [agentLine, setAgentLine] = useState("Tell Tably what you need. Recommendations appear after you ask.");
 
   const expectedFee = useMemo(
@@ -44,9 +46,17 @@ export function TablyAgent() {
   );
   const recommendations = useMemo(() => getRecommendations(availableItems, selectedItem), [availableItems, selectedItem]);
 
+  useEffect(() => {
+    return () => {
+      if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    };
+  }, []);
+
   function focusQueryForItem(item: RentalItem) {
     setInput(`${item.name} for ${item.expectedHours}h`);
-    setAgentLine(`Ask for ${item.name}, then Tably will compare similar options.`);
+    setHasSearched(false);
+    setIsSearching(false);
+    setAgentLine(`Press enter to compare ${item.name} with similar rentals.`);
     inputRef.current?.focus();
   }
 
@@ -54,6 +64,7 @@ export function TablyAgent() {
     const fee = Math.max(item.minimumFee, hours * item.ratePerHour);
     setSelectedItem(item);
     setRentalHours(hours);
+    setIsSearching(false);
     setHasSearched(true);
     setAgentLine(note ?? `${item.name} is available near ${item.locationLabel}. Estimated rental: ${fee} USDC.`);
   }
@@ -100,8 +111,14 @@ export function TablyAgent() {
     const intent = parseIntent(text);
     const fee = Math.max(intent.item.minimumFee, intent.hours * intent.item.ratePerHour);
     const budgetLine = intent.budget ? (fee <= intent.budget ? ` Fits ${intent.budget} USDC budget.` : ` Above ${intent.budget} USDC budget.`) : "";
-    selectItem(intent.item, intent.hours, `${intent.note ? `${intent.note} ` : ""}Found 3 related rentals.${budgetLine}`);
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    setHasSearched(false);
+    setIsSearching(true);
+    setAgentLine("Checking nearby inventory and trust receipts...");
     setInput("");
+    searchTimeoutRef.current = setTimeout(() => {
+      selectItem(intent.item, intent.hours, `${intent.note ? `${intent.note} ` : ""}Found 3 related rentals.${budgetLine}`);
+    }, 420);
   }
 
   function startCrossmint() {
@@ -136,6 +153,7 @@ export function TablyAgent() {
           hasSearched={hasSearched}
           input={input}
           inputRef={inputRef}
+          isSearching={isSearching}
           onCrossmintStart={startCrossmint}
           onInputChange={setInput}
           onSelectItem={selectItem}
@@ -215,6 +233,7 @@ function AgentChatbox({
   hasSearched,
   input,
   inputRef,
+  isSearching,
   onCrossmintStart,
   onInputChange,
   onSelectItem,
@@ -231,6 +250,7 @@ function AgentChatbox({
   hasSearched: boolean;
   input: string;
   inputRef: React.RefObject<HTMLInputElement | null>;
+  isSearching: boolean;
   onCrossmintStart: () => void;
   onInputChange: (value: string) => void;
   onSelectItem: (item: RentalItem, hours?: number, note?: string) => void;
@@ -244,7 +264,7 @@ function AgentChatbox({
   const [walletChooserOpen, setWalletChooserOpen] = useState(false);
 
   return (
-    <div className="w-full max-w-[640px] rounded-[38px] bg-white/76 p-3 shadow-[0_34px_120px_rgba(6,23,37,0.18)] ring-1 ring-white/80 backdrop-blur-2xl sm:rounded-[50px] sm:p-4">
+    <div className="w-full max-w-[620px] rounded-[34px] bg-white/72 p-3 shadow-[0_30px_100px_rgba(6,23,37,0.16)] ring-1 ring-white/80 backdrop-blur-2xl sm:rounded-[44px] sm:p-4">
       <form
         onSubmit={(event) => {
           setWalletChooserOpen(false);
@@ -270,23 +290,42 @@ function AgentChatbox({
         </button>
       </form>
 
-      <div className="relative mt-3">
-        <WalletConnectButton
-          chooserOpen={walletChooserOpen}
-          crossmintConfigured={crossmintConfigured}
-          onChooserOpenChange={setWalletChooserOpen}
-          onCrossmintStart={onCrossmintStart}
-          onWalletReady={onWalletReady}
-          wallet={wallet}
-        />
+      <div className="mt-3 flex items-center gap-3 px-2">
+        <p className="min-w-0 truncate text-[12px] font-bold text-[#53697d] sm:text-[13px]">{agentLine}</p>
+        <div className="relative ml-auto w-[148px] shrink-0 sm:w-[168px]">
+          <WalletConnectButton
+            chooserOpen={walletChooserOpen}
+            crossmintConfigured={crossmintConfigured}
+            onChooserOpenChange={setWalletChooserOpen}
+            onCrossmintStart={onCrossmintStart}
+            onWalletReady={onWalletReady}
+            wallet={wallet}
+          />
+        </div>
       </div>
 
-      <div className="mt-3 flex items-center justify-between gap-3 px-2">
-        <p className="min-w-0 truncate text-[12px] font-bold text-[#53697d] sm:text-[13px]">{agentLine}</p>
-      </div>
+      {!hasSearched && !isSearching && (
+        <div className="mt-3 flex flex-wrap gap-2 px-1">
+          {["charger 3h", "camera for demo", "mic for recording"].map((prompt) => (
+            <button
+              key={prompt}
+              type="button"
+              onClick={() => {
+                onInputChange(prompt);
+                inputRef.current?.focus();
+              }}
+              className="rounded-full bg-white/70 px-3 py-1.5 text-[12px] font-black text-[#53697d] ring-1 ring-[#e5ebf1] transition hover:bg-[#c8ff18] hover:text-[#061725]"
+            >
+              {prompt}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {isSearching && <SearchingPanel />}
 
       {hasSearched && (
-        <div className="pt-3">
+        <div className="tably-results-enter pt-3">
           <div className="mb-3 flex items-center justify-between px-1">
             <p className="text-[12px] font-black text-[#061725]">Related rentals</p>
             <p className="text-[12px] font-black text-[#061725]">
@@ -305,6 +344,26 @@ function AgentChatbox({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function SearchingPanel() {
+  return (
+    <div className="tably-results-enter mt-3 rounded-[22px] border border-[#e8edf2] bg-white/72 p-3">
+      <div className="flex items-center gap-2 text-[12px] font-black text-[#53697d]">
+        <span className="h-2 w-2 rounded-full bg-[#c8ff18] shadow-[0_0_0_6px_rgba(200,255,24,0.22)]" />
+        Searching community inventory
+      </div>
+      <div className="mt-3 grid grid-cols-3 gap-2">
+        {[0, 1, 2].map((index) => (
+          <div key={index} className="rounded-[16px] bg-[#f3f6f8] p-2">
+            <div className="h-16 rounded-[12px] bg-white/80" />
+            <div className="mt-2 h-3 rounded-full bg-white/80" />
+            <div className="mt-1 h-3 w-2/3 rounded-full bg-white/70" />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -376,7 +435,7 @@ function WalletConnectButton({
           onChooserOpenChange(!chooserOpen);
         }}
         disabled={isBusy || connecting}
-        className={`min-h-[44px] w-full rounded-full px-4 text-[14px] font-black transition disabled:opacity-50 ${
+        className={`min-h-[36px] w-full rounded-full px-3 text-[12px] font-black transition disabled:opacity-50 sm:min-h-[38px] ${
           connectedWallet ? "bg-[#c8ff18] text-[#061725]" : "bg-[#061725] text-white hover:bg-[#c8ff18] hover:text-[#061725]"
         }`}
       >
