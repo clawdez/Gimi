@@ -44,7 +44,7 @@ The MVP is designed for physical-world rentals where the agent helps people borr
 | Virtuals | Agent perceives inventory, decides best item, and acts around physical-world handoff/return workflows |
 | MCP | `/api/mcp` exposes read/prepare rental tools for external agents |
 | Solana Pay | `/api/solana-pay/start-rental` returns a Solana Pay request plus program id, PDA accounts, and instruction args |
-| Crossmint | `@crossmint/client-sdk-react-ui` provides real email/social login and creates/loads a Solana renter wallet through `NEXT_PUBLIC_CROSSMINT_API_KEY` |
+| Crossmint | `@crossmint/client-sdk-react-ui` provides real email login and creates/loads a Solana renter wallet through `NEXT_PUBLIC_CROSSMINT_API_KEY` |
 
 ## Local Development
 
