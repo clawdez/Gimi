@@ -40,14 +40,12 @@ const categoryKeywords: Array<[string, string[]]> = [
   ["Power", ["power", "charger", "battery", "bank", "usb-c", "usbc", "充電", "行動電源", "電池"]],
 ];
 
-const categories = ["All", "Power", "Audio", "Video", "Workspace", "Adapters", "Connectivity"];
 const crossmintConfigured = Boolean(process.env.NEXT_PUBLIC_CROSSMINT_API_KEY);
 
 export function TablyAgent() {
   const availableItems = COMMUNITY_ITEMS.filter((item) => item.status === "available");
   const defaultItem = availableItems[0] ?? COMMUNITY_ITEMS[0];
   const inputRef = useRef<HTMLInputElement>(null);
-  const [selectedCategory, setSelectedCategory] = useState("All");
   const [selectedItem, setSelectedItem] = useState(defaultItem);
   const [rentalHours, setRentalHours] = useState(defaultItem.expectedHours);
   const [input, setInput] = useState("");
@@ -60,11 +58,6 @@ export function TablyAgent() {
   const [returnRequested, setReturnRequested] = useState(false);
   const [receipt, setReceipt] = useState("");
   const [statusMessage, setStatusMessage] = useState("Ask for an item or choose one from the shelf.");
-
-  const filteredItems = useMemo(() => {
-    if (selectedCategory === "All") return availableItems;
-    return availableItems.filter((item) => item.category === selectedCategory);
-  }, [availableItems, selectedCategory]);
 
   const expectedFee = useMemo(
     () => Math.max(selectedItem.minimumFee, rentalHours * selectedItem.ratePerHour),
@@ -100,7 +93,6 @@ export function TablyAgent() {
   function selectItem(item: RentalItem, hours = item.expectedHours, note?: string) {
     setSelectedItem(item);
     setRentalHours(hours);
-    setSelectedCategory(item.category);
     resetSettlement();
     mark("find_rental_offers", "done", `${item.name} at ${item.locationLabel}`);
     const fee = Math.max(item.minimumFee, hours * item.ratePerHour);
@@ -257,71 +249,35 @@ export function TablyAgent() {
   }
 
   return (
-    <section id="agent" className="min-h-screen bg-[#eef4f8] px-5 pb-12 pt-24 text-[#071827] sm:px-8 sm:pt-28 lg:px-12">
-      <div className="mx-auto max-w-7xl">
-        <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_380px]">
-          <div>
-            <div className="grid gap-5 rounded-[6px] bg-[#d9edf8] p-5 shadow-[0_20px_70px_rgba(7,24,39,0.08)] sm:grid-cols-[1fr_220px] lg:p-7">
-              <div>
-                <h1 className="max-w-2xl text-[34px] font-black uppercase leading-[0.98] tracking-[0.08em] sm:text-[58px]">
-                  Rent nearby gear
-                </h1>
-                <p className="mt-4 max-w-xl text-[15px] font-semibold leading-7 text-[#355164]">
-                  Search community inventory, lock refundable escrow, and get a wallet-ready rental transaction.
-                </p>
-                <form onSubmit={handleSubmit} className="mt-6 flex max-w-2xl items-center gap-2 rounded-full bg-white p-2 shadow-[0_14px_35px_rgba(7,24,39,0.08)]">
-                  <label className="sr-only" htmlFor="agent-command">Ask Tably</label>
-                  <input
-                    id="agent-command"
-                    ref={inputRef}
-                    value={input}
-                    onChange={(event) => setInput(event.target.value)}
-                    placeholder="Ask Tably: charger for 3 hours under 30..."
-                    className="h-11 min-w-0 flex-1 rounded-full bg-transparent px-4 text-[14px] font-semibold outline-none placeholder:text-[#7a8b98]"
-                  />
-                  <button type="submit" className="h-11 rounded-full bg-[#071827] px-5 text-[12px] font-black uppercase tracking-[0.1em] text-white transition hover:bg-[#c8ff2e] hover:text-[#071827]">
-                    {input.trim() ? "Search" : actionLabel}
-                  </button>
-                </form>
-              </div>
-              <div className="hidden rounded-[6px] bg-white/64 p-4 sm:block">
-                <p className="text-[11px] font-black uppercase tracking-[0.12em] text-[#6d7e8a]">Today</p>
-                <p className="mt-4 text-4xl font-black">{availableItems.length}</p>
-                <p className="mt-1 text-sm font-semibold text-[#536879]">items available</p>
-                <p className="mt-6 text-4xl font-black">{selectedItem.ownerScore}</p>
-                <p className="mt-1 text-sm font-semibold text-[#536879]">selected owner score</p>
-              </div>
-            </div>
+    <section id="agent" className="relative min-h-screen overflow-hidden bg-[#eaf3f8] px-5 pb-10 pt-24 text-[#071827] sm:px-8 sm:pt-28">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_35%,rgba(202,255,46,0.18),transparent_24%),linear-gradient(115deg,#dff2fb_0%,#edf6fa_46%,#c8e4f3_100%)]" />
+      <div className="absolute inset-0 opacity-[0.14] [background-image:linear-gradient(rgba(7,24,39,0.18)_1px,transparent_1px),linear-gradient(90deg,rgba(7,24,39,0.18)_1px,transparent_1px)] [background-size:52px_52px]" />
 
-            <div className="mt-7 flex flex-wrap gap-2">
-              {categories.map((category) => (
-                <button
-                  key={category}
-                  type="button"
-                  onClick={() => setSelectedCategory(category)}
-                  className={`rounded-full px-4 py-2 text-[12px] font-black uppercase tracking-[0.1em] transition ${
-                    selectedCategory === category ? "bg-[#071827] text-white" : "bg-white text-[#526878] hover:bg-[#dceaf1]"
-                  }`}
-                >
-                  {category}
-                </button>
-              ))}
-            </div>
+      <div className="relative mx-auto flex min-h-[calc(100vh-8.5rem)] max-w-7xl items-center justify-center">
+        <div className="pointer-events-none absolute inset-0 hidden md:block">
+          {availableItems.slice(0, 8).map((item, index) => (
+            <FloatingItem
+              key={item.id}
+              item={item}
+              index={index}
+              selected={item.id === selectedItem.id}
+              onSelect={selectItem}
+            />
+          ))}
+        </div>
 
-            <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-              {filteredItems.map((item) => (
-                <ProductCard key={item.id} item={item} selected={item.id === selectedItem.id} onSelect={selectItem} />
-              ))}
-            </div>
-          </div>
-
-          <RentalSummary
+        <div className="relative z-10 w-full max-w-[560px]">
+          <ChatDialog
             actionLabel={actionLabel}
             crossmintConfigured={crossmintConfigured}
             expectedFee={expectedFee}
+            input={input}
+            inputRef={inputRef}
+            onAdvance={() => void advanceRentalFlow()}
             onCrossmintStart={startCrossmint}
             onCrossmintWallet={handleCrossmintWallet}
-            onAdvance={() => void advanceRentalFlow()}
+            onInputChange={setInput}
+            onSubmit={handleSubmit}
             receipt={receipt}
             refundable={refundable}
             rentalHours={rentalHours}
@@ -342,39 +298,6 @@ export function TablyAgent() {
   );
 }
 
-function ProductCard({ item, selected, onSelect }: { item: RentalItem; selected: boolean; onSelect: (item: RentalItem) => void }) {
-  return (
-    <button
-      type="button"
-      onClick={() => onSelect(item)}
-      className={`group overflow-hidden rounded-[6px] bg-white text-left shadow-[0_16px_45px_rgba(7,24,39,0.08)] transition hover:-translate-y-1 hover:shadow-[0_22px_60px_rgba(7,24,39,0.14)] ${selected ? "ring-2 ring-[#071827]" : ""}`}
-    >
-      <div className="aspect-[4/3] overflow-hidden bg-[#d7e6ee]">
-        <div className="h-full bg-cover bg-center transition duration-300 group-hover:scale-105" style={{ backgroundImage: `url(${item.imageUrl})` }} />
-      </div>
-      <div className="p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="truncate text-[15px] font-black">{item.name}</p>
-            <p className="mt-1 truncate text-[12px] font-semibold text-[#637789]">{item.brand} {item.model}</p>
-          </div>
-          <span className="rounded-full bg-[#edf4f8] px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.08em] text-[#526878]">{item.category}</span>
-        </div>
-        <p className="mt-3 line-clamp-2 min-h-10 text-[12px] leading-5 text-[#536879]">{item.description}</p>
-        <div className="mt-4 grid grid-cols-3 gap-2 border-t border-[#e4edf2] pt-4">
-          <SmallMetric label="rate" value={`$${item.ratePerHour}/h`} />
-          <SmallMetric label="escrow" value={`$${item.buyoutCap}`} />
-          <SmallMetric label="score" value={`${item.ownerScore}`} />
-        </div>
-        <div className="mt-4 flex items-center justify-between text-[12px] font-bold text-[#526878]">
-          <span>{item.locationLabel}</span>
-          <span className="text-[#071827]">Rent</span>
-        </div>
-      </div>
-    </button>
-  );
-}
-
 function SmallMetric({ label, value }: { label: string; value: string }) {
   return (
     <div>
@@ -384,13 +307,17 @@ function SmallMetric({ label, value }: { label: string; value: string }) {
   );
 }
 
-function RentalSummary({
+function ChatDialog({
   actionLabel,
   crossmintConfigured,
   expectedFee,
+  input,
+  inputRef,
   onCrossmintStart,
   onCrossmintWallet,
   onAdvance,
+  onInputChange,
+  onSubmit,
   receipt,
   refundable,
   rentalHours,
@@ -405,9 +332,13 @@ function RentalSummary({
   actionLabel: string;
   crossmintConfigured: boolean;
   expectedFee: number;
+  input: string;
+  inputRef: React.RefObject<HTMLInputElement | null>;
   onCrossmintStart: () => void;
   onCrossmintWallet: (address: string) => void;
   onAdvance: () => void;
+  onInputChange: (value: string) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   receipt: string;
   refundable: number;
   rentalHours: number;
@@ -419,44 +350,64 @@ function RentalSummary({
   txPreview: string;
   wallet: string;
 }) {
+  const activeStep = steps.find((step) => step.status === "running") ?? [...steps].reverse().find((step) => step.status === "done") ?? steps[0];
+
   return (
-    <aside className="h-fit rounded-[6px] bg-white p-5 shadow-[0_20px_70px_rgba(7,24,39,0.1)] lg:sticky lg:top-28">
-      <div className="overflow-hidden rounded-[5px] bg-[#edf4f8]">
-        <div className="aspect-[4/3] bg-cover bg-center" style={{ backgroundImage: `url(${selectedItem.imageUrl})` }} />
-      </div>
-      <div className="mt-5">
-        <p className="text-[20px] font-black">{selectedItem.name}</p>
-        <p className="mt-1 text-sm font-semibold text-[#637789]">{selectedItem.brand} {selectedItem.model}</p>
-        <p className="mt-3 text-sm leading-6 text-[#536879]">{selectedItem.locationLabel} / owner score {selectedItem.ownerScore}</p>
+    <div className="rounded-[18px] border border-white/70 bg-white/88 p-4 shadow-[0_26px_80px_rgba(7,24,39,0.18)] backdrop-blur-xl sm:p-5">
+      <div className="mb-4">
+        <h1 className="text-[22px] font-black uppercase tracking-[0.12em] text-[#071827]">Tably agent</h1>
+        <p className="mt-1 text-sm font-semibold leading-6 text-[#61798b]">
+          Tell me what you need. I will find the item and prepare one wallet action.
+        </p>
       </div>
 
-      <div className="mt-5 rounded-[6px] bg-[#f3f8fb] p-4">
-        <div className="flex items-center justify-between">
-          <span className="text-[11px] font-black uppercase tracking-[0.12em] text-[#718493]">Duration</span>
-          <div className="flex items-center gap-2">
-            <button type="button" onClick={() => setRentalHours(Math.max(1, rentalHours - 1))} className="grid h-8 w-8 place-items-center rounded-full bg-white font-black">-</button>
-            <span className="min-w-12 text-center text-sm font-black">{rentalHours}h</span>
-            <button type="button" onClick={() => setRentalHours(Math.min(24, rentalHours + 1))} className="grid h-8 w-8 place-items-center rounded-full bg-white font-black">+</button>
-          </div>
+      <div className="flex items-center gap-3 border-b border-[#e2edf3] pb-4">
+        <div className="h-14 w-14 shrink-0 overflow-hidden rounded-[12px] bg-[#e9f2f7]">
+          <div className="h-full bg-cover bg-center" style={{ backgroundImage: `url(${selectedItem.imageUrl})` }} />
         </div>
-        <div className="mt-4 grid grid-cols-3 gap-2">
-          <SmallMetric label="fee" value={`$${expectedFee}`} />
-          <SmallMetric label="escrow" value={`$${selectedItem.buyoutCap}`} />
-          <SmallMetric label="refund" value={`$${refundable}`} />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[17px] font-black">{selectedItem.name}</p>
+          <p className="mt-0.5 truncate text-[12px] font-bold text-[#61798b]">
+            {selectedItem.brand} {selectedItem.model} / {selectedItem.locationLabel}
+          </p>
+        </div>
+        <div className="rounded-full bg-[#071827] px-3 py-1.5 text-[11px] font-black text-white">
+          ${selectedItem.ratePerHour}/h
         </div>
       </div>
 
-      <div className="mt-5 space-y-2">
-        {steps.map((step) => (
-          <FlowRow key={step.name} step={step} />
-        ))}
+      <div className="space-y-3 py-5">
+        <div className="max-w-[86%] rounded-[16px] bg-[#eef5f9] px-4 py-3 text-sm font-semibold leading-6 text-[#20384b]">
+          I found {selectedItem.name}. {expectedFee} USDC for {rentalHours}h, with {selectedItem.buyoutCap} USDC escrow.
+        </div>
+        <div className="ml-auto max-w-[86%] rounded-[16px] bg-[#071827] px-4 py-3 text-sm font-semibold leading-6 text-white">
+          {statusMessage}
+        </div>
       </div>
 
-      <div className="mt-5 space-y-2 text-[12px] font-semibold text-[#536879]">
-        <p>{statusMessage}</p>
-        {routePreview && <p>LI.FI: {routePreview}</p>}
-        {txPreview && <p>Wallet tx: {txPreview}</p>}
-        {receipt && <p>{receipt}</p>}
+      <div className="grid grid-cols-3 gap-2 rounded-[12px] bg-[#f5f9fb] p-3">
+        <SmallMetric label="fee" value={`$${expectedFee}`} />
+        <SmallMetric label="escrow" value={`$${selectedItem.buyoutCap}`} />
+        <SmallMetric label="refund" value={`$${refundable}`} />
+      </div>
+
+      <div className="mt-4 flex items-center justify-between rounded-full bg-[#f5f9fb] px-3 py-2">
+        <span className="text-[11px] font-black uppercase tracking-[0.12em] text-[#718493]">Duration</span>
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={() => setRentalHours(Math.max(1, rentalHours - 1))} className="grid h-8 w-8 place-items-center rounded-full bg-white font-black shadow-sm">-</button>
+          <span className="min-w-12 text-center text-sm font-black">{rentalHours}h</span>
+          <button type="button" onClick={() => setRentalHours(Math.min(24, rentalHours + 1))} className="grid h-8 w-8 place-items-center rounded-full bg-white font-black shadow-sm">+</button>
+        </div>
+      </div>
+
+      <div className="mt-4 rounded-[12px] border border-[#e4edf2] p-3 text-[12px] font-semibold text-[#5a7184]">
+        <div className="flex items-center justify-between gap-3">
+          <span className="font-black text-[#071827]">{activeStep.label}</span>
+          <span>{activeStep.detail}</span>
+        </div>
+        {routePreview && <p className="mt-2">LI.FI: {routePreview}</p>}
+        {txPreview && <p className="mt-2">Wallet tx: {txPreview}</p>}
+        {receipt && <p className="mt-2">{receipt}</p>}
       </div>
 
       {!wallet && !receipt ? (
@@ -481,7 +432,60 @@ function RentalSummary({
           {actionLabel}
         </button>
       )}
-    </aside>
+
+      <form onSubmit={onSubmit} className="mt-3 flex items-center gap-2 rounded-full border border-[#dce8ef] bg-white p-2 shadow-[0_10px_30px_rgba(7,24,39,0.07)]">
+        <label className="sr-only" htmlFor="agent-command">Ask Tably</label>
+        <input
+          id="agent-command"
+          ref={inputRef}
+          value={input}
+          onChange={(event) => onInputChange(event.target.value)}
+          placeholder="Ask for a charger, mic, camera..."
+          className="h-11 min-w-0 flex-1 rounded-full bg-transparent px-4 text-[14px] font-semibold outline-none placeholder:text-[#7a8b98]"
+        />
+        <button type="submit" className="h-11 rounded-full bg-[#c8ff2e] px-5 text-[12px] font-black uppercase tracking-[0.1em] text-[#071827] transition hover:bg-[#071827] hover:text-white">
+          {input.trim() ? "Ask" : "Go"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function FloatingItem({
+  item,
+  index,
+  selected,
+  onSelect,
+}: {
+  item: RentalItem;
+  index: number;
+  selected: boolean;
+  onSelect: (item: RentalItem) => void;
+}) {
+  const positions = [
+    "left-[5%] top-[13%] w-36",
+    "right-[8%] top-[14%] w-40",
+    "left-[10%] bottom-[15%] w-40",
+    "right-[13%] bottom-[12%] w-36",
+    "left-[3%] bottom-[6%] w-32",
+    "right-[4%] bottom-[6%] w-32",
+    "left-[3%] top-[50%] w-32",
+    "right-[3%] top-[52%] w-32",
+  ];
+
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(item)}
+      className={`pointer-events-auto absolute ${positions[index % positions.length]} group rounded-[18px] p-2 text-left transition duration-300 hover:-translate-y-1 ${
+        selected ? "bg-white/74 shadow-[0_20px_55px_rgba(7,24,39,0.18)]" : "hover:bg-white/52"
+      }`}
+    >
+      <div className="aspect-[4/3] overflow-hidden rounded-[14px] bg-white/40">
+        <div className="h-full bg-cover bg-center transition duration-300 group-hover:scale-105" style={{ backgroundImage: `url(${item.imageUrl})` }} />
+      </div>
+      <p className="mt-2 truncate text-[11px] font-black uppercase tracking-[0.08em] text-[#071827]">{item.name}</p>
+    </button>
   );
 }
 
@@ -516,22 +520,6 @@ function CrossmintConnectButton({
     >
       {label}
     </button>
-  );
-}
-
-function FlowRow({ step }: { step: ToolStep }) {
-  const isDone = step.status === "done";
-  const isRunning = step.status === "running";
-  return (
-    <div className={`flex items-center gap-3 rounded-[5px] px-3 py-2.5 ${isDone ? "bg-[#e7ffd1]" : isRunning ? "bg-[#eaf3f8]" : "bg-[#f5f8fa]"}`}>
-      <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-full text-[11px] font-black ${isDone ? "bg-[#c8ff2e] text-[#071827]" : "bg-white text-[#718493]"}`}>
-        {isDone ? "✓" : ""}
-      </span>
-      <div className="min-w-0">
-        <p className="text-[12px] font-black">{step.label}</p>
-        <p className="truncate text-[11px] text-[#718493]">{step.detail}</p>
-      </div>
-    </div>
   );
 }
 
