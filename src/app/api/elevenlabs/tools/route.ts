@@ -6,6 +6,8 @@ import {
   buildStartRentalTransaction,
   publicKeyOrFallback,
   DEMO_RENTER_WALLET,
+  preflightSettleRental,
+  preflightStartRental,
 } from "@/lib/rentproofProgram";
 
 const tools = [
@@ -133,6 +135,17 @@ export async function POST(req: NextRequest) {
   if (tool === "rentproof.prepare_return" || tool === "rentproof.prepare_auto_buyout") {
     const kind = tool === "rentproof.prepare_return" ? "confirm_return" : "auto_buyout";
     const settleRentalId = body.rentalId ?? body.draftId ?? rentalId;
+    const preflight = await preflightSettleRental({
+      itemId: item.id,
+      ownerWallet: item.owner,
+      renterWallet: renter.toBase58(),
+      rentalId: settleRentalId,
+    });
+
+    if (!preflight.ok) {
+      return NextResponse.json({ error: "Settlement preflight failed", problems: preflight.problems, preflight }, { status: 409 });
+    }
+
     const serialized = await buildSettleRentalTransaction({
       kind,
       itemId: item.id,
@@ -154,8 +167,21 @@ export async function POST(req: NextRequest) {
         requiredSigner: serialized.rentProof.accounts.owner,
       },
       rentProof: serialized.rentProof,
+      preflight,
       safety: "Unsigned owner transaction only. The ElevenLabs tool cannot sign or move funds.",
     });
+  }
+
+  const preflight = await preflightStartRental({
+    itemId: item.id,
+    ownerWallet: item.owner,
+    renterWallet: renter.toBase58(),
+    rentalId,
+    buyoutCap: item.buyoutCap,
+  });
+
+  if (!preflight.ok) {
+    return NextResponse.json({ error: "Token account preflight failed", problems: preflight.problems, preflight }, { status: 409 });
   }
 
   const serialized = await buildStartRentalTransaction({
@@ -181,6 +207,7 @@ export async function POST(req: NextRequest) {
       requiredSigner: serialized.rentProof.accounts.renter,
     },
     rentProof: serialized.rentProof,
+    preflight,
     safety: "Unsigned wallet transaction only. The ElevenLabs tool cannot sign or move funds.",
   });
 }

@@ -7,6 +7,7 @@
     "build": "next build",
     "anchor:build": "NO_DNA=1 anchor build",
     "devnet:setup": "node --experimental-strip-types scripts/setup-rentproof-devnet.mjs",
+    "e2e:devnet": "node scripts/e2e-owner-listing-rental-devnet.mjs",
     "start": "next start",
     "lint": "eslint",
     "test:anchor": "NO_DNA=1 anchor build && cargo test -p rental_session"

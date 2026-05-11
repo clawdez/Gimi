@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRentableItem, getRentableItems } from "@/lib/rentableItems";
-import { buildSettleRentalTransaction, buildStartRentalTransaction, DEMO_RENTER_WALLET, publicKeyOrFallback } from "@/lib/rentproofProgram";
+import {
+  buildSettleRentalTransaction,
+  buildStartRentalTransaction,
+  DEMO_RENTER_WALLET,
+  preflightSettleRental,
+  preflightStartRental,
+  publicKeyOrFallback,
+} from "@/lib/rentproofProgram";
 
 const tools = [
   "rentproof.find_offers",
@@ -72,6 +79,18 @@ export async function POST(req: NextRequest) {
     const renter = publicKeyOrFallback(body.renterWallet, DEMO_RENTER_WALLET);
     const hours = Number(body.hours ?? item.expectedHours);
     const rentalId = body.rentalId ?? body.draftId ?? `mcp_${item.id}_${crypto.randomUUID()}`;
+    const preflight = await preflightStartRental({
+      itemId: item.id,
+      ownerWallet: item.owner,
+      renterWallet: renter.toBase58(),
+      rentalId,
+      buyoutCap: item.buyoutCap,
+    });
+
+    if (!preflight.ok) {
+      return NextResponse.json({ error: "Token account preflight failed", problems: preflight.problems, preflight }, { status: 409 });
+    }
+
     const serialized = await buildStartRentalTransaction({
       itemId: item.id,
       ownerWallet: item.owner,
@@ -92,6 +111,7 @@ export async function POST(req: NextRequest) {
         requiredSigner: serialized.rentProof.accounts.renter,
       },
       rentProof: serialized.rentProof,
+      preflight,
     });
   }
 
@@ -106,6 +126,17 @@ export async function POST(req: NextRequest) {
 
     if (!rentalId) {
       return NextResponse.json({ error: "Missing rental id" }, { status: 400 });
+    }
+
+    const preflight = await preflightSettleRental({
+      itemId: item.id,
+      ownerWallet: item.owner,
+      renterWallet: renter.toBase58(),
+      rentalId,
+    });
+
+    if (!preflight.ok) {
+      return NextResponse.json({ error: "Settlement preflight failed", problems: preflight.problems, preflight }, { status: 409 });
     }
 
     const serialized = await buildSettleRentalTransaction({
@@ -128,6 +159,7 @@ export async function POST(req: NextRequest) {
         requiredSigner: serialized.rentProof.accounts.owner,
       },
       rentProof: serialized.rentProof,
+      preflight,
     });
   }
 
