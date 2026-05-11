@@ -71,10 +71,11 @@ npm run e2e:devnet
 
 ## Supabase
 
-Tably uses Supabase for durable published listing storage. Run the migration in:
+Tably uses Supabase for durable published listing and rental-session storage. Run the migrations in:
 
 ```text
 supabase/migrations/001_create_listings.sql
+supabase/migrations/002_create_rental_sessions.sql
 ```
 
 Then configure these server-side environment variables:
@@ -88,8 +89,9 @@ SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_KEY
 `NEXT_PUBLIC_`.
 
 If those env vars are missing, the app falls back to local file storage at
-`.rentproof/listings.json` locally and `/tmp/tably-listings.json` on Vercel. The
-Vercel fallback is ephemeral and should only be used for smoke tests.
+`.rentproof/listings.json` and `.rentproof/rental-sessions.json` locally, and
+`/tmp/tably-listings.json` plus `/tmp/tably-rental-sessions.json` on Vercel.
+The Vercel fallback is ephemeral and should only be used for smoke tests.
 
 ## Anchor Program
 
@@ -185,6 +187,32 @@ Response includes:
 - `transaction`
 - `transactionMetadata.requiredSigner`
 - `transactionMetadata.lastValidBlockHeight`
+
+### `POST /api/rentals/start`
+
+Persists a successful `start_rental` after the renter signs and sends the
+transaction. The server checks the devnet signature, derives the item/session
+PDAs from the listing, rental id, and renter wallet, verifies the on-chain
+`RentalItem` is rented with the expected active session, verifies the
+`RentalSession` account is active, saves the session, and updates the listing
+status to `rented`. After that, `GET /api/listings` no longer returns the item
+as available.
+
+Example request:
+
+```bash
+curl -s -X POST http://localhost:3000/api/rentals/start \
+  -H 'content-type: application/json' \
+  -d '{"itemId":"item_id_from_listing","renterWallet":"5pNLovuXAbyKM8UGDKZg9Qqe85Sqt1kMPNaippombvwC","rentalId":"draft_item_id_from_listing","startRentalSignature":"CONFIRMED_DEVNET_SIGNATURE"}'
+```
+
+Response includes:
+
+- `rentalSession.sessionPda`
+- `rentalSession.rentalTokenPda`
+- `listing.status`
+- `rentProof.accounts`
+- `explorerUrl`
 
 ### `POST /api/solana-pay/confirm-return`
 
