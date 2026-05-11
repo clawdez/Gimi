@@ -7,7 +7,11 @@ import {
   Transaction,
   TransactionInstruction,
 } from "@solana/web3.js";
-import { TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync } from "@solana/spl-token";
+import {
+  TOKEN_PROGRAM_ID,
+  createAssociatedTokenAccountIdempotentInstruction,
+  getAssociatedTokenAddressSync,
+} from "@solana/spl-token";
 
 export const RENTAL_SESSION_PROGRAM_ID = new PublicKey("AVL316tYxrg8MhEeWtaxbwdShMWybzRAH1zNQWvX355K");
 export const DEMO_OWNER_WALLET = new PublicKey("7Fmr5t2h2SZ55n4w3dkgWTjaXRafDnBLLy1RhdmPJk6b");
@@ -265,6 +269,170 @@ export function decodeRentalItemAccount(data: Uint8Array) {
   };
 }
 
+export interface RentProofPreflight {
+  ok: boolean;
+  cluster: string;
+  rpcUrl: string;
+  problems: string[];
+  accounts: {
+    item?: string;
+    session?: string;
+    renterTokenAccount: string;
+    ownerTokenAccount: string;
+    platformFeeTokenAccount: string;
+    paymentMint: string;
+  };
+  tokenAccounts: {
+    renter: TokenAccountCheck;
+    owner: TokenAccountCheck;
+    platformFee: TokenAccountCheck;
+  };
+  requiredEscrowAmount?: number;
+}
+
+interface TokenAccountCheck {
+  address: string;
+  exists: boolean;
+  owner?: string;
+  mint?: string;
+  amount?: string;
+  uiAmount?: number | null;
+}
+
+async function getTokenAccountCheck(connection: Connection, address: string): Promise<TokenAccountCheck> {
+  const pubkey = new PublicKey(address);
+  const accountInfo = await connection.getAccountInfo(pubkey, "confirmed");
+  if (!accountInfo) return { address, exists: false };
+
+  const balance = await connection.getTokenAccountBalance(pubkey, "confirmed");
+  return {
+    address,
+    exists: true,
+    owner: accountInfo.owner.toBase58(),
+    amount: balance.value.amount,
+    uiAmount: balance.value.uiAmount,
+  };
+}
+
+async function getOwnedAccount(connection: Connection, address: string, expectedOwner: PublicKey) {
+  const accountInfo = await connection.getAccountInfo(new PublicKey(address), "confirmed");
+  if (!accountInfo) return { exists: false, owned: false, accountInfo: null };
+  return { exists: true, owned: accountInfo.owner.equals(expectedOwner), accountInfo };
+}
+
+export async function preflightStartRental(input: {
+  itemId: string;
+  ownerWallet?: unknown;
+  renterWallet?: unknown;
+  rentalId: string;
+  buyoutCap: number;
+}) {
+  const rentProof = deriveRentProofAccounts(input);
+  const accounts = rentProof.accounts;
+  const connection = new Connection(SOLANA_RPC_URL, "confirmed");
+  const problems: string[] = [];
+  const [itemCheck, renterTokenAccount, ownerTokenAccount, platformFeeTokenAccount, mintCheck] = await Promise.all([
+    getOwnedAccount(connection, accounts.item, RENTAL_SESSION_PROGRAM_ID),
+    getTokenAccountCheck(connection, accounts.renterTokenAccount),
+    getTokenAccountCheck(connection, accounts.ownerTokenAccount),
+    getTokenAccountCheck(connection, accounts.platformFeeTokenAccount),
+    getOwnedAccount(connection, accounts.paymentMint, TOKEN_PROGRAM_ID),
+  ]);
+  const requiredEscrowAmount = usdcBaseUnits(input.buyoutCap);
+
+  if (!mintCheck.exists) problems.push("Payment mint account does not exist on devnet.");
+  if (mintCheck.exists && !mintCheck.owned) problems.push("Payment mint is not owned by the SPL Token program.");
+  if (!itemCheck.exists) {
+    problems.push("Item PDA does not exist. The owner must publish initialize_item before rental.");
+  } else if (!itemCheck.owned) {
+    problems.push("Item PDA is not owned by the Tably rental program.");
+  } else if (itemCheck.accountInfo) {
+    try {
+      const decoded = decodeRentalItemAccount(itemCheck.accountInfo.data);
+      if (decoded.status !== RENTAL_ITEM_STATUS_AVAILABLE) {
+        problems.push("Item is not available for rental.");
+      }
+      if (decoded.paymentMint !== accounts.paymentMint) {
+        problems.push("Item payment mint does not match the expected demo USDC mint.");
+      }
+    } catch (error) {
+      problems.push(error instanceof Error ? error.message : "Could not decode item PDA.");
+    }
+  }
+  if (!renterTokenAccount.exists) {
+    problems.push("Renter demo USDC token account is missing. Fund/setup the renter wallet before rental.");
+  } else if (BigInt(renterTokenAccount.amount ?? "0") < BigInt(requiredEscrowAmount)) {
+    problems.push(`Renter has insufficient demo USDC. Need ${input.buyoutCap} USDC escrow.`);
+  }
+
+  return {
+    ok: problems.length === 0,
+    cluster: SOLANA_CLUSTER,
+    rpcUrl: SOLANA_RPC_URL,
+    problems,
+    accounts: {
+      item: accounts.item,
+      renterTokenAccount: accounts.renterTokenAccount,
+      ownerTokenAccount: accounts.ownerTokenAccount,
+      platformFeeTokenAccount: accounts.platformFeeTokenAccount,
+      paymentMint: accounts.paymentMint,
+    },
+    tokenAccounts: {
+      renter: renterTokenAccount,
+      owner: ownerTokenAccount,
+      platformFee: platformFeeTokenAccount,
+    },
+    requiredEscrowAmount,
+  } satisfies RentProofPreflight;
+}
+
+export async function preflightSettleRental(input: {
+  itemId: string;
+  ownerWallet?: unknown;
+  renterWallet?: unknown;
+  rentalId: string;
+}) {
+  const rentProof = deriveRentProofAccounts(input);
+  const accounts = rentProof.accounts;
+  const connection = new Connection(SOLANA_RPC_URL, "confirmed");
+  const problems: string[] = [];
+  const [itemCheck, sessionCheck, renterTokenAccount, ownerTokenAccount, platformFeeTokenAccount, mintCheck] = await Promise.all([
+    getOwnedAccount(connection, accounts.item, RENTAL_SESSION_PROGRAM_ID),
+    getOwnedAccount(connection, accounts.session, RENTAL_SESSION_PROGRAM_ID),
+    getTokenAccountCheck(connection, accounts.renterTokenAccount),
+    getTokenAccountCheck(connection, accounts.ownerTokenAccount),
+    getTokenAccountCheck(connection, accounts.platformFeeTokenAccount),
+    getOwnedAccount(connection, accounts.paymentMint, TOKEN_PROGRAM_ID),
+  ]);
+
+  if (!mintCheck.exists) problems.push("Payment mint account does not exist on devnet.");
+  if (mintCheck.exists && !mintCheck.owned) problems.push("Payment mint is not owned by the SPL Token program.");
+  if (!itemCheck.exists) problems.push("Item PDA does not exist.");
+  if (itemCheck.exists && !itemCheck.owned) problems.push("Item PDA is not owned by the Tably rental program.");
+  if (!sessionCheck.exists) problems.push("Rental session PDA does not exist. Start rental before settlement.");
+  if (sessionCheck.exists && !sessionCheck.owned) problems.push("Rental session PDA is not owned by the Tably rental program.");
+
+  return {
+    ok: problems.length === 0,
+    cluster: SOLANA_CLUSTER,
+    rpcUrl: SOLANA_RPC_URL,
+    problems,
+    accounts: {
+      item: accounts.item,
+      session: accounts.session,
+      renterTokenAccount: accounts.renterTokenAccount,
+      ownerTokenAccount: accounts.ownerTokenAccount,
+      platformFeeTokenAccount: accounts.platformFeeTokenAccount,
+      paymentMint: accounts.paymentMint,
+    },
+    tokenAccounts: {
+      renter: renterTokenAccount,
+      owner: ownerTokenAccount,
+      platformFee: platformFeeTokenAccount,
+    },
+  } satisfies RentProofPreflight;
+}
+
 export async function buildStartRentalTransaction(input: {
   itemId: string;
   ownerWallet?: unknown;
@@ -303,7 +471,15 @@ export async function buildStartRentalTransaction(input: {
   const transaction = new Transaction({
     feePayer: renter,
     recentBlockhash: blockhash,
-  }).add(instruction);
+  }).add(
+    createAssociatedTokenAccountIdempotentInstruction(
+      renter,
+      new PublicKey(accounts.renterTokenAccount),
+      renter,
+      new PublicKey(accounts.paymentMint)
+    ),
+    instruction
+  );
 
   return {
     rentProof,
@@ -354,7 +530,27 @@ export async function buildSettleRentalTransaction(input: {
   const transaction = new Transaction({
     feePayer: owner,
     recentBlockhash: blockhash,
-  }).add(instruction);
+  }).add(
+    createAssociatedTokenAccountIdempotentInstruction(
+      owner,
+      new PublicKey(accounts.renterTokenAccount),
+      new PublicKey(accounts.renter),
+      new PublicKey(accounts.paymentMint)
+    ),
+    createAssociatedTokenAccountIdempotentInstruction(
+      owner,
+      new PublicKey(accounts.ownerTokenAccount),
+      owner,
+      new PublicKey(accounts.paymentMint)
+    ),
+    createAssociatedTokenAccountIdempotentInstruction(
+      owner,
+      new PublicKey(accounts.platformFeeTokenAccount),
+      new PublicKey(accounts.feeAuthority),
+      new PublicKey(accounts.paymentMint)
+    ),
+    instruction
+  );
 
   return {
     rentProof,

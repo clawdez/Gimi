@@ -5,6 +5,7 @@ import {
   PLATFORM_FEE_BPS,
   deriveRentProofAccounts,
   buildStartRentalTransaction,
+  preflightStartRental,
   ratePerSecondBaseUnits,
   usdcBaseUnits,
 } from "@/lib/rentproofProgram";
@@ -43,6 +44,26 @@ export async function POST(req: NextRequest) {
     renterWallet,
     rentalId: draftId,
   });
+  const preflight = await preflightStartRental({
+    itemId: item.id,
+    ownerWallet: item.owner,
+    renterWallet,
+    rentalId: draftId,
+    buyoutCap: item.buyoutCap,
+  });
+
+  if (!preflight.ok) {
+    return NextResponse.json(
+      {
+        error: "Token account preflight failed",
+        problems: preflight.problems,
+        preflight,
+        rentProof,
+      },
+      { status: 409 }
+    );
+  }
+
   const serialized = await buildStartRentalTransaction({
     itemId: item.id,
     ownerWallet: item.owner,
@@ -55,6 +76,7 @@ export async function POST(req: NextRequest) {
     draftId,
     solanaPayUrl,
     rentProof,
+    preflight,
     programStatus: "devnet_program_deployed_unsigned_transaction_serialized",
     transaction: serialized.transactionBase64,
     message: `Start Tably rental for ${item.name}. This unsigned devnet transaction locks ${item.buyoutCap} demo USDC escrow.`,
@@ -68,6 +90,7 @@ export async function POST(req: NextRequest) {
     },
     transactionPlan: [
       "start_rental",
+      "preflight_renter_demo_usdc_ata_and_balance",
       `lock_${item.buyoutCap}_usdc_escrow`,
       "create_rental_session",
       "mint_program_owned_rental_token_pda",

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRentableItem } from "@/lib/rentableItems";
-import { buildSettleRentalTransaction, deriveRentProofAccounts } from "@/lib/rentproofProgram";
+import { buildSettleRentalTransaction, deriveRentProofAccounts, preflightSettleRental } from "@/lib/rentproofProgram";
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
@@ -23,6 +23,25 @@ export async function POST(req: NextRequest) {
     renterWallet: body.renterWallet,
     rentalId,
   });
+  const preflight = await preflightSettleRental({
+    itemId: item.id,
+    ownerWallet: body.ownerWallet ?? item.owner,
+    renterWallet: body.renterWallet,
+    rentalId,
+  });
+
+  if (!preflight.ok) {
+    return NextResponse.json(
+      {
+        error: "Settlement preflight failed",
+        problems: preflight.problems,
+        preflight,
+        rentProof,
+      },
+      { status: 409 }
+    );
+  }
+
   const serialized = await buildSettleRentalTransaction({
     kind: "auto_buyout",
     itemId: item.id,
@@ -34,6 +53,7 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     rentalId,
     rentProof,
+    preflight,
     programStatus: "devnet_program_deployed_unsigned_transaction_serialized",
     transaction: serialized.transactionBase64,
     message: `Auto-buyout ${item.name}. Owner signs after due time plus grace to claim escrow and close rental-token state.`,
@@ -47,6 +67,8 @@ export async function POST(req: NextRequest) {
     },
     transactionPlan: [
       "auto_buyout",
+      "preflight_session_and_token_accounts",
+      "idempotently_create_missing_destination_atas",
       "verify_due_time_plus_grace",
       "pay_owner_and_platform",
       "close_escrow_and_rental_token",

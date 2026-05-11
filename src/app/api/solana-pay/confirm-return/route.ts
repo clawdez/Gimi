@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRentableItem } from "@/lib/rentableItems";
-import { buildSettleRentalTransaction, deriveRentProofAccounts } from "@/lib/rentproofProgram";
+import { buildSettleRentalTransaction, deriveRentProofAccounts, preflightSettleRental } from "@/lib/rentproofProgram";
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
@@ -23,6 +23,25 @@ export async function POST(req: NextRequest) {
     renterWallet: body.renterWallet,
     rentalId,
   });
+  const preflight = await preflightSettleRental({
+    itemId: item.id,
+    ownerWallet: body.ownerWallet ?? item.owner,
+    renterWallet: body.renterWallet,
+    rentalId,
+  });
+
+  if (!preflight.ok) {
+    return NextResponse.json(
+      {
+        error: "Settlement preflight failed",
+        problems: preflight.problems,
+        preflight,
+        rentProof,
+      },
+      { status: 409 }
+    );
+  }
+
   const serialized = await buildSettleRentalTransaction({
     kind: "confirm_return",
     itemId: item.id,
@@ -34,6 +53,7 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     rentalId,
     rentProof,
+    preflight,
     programStatus: "devnet_program_deployed_unsigned_transaction_serialized",
     transaction: serialized.transactionBase64,
     message: `Confirm return for ${item.name}. Owner signs to burn/close rental token state, settle platform fee, owner payout, and renter refund.`,
@@ -47,6 +67,8 @@ export async function POST(req: NextRequest) {
     },
     transactionPlan: [
       "confirm_return",
+      "preflight_session_and_token_accounts",
+      "idempotently_create_missing_destination_atas",
       "settle_metered_fee",
       "pay_owner_and_platform",
       "refund_renter",

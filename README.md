@@ -65,6 +65,8 @@ Useful checks:
 npm run lint
 npm run build
 npm run test:anchor
+npm run devnet:setup
+npm run e2e:devnet
 ```
 
 ## Supabase
@@ -159,6 +161,9 @@ Returns published listings plus renter-ready inventory. The renter agent uses th
 ### `POST /api/solana-pay/start-rental`
 
 Returns a Solana Pay request payload, Tably PDA metadata, and an unsigned serialized devnet transaction for the renter wallet to sign.
+Before returning a transaction, the route checks the item PDA, demo USDC mint,
+renter token account, and renter escrow balance. If the renter cannot pay the
+buyout-cap escrow, it returns `409` with `preflight.problems`.
 
 Example request:
 
@@ -184,6 +189,9 @@ Response includes:
 ### `POST /api/solana-pay/confirm-return`
 
 Returns an unsigned serialized devnet `confirm_return` transaction for the owner wallet to sign. It settles metered fee, platform fee, owner payout, renter refund, closes escrow/rental-token state, and emits the return receipt event.
+The route verifies that the item/session PDAs exist before returning a
+transaction. The settlement transaction idempotently creates missing renter,
+owner, and platform fee token accounts before escrow settlement.
 
 Example request:
 
@@ -196,6 +204,8 @@ curl -s -X POST http://localhost:3000/api/solana-pay/confirm-return \
 ### `POST /api/solana-pay/auto-buyout`
 
 Returns an unsigned serialized devnet `auto_buyout` transaction for the owner wallet to sign after due time plus grace. It claims the buyout escrow, closes rental-token state, marks the item bought out, and emits the buyout receipt event.
+The route uses the same settlement preflight and idempotent destination-token
+account setup as `confirm_return`.
 
 Example request:
 
