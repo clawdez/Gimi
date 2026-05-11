@@ -21,11 +21,13 @@ Implemented in branch `owner-listing-mvp`:
 - `TablyAgent`, ElevenLabs tools, MCP tools, and Solana Pay rental endpoints now
   resolve published listings and demo inventory through the same server-side
   item path.
+- Supabase listing storage is available when `SUPABASE_URL` and
+  `SUPABASE_SERVICE_ROLE_KEY` are configured. The SQL migration lives at
+  `supabase/migrations/001_create_listings.sql`.
 
 Still missing for production:
 
-- durable listing storage. The current repository is file-backed locally and
-  ephemeral on Vercel.
+- running the Supabase migration and setting production env vars in Vercel.
 - uploaded product images. The current MVP accepts image URLs.
 - arbitrary owner/renter USDC ATA creation and balance preflight.
 

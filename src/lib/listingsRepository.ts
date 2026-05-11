@@ -1,12 +1,41 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { PersistedListing } from "./listings";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import { CanonicalItemMetadata, PersistedListing } from "./listings";
 
 export interface ListingsRepository {
   storageKind: string;
   listAvailable(): Promise<PersistedListing[]>;
   save(listing: PersistedListing): Promise<PersistedListing>;
   getById(id: string): Promise<PersistedListing | undefined>;
+}
+
+interface ListingRow {
+  id: string;
+  item_pda: string;
+  owner_wallet: string;
+  payment_mint: string;
+  item_id_hash: string;
+  metadata_hash: string;
+  metadata: CanonicalItemMetadata;
+  canonical_metadata_json: string;
+  name: string;
+  brand: string | null;
+  model: string | null;
+  category: string;
+  condition: number;
+  description: string;
+  image_url: string;
+  location_label: string;
+  included: string[];
+  rate_per_hour: number | string;
+  minimum_fee: number | string;
+  buyout_cap: number | string;
+  auto_buyout_grace_seconds: number;
+  status: PersistedListing["status"];
+  initialize_signature: string;
+  created_at: string;
+  updated_at: string;
 }
 
 class FileListingsRepository implements ListingsRepository {
@@ -52,14 +81,135 @@ class FileListingsRepository implements ListingsRepository {
   }
 }
 
+class SupabaseListingsRepository implements ListingsRepository {
+  readonly storageKind = "supabase";
+
+  constructor(private readonly client: SupabaseClient) {}
+
+  async listAvailable() {
+    const { data, error } = await this.client
+      .from("listings")
+      .select("*")
+      .eq("status", "available")
+      .order("created_at", { ascending: false });
+
+    if (error) throw new Error(`Supabase listings read failed: ${error.message}`);
+    return (data ?? []).map(rowToListing);
+  }
+
+  async getById(id: string) {
+    const { data, error } = await this.client
+      .from("listings")
+      .select("*")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (error) throw new Error(`Supabase listing lookup failed: ${error.message}`);
+    return data ? rowToListing(data) : undefined;
+  }
+
+  async save(listing: PersistedListing) {
+    const { data, error } = await this.client
+      .from("listings")
+      .upsert(listingToRow(listing), { onConflict: "id" })
+      .select("*")
+      .single();
+
+    if (error) throw new Error(`Supabase listing save failed: ${error.message}`);
+    return rowToListing(data);
+  }
+}
+
 let repository: ListingsRepository | undefined;
 
 export function getListingsRepository() {
-  repository ??= new FileListingsRepository();
+  repository ??= createListingsRepository();
   return repository;
+}
+
+function createListingsRepository(): ListingsRepository {
+  const config = supabaseConfig();
+  if (!config) return new FileListingsRepository();
+
+  return new SupabaseListingsRepository(
+    createClient(config.url, config.serviceRoleKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    })
+  );
+}
+
+function supabaseConfig() {
+  const url = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_SERVICE_KEY;
+
+  if (!url || !serviceRoleKey) return null;
+  return { url, serviceRoleKey };
 }
 
 function defaultListingsFilePath() {
   if (process.env.VERCEL) return path.join("/tmp", "tably-listings.json");
   return path.join(process.cwd(), ".rentproof", "listings.json");
+}
+
+function listingToRow(listing: PersistedListing): ListingRow {
+  return {
+    id: listing.id,
+    item_pda: listing.itemPda,
+    owner_wallet: listing.ownerWallet,
+    payment_mint: listing.paymentMint,
+    item_id_hash: listing.itemIdHash,
+    metadata_hash: listing.metadataHash,
+    metadata: listing.metadata,
+    canonical_metadata_json: listing.canonicalMetadataJson,
+    name: listing.name,
+    brand: listing.brand || null,
+    model: listing.model || null,
+    category: listing.category,
+    condition: listing.condition,
+    description: listing.description,
+    image_url: listing.imageUrl,
+    location_label: listing.locationLabel,
+    included: listing.included,
+    rate_per_hour: listing.ratePerHour,
+    minimum_fee: listing.minimumFee,
+    buyout_cap: listing.buyoutCap,
+    auto_buyout_grace_seconds: listing.autoBuyoutGraceSeconds,
+    status: listing.status,
+    initialize_signature: listing.initializeSignature,
+    created_at: listing.createdAt,
+    updated_at: listing.updatedAt,
+  };
+}
+
+function rowToListing(row: ListingRow): PersistedListing {
+  return {
+    id: row.id,
+    ownerWallet: row.owner_wallet,
+    metadata: row.metadata,
+    canonicalMetadataJson: row.canonical_metadata_json,
+    metadataHash: row.metadata_hash,
+    name: row.name,
+    brand: row.brand ?? "",
+    model: row.model ?? "",
+    category: row.category,
+    condition: row.condition,
+    description: row.description,
+    imageUrl: row.image_url,
+    locationLabel: row.location_label,
+    included: row.included ?? [],
+    ratePerHour: Number(row.rate_per_hour),
+    minimumFee: Number(row.minimum_fee),
+    buyoutCap: Number(row.buyout_cap),
+    autoBuyoutGraceSeconds: row.auto_buyout_grace_seconds,
+    createdAt: row.created_at,
+    itemPda: row.item_pda,
+    itemIdHash: row.item_id_hash,
+    paymentMint: row.payment_mint,
+    status: row.status,
+    initializeSignature: row.initialize_signature,
+    updatedAt: row.updated_at,
+  };
 }

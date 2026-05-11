@@ -25,6 +25,7 @@
 /target/
 /test-ledger/
 /.rentproof/
+/supabase/.temp/
 
 # misc
 .DS_Store
