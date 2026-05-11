@@ -281,6 +281,9 @@ export function TablyAgent() {
           renterWallet: preparedTx.renterWallet,
           startSignature: signature,
         });
+      } else {
+        await recordRentalSettlement(preparedTx, signature);
+        setActiveRental(null);
       }
       setAgentLine(`${transactionKindLabel(preparedTx.kind)} sent on ${preparedTx.cluster}: ${shortKey(signature)}.`);
     } catch (error) {
@@ -304,6 +307,26 @@ export function TablyAgent() {
     if (!res.ok) throw new Error(data.error ?? "Rental sent, but status sync failed.");
 
     setInventory((current) => current.map((item) => (item.id === preparedTx.itemId ? { ...item, status: "rented" } : item)));
+  }
+
+  async function recordRentalSettlement(preparedTx: PreparedRentalTransaction, signature: string) {
+    const res = await fetch("/api/rentals/settle", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        kind: preparedTx.kind,
+        itemId: preparedTx.itemId,
+        rentalId: preparedTx.draftId,
+        renterWallet: preparedTx.renterWallet,
+        settlementSignature: signature,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error ?? "Settlement sent, but receipt sync failed.");
+
+    const nextStatus = preparedTx.kind === "return" ? "available" : "buyout";
+    setInventory((current) => current.map((item) => (item.id === preparedTx.itemId ? { ...item, status: nextStatus } : item)));
+    setSelectedItem((current) => (current.id === preparedTx.itemId ? { ...current, status: nextStatus } : current));
   }
 
   function parseIntent(text: string): ParsedRentalIntent {

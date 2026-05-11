@@ -18,8 +18,16 @@ export interface PersistedRentalSession {
   startSignature: string;
   startTs: number;
   dueTs: number;
+  returnedTs?: number;
   escrowAmount: string;
   expectedFeeAtStart: string;
+  finalFee?: string;
+  ownerPayout?: string;
+  platformFee?: string;
+  renterRefund?: string;
+  returnSignature?: string;
+  autoBuyoutSignature?: string;
+  settledAt?: string;
   status: RentalSessionStatus;
   createdAt: string;
   updatedAt: string;
@@ -45,8 +53,16 @@ interface RentalSessionRow {
   start_signature: string;
   start_ts: number;
   due_ts: number;
+  returned_ts: number | string;
   escrow_amount: string;
   expected_fee_at_start: string;
+  final_fee: string;
+  owner_payout: string;
+  platform_fee: string;
+  renter_refund: string;
+  return_signature?: string | null;
+  auto_buyout_signature?: string | null;
+  settled_at?: string | null;
   status: RentalSessionStatus;
   created_at: string;
   updated_at: string;
@@ -167,8 +183,16 @@ function rentalSessionToRow(session: PersistedRentalSession): RentalSessionRow {
     start_signature: session.startSignature,
     start_ts: session.startTs,
     due_ts: session.dueTs,
+    returned_ts: session.returnedTs ?? 0,
     escrow_amount: session.escrowAmount,
     expected_fee_at_start: session.expectedFeeAtStart,
+    final_fee: session.finalFee ?? "0",
+    owner_payout: session.ownerPayout ?? "0",
+    platform_fee: session.platformFee ?? "0",
+    renter_refund: session.renterRefund ?? "0",
+    return_signature: session.returnSignature ?? null,
+    auto_buyout_signature: session.autoBuyoutSignature ?? null,
+    settled_at: session.settledAt ?? null,
     status: session.status,
     created_at: session.createdAt,
     updated_at: session.updatedAt,
@@ -190,8 +214,16 @@ function rowToRentalSession(row: RentalSessionRow): PersistedRentalSession {
     startSignature: row.start_signature,
     startTs: Number(row.start_ts),
     dueTs: Number(row.due_ts),
+    returnedTs: Number(row.returned_ts ?? 0),
     escrowAmount: String(row.escrow_amount),
     expectedFeeAtStart: String(row.expected_fee_at_start),
+    finalFee: String(row.final_fee ?? "0"),
+    ownerPayout: String(row.owner_payout ?? "0"),
+    platformFee: String(row.platform_fee ?? "0"),
+    renterRefund: String(row.renter_refund ?? "0"),
+    returnSignature: row.return_signature ?? undefined,
+    autoBuyoutSignature: row.auto_buyout_signature ?? undefined,
+    settledAt: row.settled_at ?? undefined,
     status: row.status,
     createdAt: row.created_at,
     updatedAt: row.updated_at,

@@ -26,7 +26,10 @@ export const SOLANA_CLUSTER = "devnet";
 export const SOLANA_RPC_URL = process.env.SOLANA_RPC_URL ?? "https://api.devnet.solana.com";
 export const RENTAL_ITEM_STATUS_AVAILABLE = 0;
 export const RENTAL_ITEM_STATUS_RENTED = 1;
+export const RENTAL_ITEM_STATUS_BUYOUT = 2;
 export const RENTAL_SESSION_STATUS_ACTIVE = 0;
+export const RENTAL_SESSION_STATUS_RETURNED = 1;
+export const RENTAL_SESSION_STATUS_BUYOUT = 2;
 
 export function bytes32Hex(value: string) {
   return createHash("sha256").update(value).digest("hex");

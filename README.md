@@ -243,6 +243,38 @@ curl -s -X POST http://localhost:3000/api/solana-pay/auto-buyout \
   -d '{"itemId":"mic_11","renterWallet":"5pNLovuXAbyKM8UGDKZg9Qqe85Sqt1kMPNaippombvwC","rentalId":"draft_mic_11"}'
 ```
 
+### `POST /api/rentals/settle`
+
+Persists a successful `confirm_return` or `auto_buyout` after the owner signs
+and sends the settlement transaction. The server checks the devnet signature,
+re-derives the same PDAs, verifies the on-chain `RentalItem` and
+`RentalSession` are in the expected settled state, updates the listing status,
+updates the rental session settlement fields, and writes a durable receipt row.
+
+For `kind: "return"`, the listing becomes `available` again and the receipt
+outcome is `returned_ok`. For `kind: "buyout"`, the listing becomes `buyout`
+and the receipt outcome is `auto_buyout`.
+
+Example request:
+
+```bash
+curl -s -X POST http://localhost:3000/api/rentals/settle \
+  -H 'content-type: application/json' \
+  -d '{"kind":"return","itemId":"item_id_from_listing","renterWallet":"5pNLovuXAbyKM8UGDKZg9Qqe85Sqt1kMPNaippombvwC","rentalId":"draft_item_id_from_listing","settlementSignature":"CONFIRMED_DEVNET_SIGNATURE"}'
+```
+
+Response includes:
+
+- `rentalSession.status`
+- `rentalSession.finalFee`
+- `rentalSession.ownerPayout`
+- `rentalSession.platformFee`
+- `rentalSession.renterRefund`
+- `receipt.outcome`
+- `receipt.settlementSignature`
+- `listing.status`
+- `explorerUrl`
+
 ### `POST /api/lifi/quote`
 
 Returns a LI.FI route for funding the Solana escrow amount. With real wallet addresses, it calls LI.FI REST and returns the LI.FI `transactionRequest`.
@@ -282,10 +314,10 @@ Serves the generated Anchor IDL.
 
 ## Current Boundary
 
-This repo now has a deployed devnet Anchor settlement program, a product-ready demo surface, owner listing prepare/sign/publish flow, live LI.FI quote support, ElevenLabs server-tool endpoints, unsigned serialized Solana transaction generation, and wallet-side signing/sending for prepared transactions.
+This repo now has a deployed devnet Anchor settlement program, a product-ready demo surface, owner listing prepare/sign/publish flow, rental start status sync, return/auto-buyout settlement sync, durable receipt persistence, live LI.FI quote support, ElevenLabs server-tool endpoints, unsigned serialized Solana transaction generation, and wallet-side signing/sending for prepared transactions.
 
 - Program id: `AVL316tYxrg8MhEeWtaxbwdShMWybzRAH1zNQWvX355K`.
-- Published listings use Supabase when configured. Without Supabase env vars, the app falls back to ephemeral file storage.
+- Published listings, rental sessions, and rental receipts use Supabase when configured. Without Supabase env vars, the app falls back to ephemeral file storage.
 - Crossmint wallet login requires a client API key with Wallet API scopes in `NEXT_PUBLIC_CROSSMINT_API_KEY`.
 - LI.FI live quotes require valid source and destination wallet addresses; local demo mode falls back when those are missing.
 - ElevenLabs is server-tool ready, but the hosted ElevenLabs agent still needs to be configured with this endpoint and `ELEVENLABS_API_KEY`.
@@ -293,7 +325,7 @@ This repo now has a deployed devnet Anchor settlement program, a product-ready d
 
 ## Next Steps
 
-1. Run the Supabase migration and add `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` to Vercel.
-2. Run an end-to-end owner listing test with a funded owner wallet, then rent that newly listed item from a funded renter wallet.
+1. Run the Supabase migrations and add `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` to Vercel.
+2. Run the devnet E2E with funded owner/renter wallets; it now covers owner listing, start rental, return settlement, auto-buyout settlement, listing status sync, and receipt persistence.
 3. Register `/api/elevenlabs/tools` in the ElevenLabs agent console.
-4. Add indexed session/receipt persistence so refreshed production pages can show prior tx state.
+4. Add a renter-facing receipt/history view so refreshed production pages can show prior tx state.
