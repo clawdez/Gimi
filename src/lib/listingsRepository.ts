@@ -1,13 +1,14 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
-import { CanonicalItemMetadata, PersistedListing } from "./listings";
+import { CanonicalItemMetadata, PersistedListing, PersistedListingStatus } from "./listings";
 
 export interface ListingsRepository {
   storageKind: string;
   listAvailable(): Promise<PersistedListing[]>;
   save(listing: PersistedListing): Promise<PersistedListing>;
   getById(id: string): Promise<PersistedListing | undefined>;
+  updateStatus(id: string, status: PersistedListingStatus): Promise<PersistedListing>;
 }
 
 interface ListingRow {
@@ -57,6 +58,21 @@ class FileListingsRepository implements ListingsRepository {
     const listings = await this.readAll();
     const index = listings.findIndex((entry) => entry.id === listing.id || entry.itemPda === listing.itemPda);
     const next = index >= 0 ? [...listings.slice(0, index), listing, ...listings.slice(index + 1)] : [...listings, listing];
+    await this.writeAll(next);
+    return listing;
+  }
+
+  async updateStatus(id: string, status: PersistedListingStatus) {
+    const listings = await this.readAll();
+    const index = listings.findIndex((entry) => entry.id === id);
+    if (index < 0) throw new Error("Listing not found");
+
+    const listing = {
+      ...listings[index],
+      status,
+      updatedAt: new Date().toISOString(),
+    };
+    const next = [...listings.slice(0, index), listing, ...listings.slice(index + 1)];
     await this.writeAll(next);
     return listing;
   }
@@ -116,6 +132,18 @@ class SupabaseListingsRepository implements ListingsRepository {
       .single();
 
     if (error) throw new Error(`Supabase listing save failed: ${error.message}`);
+    return rowToListing(data);
+  }
+
+  async updateStatus(id: string, status: PersistedListingStatus) {
+    const { data, error } = await this.client
+      .from("listings")
+      .update({ status, updated_at: new Date().toISOString() })
+      .eq("id", id)
+      .select("*")
+      .single();
+
+    if (error) throw new Error(`Supabase listing status update failed: ${error.message}`);
     return rowToListing(data);
   }
 }

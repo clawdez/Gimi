@@ -122,6 +122,25 @@ async function main() {
   );
   console.log(`start_rental_signature=${startSignature}`);
   console.log(`explorer_start=https://explorer.solana.com/tx/${startSignature}?cluster=devnet`);
+
+  const recordedRental = await jsonFetch("/api/rentals/start", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      itemId: published.listing.id,
+      rentalId: preparedRental.draftId,
+      renterWallet: renter.publicKey.toBase58(),
+      startSignature,
+    }),
+  });
+  console.log(`recorded_session=${recordedRental.rentalSession.sessionPda}`);
+  console.log(`listing_status=${recordedRental.listing?.status}`);
+
+  const inventoryAfterStart = await jsonFetch("/api/listings");
+  const stillAvailable = inventoryAfterStart.inventory.some((item) => item.id === published.listing.id && item.status === "available");
+  if (stillAvailable) throw new Error("Started rental is still available in renter inventory.");
+  console.log(`inventory_after_start_storage=${inventoryAfterStart.storage}`);
+  console.log("inventory_removed_after_start=true");
 }
 
 main().catch((error) => {

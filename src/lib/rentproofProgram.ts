@@ -25,6 +25,8 @@ export const AUTO_BUYOUT_GRACE_SECONDS = 60 * 60;
 export const SOLANA_CLUSTER = "devnet";
 export const SOLANA_RPC_URL = process.env.SOLANA_RPC_URL ?? "https://api.devnet.solana.com";
 export const RENTAL_ITEM_STATUS_AVAILABLE = 0;
+export const RENTAL_ITEM_STATUS_RENTED = 1;
+export const RENTAL_SESSION_STATUS_ACTIVE = 0;
 
 export function bytes32Hex(value: string) {
   return createHash("sha256").update(value).digest("hex");
@@ -267,6 +269,54 @@ export function decodeRentalItemAccount(data: Uint8Array) {
     status: buffer.readUInt8(200),
     bump: buffer.readUInt8(201),
   };
+}
+
+export function rentalSessionAccountDiscriminator() {
+  return createHash("sha256").update("account:RentalSession").digest().subarray(0, 8);
+}
+
+export function decodeRentalSessionAccount(data: Uint8Array) {
+  const buffer = Buffer.from(data);
+  if (buffer.byteLength < 8 + 32 + 32 + 32 + 32 + 32 + 8 + 8 + 8 + 8 + 8 + 8 + 8 + 8 + 8 + 1 + 1 + 1 + 1) {
+    throw new Error("RentalSession account data is too short");
+  }
+
+  const discriminator = rentalSessionAccountDiscriminator();
+  if (!buffer.subarray(0, 8).equals(discriminator)) {
+    throw new Error("Account is not a RentalSession");
+  }
+
+  return {
+    item: new PublicKey(buffer.subarray(8, 40)).toBase58(),
+    renter: new PublicKey(buffer.subarray(40, 72)).toBase58(),
+    owner: new PublicKey(buffer.subarray(72, 104)).toBase58(),
+    paymentMint: new PublicKey(buffer.subarray(104, 136)).toBase58(),
+    rentalIdHash: buffer.subarray(136, 168).toString("hex"),
+    startTs: buffer.readBigInt64LE(168),
+    dueTs: buffer.readBigInt64LE(176),
+    returnedTs: buffer.readBigInt64LE(184),
+    escrowAmount: buffer.readBigUInt64LE(192),
+    expectedFeeAtStart: buffer.readBigUInt64LE(200),
+    finalFee: buffer.readBigUInt64LE(208),
+    ownerPayout: buffer.readBigUInt64LE(216),
+    platformFee: buffer.readBigUInt64LE(224),
+    renterRefund: buffer.readBigUInt64LE(232),
+    status: buffer.readUInt8(240),
+    bump: buffer.readUInt8(241),
+    escrowBump: buffer.readUInt8(242),
+    rentalTokenBump: buffer.readUInt8(243),
+  };
+}
+
+export async function assertConfirmedSignature(connection: Connection, signature: string) {
+  const { value } = await connection.getSignatureStatuses([signature], { searchTransactionHistory: true });
+  const status = value[0];
+
+  if (!status) throw new Error("Transaction signature was not found on devnet");
+  if (status.err) throw new Error("Transaction failed on-chain");
+  if (status.confirmationStatus !== "confirmed" && status.confirmationStatus !== "finalized" && status.confirmations !== null) {
+    throw new Error("Transaction is not confirmed yet");
+  }
 }
 
 export interface RentProofPreflight {

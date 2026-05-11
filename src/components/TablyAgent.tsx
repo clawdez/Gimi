@@ -274,6 +274,7 @@ export function TablyAgent() {
       setTxPreview(`${preparedTx.cluster} / ${shortKey(signature)}`);
       setRentalActionStatus("sent");
       if (preparedTx.kind === "start") {
+        await recordRentalStart(preparedTx, signature);
         setActiveRental({
           draftId: preparedTx.draftId,
           itemId: preparedTx.itemId,
@@ -284,8 +285,25 @@ export function TablyAgent() {
       setAgentLine(`${transactionKindLabel(preparedTx.kind)} sent on ${preparedTx.cluster}: ${shortKey(signature)}.`);
     } catch (error) {
       setRentalActionStatus("error");
-      setAgentLine(error instanceof Error ? `Transaction not sent: ${error.message}` : "Transaction was not sent.");
+      setAgentLine(error instanceof Error ? `Transaction flow failed: ${error.message}` : "Transaction flow failed.");
     }
+  }
+
+  async function recordRentalStart(preparedTx: PreparedRentalTransaction, signature: string) {
+    const res = await fetch("/api/rentals/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        itemId: preparedTx.itemId,
+        rentalId: preparedTx.draftId,
+        renterWallet: preparedTx.renterWallet,
+        startSignature: signature,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error ?? "Rental sent, but status sync failed.");
+
+    setInventory((current) => current.map((item) => (item.id === preparedTx.itemId ? { ...item, status: "rented" } : item)));
   }
 
   function parseIntent(text: string): ParsedRentalIntent {
