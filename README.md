@@ -27,6 +27,7 @@ The MVP is designed for physical-world rentals where the agent helps people borr
 - SKYLRK-inspired storefront page with clickable floating inventory.
 - Usable chat agent that can parse natural-language item requests.
 - Demo inventory, rental session state, return flow, receipt copy, and reputation-ready result.
+- Receipt/history page for recent settled rentals, item context, wallet parties, payout/refund split, and Solana explorer links.
 - Anchor `rental_session` program for SPL-token escrow and rental lifecycle.
 - Public generated IDL at `/idl/rental_session.json`.
 - Owner listing flow that prepares an owner-signed `initialize_item` devnet transaction, verifies the confirmed item PDA, and publishes it into renter inventory.
@@ -76,6 +77,7 @@ Tably uses Supabase for durable published listing and rental-session storage. Ru
 ```text
 supabase/migrations/001_create_listings.sql
 supabase/migrations/002_create_rental_sessions.sql
+supabase/migrations/003_create_rental_receipts.sql
 ```
 
 Then configure these server-side environment variables:
@@ -89,8 +91,8 @@ SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_KEY
 `NEXT_PUBLIC_`.
 
 If those env vars are missing, the app falls back to local file storage at
-`.rentproof/listings.json` and `.rentproof/rental-sessions.json` locally, and
-`/tmp/tably-listings.json` plus `/tmp/tably-rental-sessions.json` on Vercel.
+`.rentproof/listings.json`, `.rentproof/rental-sessions.json`, and
+`.rentproof/rental-receipts.json` locally, and `/tmp/tably-*.json` files on Vercel.
 The Vercel fallback is ephemeral and should only be used for smoke tests.
 
 ## Anchor Program
@@ -275,6 +277,38 @@ Response includes:
 - `listing.status`
 - `explorerUrl`
 
+### `GET /api/rentals/history`
+
+Returns recent settled receipt rows for the user-visible receipt history page.
+Each receipt is enriched with item display data when the listing or demo item
+can be found, plus a Solana explorer URL for the settlement transaction.
+
+Optional filters:
+
+- `wallet`: matches either owner or renter wallet.
+- `rentalId`: returns one rental id when present.
+- `limit`: defaults to 20 and caps at 50.
+
+Example request:
+
+```bash
+curl -s 'http://localhost:3000/api/rentals/history?limit=10'
+```
+
+Response includes:
+
+- `receipts[].rentalId`
+- `receipts[].item.name`
+- `receipts[].outcome`
+- `receipts[].settlementSignature`
+- `receipts[].explorerUrl`
+- `receipts[].grossFee`
+- `receipts[].platformFee`
+- `receipts[].ownerPayout`
+- `receipts[].renterRefund`
+- `receipts[].ownerWalletShort`
+- `receipts[].renterWalletShort`
+
 ### `POST /api/lifi/quote`
 
 Returns a LI.FI route for funding the Solana escrow amount. With real wallet addresses, it calls LI.FI REST and returns the LI.FI `transactionRequest`.
@@ -314,7 +348,7 @@ Serves the generated Anchor IDL.
 
 ## Current Boundary
 
-This repo now has a deployed devnet Anchor settlement program, a product-ready demo surface, owner listing prepare/sign/publish flow, rental start status sync, return/auto-buyout settlement sync, durable receipt persistence, live LI.FI quote support, ElevenLabs server-tool endpoints, unsigned serialized Solana transaction generation, and wallet-side signing/sending for prepared transactions.
+This repo now has a deployed devnet Anchor settlement program, a product-ready demo surface, owner listing prepare/sign/publish flow, rental start status sync, return/auto-buyout settlement sync, durable receipt persistence, a renter/owner-visible receipt history surface, live LI.FI quote support, ElevenLabs server-tool endpoints, unsigned serialized Solana transaction generation, and wallet-side signing/sending for prepared transactions.
 
 - Program id: `AVL316tYxrg8MhEeWtaxbwdShMWybzRAH1zNQWvX355K`.
 - Published listings, rental sessions, and rental receipts use Supabase when configured. Without Supabase env vars, the app falls back to ephemeral file storage.
@@ -328,4 +362,3 @@ This repo now has a deployed devnet Anchor settlement program, a product-ready d
 1. Run the Supabase migrations and add `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` to Vercel.
 2. Run the devnet E2E with funded owner/renter wallets; it now covers owner listing, start rental, return settlement, auto-buyout settlement, listing status sync, and receipt persistence.
 3. Register `/api/elevenlabs/tools` in the ElevenLabs agent console.
-4. Add a renter-facing receipt/history view so refreshed production pages can show prior tx state.

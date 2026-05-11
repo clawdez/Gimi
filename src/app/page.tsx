@@ -3,10 +3,11 @@
 import { useState } from "react";
 import { ListingAgent } from "@/components/ListingAgent";
 import { Navbar } from "@/components/Navbar";
+import { ReceiptHistory } from "@/components/ReceiptHistory";
 import { TablyAgent } from "@/components/TablyAgent";
 
 export default function Home() {
-  const [mode, setMode] = useState<"rent" | "list">("rent");
+  const [mode, setMode] = useState<"rent" | "list" | "history">("rent");
 
   return (
     <main className="min-h-[100svh] bg-[#f7f3ea]">
@@ -30,8 +31,19 @@ export default function Home() {
         >
           List item
         </button>
+        <button
+          type="button"
+          onClick={() => setMode("history")}
+          className={`min-h-[34px] rounded-full px-4 text-[12px] font-black transition ${
+            mode === "history" ? "bg-[#ff7867] text-white" : "text-[#607489] hover:text-[#061725]"
+          }`}
+        >
+          Receipts
+        </button>
       </div>
-      {mode === "rent" ? <TablyAgent /> : <ListingAgent onDone={() => setMode("rent")} />}
+      {mode === "rent" && <TablyAgent />}
+      {mode === "list" && <ListingAgent onDone={() => setMode("rent")} />}
+      {mode === "history" && <ReceiptHistory />}
     </main>
   );
 }

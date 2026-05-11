@@ -27,6 +27,13 @@ export interface RentalReceiptsRepository {
   storageKind: string;
   save(receipt: PersistedRentalReceipt): Promise<PersistedRentalReceipt>;
   getByRentalId(rentalId: string): Promise<PersistedRentalReceipt | undefined>;
+  listRecent(filters?: RentalReceiptListFilters): Promise<PersistedRentalReceipt[]>;
+}
+
+export interface RentalReceiptListFilters {
+  wallet?: string;
+  rentalId?: string;
+  limit?: number;
 }
 
 interface RentalReceiptRow {
@@ -56,6 +63,19 @@ class FileRentalReceiptsRepository implements RentalReceiptsRepository {
   async getByRentalId(rentalId: string) {
     const receipts = await this.readAll();
     return receipts.find((receipt) => receipt.rentalId === rentalId);
+  }
+
+  async listRecent(filters: RentalReceiptListFilters = {}) {
+    const limit = normalizeLimit(filters.limit);
+    const receipts = await this.readAll();
+    return receipts
+      .filter((receipt) => {
+        if (filters.rentalId && receipt.rentalId !== filters.rentalId) return false;
+        if (filters.wallet && receipt.ownerWallet !== filters.wallet && receipt.renterWallet !== filters.wallet) return false;
+        return true;
+      })
+      .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+      .slice(0, limit);
   }
 
   async save(receipt: PersistedRentalReceipt) {
@@ -102,6 +122,22 @@ class SupabaseRentalReceiptsRepository implements RentalReceiptsRepository {
     return data ? rowToRentalReceipt(data) : undefined;
   }
 
+  async listRecent(filters: RentalReceiptListFilters = {}) {
+    const limit = normalizeLimit(filters.limit);
+    let query = this.client.from("rental_receipts").select("*").order("created_at", { ascending: false }).limit(limit);
+
+    if (filters.rentalId) {
+      query = query.eq("rental_id", filters.rentalId);
+    }
+    if (filters.wallet) {
+      query = query.or(`owner_wallet.eq.${filters.wallet},renter_wallet.eq.${filters.wallet}`);
+    }
+
+    const { data, error } = await query;
+    if (error) throw new Error(`Supabase rental receipt history failed: ${error.message}`);
+    return (data ?? []).map(rowToRentalReceipt);
+  }
+
   async save(receipt: PersistedRentalReceipt) {
     const { data, error } = await this.client
       .from("rental_receipts")
@@ -146,6 +182,11 @@ function supabaseConfig() {
 function defaultRentalReceiptsFilePath() {
   if (process.env.VERCEL) return path.join("/tmp", "tably-rental-receipts.json");
   return path.join(process.cwd(), ".rentproof", "rental-receipts.json");
+}
+
+function normalizeLimit(limit: number | undefined) {
+  if (typeof limit !== "number" || !Number.isFinite(limit)) return 20;
+  return Math.min(50, Math.max(1, Math.floor(limit)));
 }
 
 function rentalReceiptToRow(receipt: PersistedRentalReceipt): RentalReceiptRow {
