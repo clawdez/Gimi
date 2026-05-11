@@ -5,7 +5,7 @@ import { RentalItem } from "./types";
 
 export async function getRentableItem(id: string): Promise<RentalItem | undefined> {
   const listing = await getListingsRepository().getById(id);
-  if (listing?.status === "available") return listingToRentalItem(listing);
+  if (listing) return listingToRentalItem(listing);
   return getItem(id);
 }
 
