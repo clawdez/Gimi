@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getItem, getItems } from "@/lib/store";
+import { getRentableItem, getRentableItems } from "@/lib/rentableItems";
 import { quoteLifiFunding } from "@/lib/lifi";
 import {
   buildSettleRentalTransaction,
@@ -74,8 +74,9 @@ export async function POST(req: NextRequest) {
   }
 
   if (tool === "rentproof.find_offers") {
+    const items = await getRentableItems();
     return NextResponse.json({
-      offers: getItems()
+      offers: items
         .filter((item) => item.status === "available")
         .map((item) => ({
           itemId: item.id,
@@ -89,7 +90,11 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  const item = getItem(body.itemId ?? "power_bank_18") ?? getItems()[0];
+  const items = await getRentableItems();
+  const item = (await getRentableItem(body.itemId ?? "power_bank_18")) ?? items[0];
+  if (!item) {
+    return NextResponse.json({ error: "No rentable inventory is available" }, { status: 404 });
+  }
   const hours = Number(body.hours ?? item.expectedHours);
   const expectedFee = Math.max(item.minimumFee, hours * item.ratePerHour);
 

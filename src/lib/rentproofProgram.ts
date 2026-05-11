@@ -20,6 +20,7 @@ export const USDC_DECIMALS = 6;
 export const AUTO_BUYOUT_GRACE_SECONDS = 60 * 60;
 export const SOLANA_CLUSTER = "devnet";
 export const SOLANA_RPC_URL = process.env.SOLANA_RPC_URL ?? "https://api.devnet.solana.com";
+export const RENTAL_ITEM_STATUS_AVAILABLE = 0;
 
 export function bytes32Hex(value: string) {
   return createHash("sha256").update(value).digest("hex");
@@ -27,6 +28,17 @@ export function bytes32Hex(value: string) {
 
 export function bytes32Array(value: string) {
   return Array.from(createHash("sha256").update(value).digest());
+}
+
+export function bytes32Buffer(value: string) {
+  return Buffer.from(bytes32Array(value));
+}
+
+export function bytes32HexToBuffer(value: string) {
+  if (!/^[0-9a-f]{64}$/i.test(value)) {
+    throw new Error("Expected 32-byte hex string");
+  }
+  return Buffer.from(value, "hex");
 }
 
 export function usdcBaseUnits(amount: number) {
@@ -43,6 +55,15 @@ export function publicKeyOrFallback(value: unknown, fallback: PublicKey) {
     return new PublicKey(value);
   } catch {
     return fallback;
+  }
+}
+
+export function publicKeyFromInput(value: string | PublicKey, fieldName = "public key") {
+  if (value instanceof PublicKey) return value;
+  try {
+    return new PublicKey(value);
+  } catch {
+    throw new Error(`Invalid ${fieldName}`);
   }
 }
 
@@ -124,6 +145,124 @@ export function startRentalInstructionData(input: {
 
 export function settleRentalInstructionData(kind: "confirm_return" | "auto_buyout") {
   return anchorInstructionDiscriminator(kind);
+}
+
+export function initializeItemInstructionData(input: {
+  itemIdHash: Buffer;
+  metadataHash: Buffer;
+  ratePerSecond: number;
+  minimumFee: number;
+  buyoutCap: number;
+  autoBuyoutGraceSeconds: number;
+}) {
+  if (input.itemIdHash.byteLength !== 32 || input.metadataHash.byteLength !== 32) {
+    throw new Error("initialize_item hashes must be 32 bytes");
+  }
+
+  const data = Buffer.alloc(8 + 32 + 32 + 8 + 8 + 8 + 8);
+  anchorInstructionDiscriminator("initialize_item").copy(data, 0);
+  input.itemIdHash.copy(data, 8);
+  input.metadataHash.copy(data, 40);
+  data.writeBigUInt64LE(BigInt(input.ratePerSecond), 72);
+  data.writeBigUInt64LE(BigInt(input.minimumFee), 80);
+  data.writeBigUInt64LE(BigInt(input.buyoutCap), 88);
+  data.writeBigInt64LE(BigInt(input.autoBuyoutGraceSeconds), 96);
+  return data;
+}
+
+export function deriveItemPda(owner: PublicKey, itemIdHash: Buffer) {
+  return PublicKey.findProgramAddressSync([Buffer.from("item"), owner.toBuffer(), itemIdHash], RENTAL_SESSION_PROGRAM_ID)[0];
+}
+
+export async function buildInitializeItemTransaction(input: {
+  ownerWallet: string | PublicKey;
+  itemId: string;
+  metadataHash: string;
+  ratePerHour: number;
+  minimumFee: number;
+  buyoutCap: number;
+  autoBuyoutGraceSeconds: number;
+  paymentMint?: PublicKey;
+}) {
+  const owner = publicKeyFromInput(input.ownerWallet, "ownerWallet");
+  const paymentMint = input.paymentMint ?? DEMO_USDC_MINT;
+  const itemIdHash = bytes32Buffer(input.itemId);
+  const metadataHash = bytes32HexToBuffer(input.metadataHash);
+  const item = deriveItemPda(owner, itemIdHash);
+  const ratePerSecond = ratePerSecondBaseUnits(input.ratePerHour);
+  const minimumFee = usdcBaseUnits(input.minimumFee);
+  const buyoutCap = usdcBaseUnits(input.buyoutCap);
+  const connection = new Connection(SOLANA_RPC_URL, "confirmed");
+  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+
+  const instruction = new TransactionInstruction({
+    programId: RENTAL_SESSION_PROGRAM_ID,
+    keys: [
+      { pubkey: owner, isSigner: true, isWritable: true },
+      { pubkey: item, isSigner: false, isWritable: true },
+      { pubkey: paymentMint, isSigner: false, isWritable: false },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+    data: initializeItemInstructionData({
+      itemIdHash,
+      metadataHash,
+      ratePerSecond,
+      minimumFee,
+      buyoutCap,
+      autoBuyoutGraceSeconds: input.autoBuyoutGraceSeconds,
+    }),
+  });
+
+  const transaction = new Transaction({
+    feePayer: owner,
+    recentBlockhash: blockhash,
+  }).add(instruction);
+
+  return {
+    transactionBase64: transaction
+      .serialize({ requireAllSignatures: false, verifySignatures: false })
+      .toString("base64"),
+    itemPda: item.toBase58(),
+    itemIdHash: itemIdHash.toString("hex"),
+    metadataHash: metadataHash.toString("hex"),
+    paymentMint: paymentMint.toBase58(),
+    requiredSigner: owner.toBase58(),
+    feePayer: owner.toBase58(),
+    blockhash,
+    lastValidBlockHeight,
+    cluster: SOLANA_CLUSTER,
+    rpcUrl: SOLANA_RPC_URL,
+  };
+}
+
+export function rentalItemAccountDiscriminator() {
+  return createHash("sha256").update("account:RentalItem").digest().subarray(0, 8);
+}
+
+export function decodeRentalItemAccount(data: Uint8Array) {
+  const buffer = Buffer.from(data);
+  if (buffer.byteLength < 8 + 32 + 32 + 32 + 32 + 8 + 8 + 8 + 8 + 32 + 1 + 1) {
+    throw new Error("RentalItem account data is too short");
+  }
+
+  const discriminator = rentalItemAccountDiscriminator();
+  if (!buffer.subarray(0, 8).equals(discriminator)) {
+    throw new Error("Account is not a RentalItem");
+  }
+
+  return {
+    owner: new PublicKey(buffer.subarray(8, 40)).toBase58(),
+    paymentMint: new PublicKey(buffer.subarray(40, 72)).toBase58(),
+    itemIdHash: buffer.subarray(72, 104).toString("hex"),
+    metadataHash: buffer.subarray(104, 136).toString("hex"),
+    ratePerSecond: buffer.readBigUInt64LE(136),
+    minimumFee: buffer.readBigUInt64LE(144),
+    buyoutCap: buffer.readBigUInt64LE(152),
+    autoBuyoutGraceSeconds: buffer.readBigInt64LE(160),
+    activeSession: new PublicKey(buffer.subarray(168, 200)).toBase58(),
+    status: buffer.readUInt8(200),
+    bump: buffer.readUInt8(201),
+  };
 }
 
 export async function buildStartRentalTransaction(input: {

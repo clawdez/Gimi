@@ -56,8 +56,9 @@ const categoryKeywords: Array<[string, string[]]> = [
 const crossmintConfigured = Boolean(process.env.NEXT_PUBLIC_CROSSMINT_API_KEY);
 
 export function TablyAgent() {
-  const availableItems = COMMUNITY_ITEMS.filter((item) => item.status === "available");
-  const defaultItem = availableItems[0] ?? COMMUNITY_ITEMS[0];
+  const [inventory, setInventory] = useState<RentalItem[]>(COMMUNITY_ITEMS);
+  const availableItems = inventory.filter((item) => item.status === "available");
+  const defaultItem = availableItems[0] ?? inventory[0] ?? COMMUNITY_ITEMS[0];
   const { wallet: crossmintWallet } = useWallet();
   const solanaWallet = useSolanaWallet();
   const crossmintSigner = crossmintWallet?.address ?? "";
@@ -86,6 +87,32 @@ export function TablyAgent() {
   useEffect(() => {
     return () => {
       if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadInventory() {
+      try {
+        const res = await fetch("/api/listings", { cache: "no-store" });
+        if (!res.ok) throw new Error("Listings API unavailable");
+        const data = await res.json();
+        const listings = parseListingsPayload(data);
+        if (!listings.length || cancelled) return;
+        setInventory(listings);
+        setSelectedItem((current) => (listings.some((item) => item.id === current.id) ? current : listings[0]));
+      } catch {
+        if (!cancelled) {
+          setInventory(COMMUNITY_ITEMS);
+        }
+      }
+    }
+
+    void loadInventory();
+
+    return () => {
+      cancelled = true;
     };
   }, []);
 
@@ -901,4 +928,107 @@ function base64ToUint8Array(value: string) {
     bytes[index] = binary.charCodeAt(index);
   }
   return bytes;
+}
+
+function parseListingsPayload(data: unknown): RentalItem[] {
+  const records = Array.isArray(data)
+    ? data
+    : isRecord(data) && Array.isArray(data.inventory)
+      ? data.inventory
+      : isRecord(data) && Array.isArray(data.listings)
+      ? data.listings
+      : isRecord(data) && Array.isArray(data.items)
+        ? data.items
+        : [];
+
+  const listings = records.map(normalizeListingRecord).filter((item): item is RentalItem => Boolean(item));
+  return listings.length ? mergeInventory(listings, COMMUNITY_ITEMS) : COMMUNITY_ITEMS;
+}
+
+function mergeInventory(primary: RentalItem[], fallback: RentalItem[]) {
+  const seen = new Set<string>();
+  return [...primary, ...fallback].filter((item) => {
+    if (seen.has(item.id)) return false;
+    seen.add(item.id);
+    return true;
+  });
+}
+
+function normalizeListingRecord(record: unknown): RentalItem | null {
+  if (!isRecord(record)) return null;
+  const id = getString(record, "id") || getString(record, "draftId") || getString(record, "itemId");
+  const name = getString(record, "name");
+  const category = getString(record, "category") || "Other";
+  const imageUrl = getString(record, "imageUrl") || getString(record, "image_url");
+  const locationLabel = getString(record, "locationLabel") || getString(record, "location_label") || "Community desk";
+  const owner = getString(record, "owner") || getString(record, "ownerWallet") || getString(record, "owner_wallet") || "";
+
+  if (!id || !name || !imageUrl) return null;
+
+  return {
+    id,
+    name,
+    brand: getString(record, "brand"),
+    model: getString(record, "model"),
+    condition: clampNumber(getNumber(record, "condition"), 1, 10, 8),
+    description: getString(record, "description") || `${name} listed by a community owner.`,
+    imageUrl,
+    ratePerHour: getNumber(record, "ratePerHour") ?? getNumber(record, "rate_per_hour") ?? 1,
+    minimumFee: getNumber(record, "minimumFee") ?? getNumber(record, "minimum_fee") ?? 2,
+    buyoutCap: getNumber(record, "buyoutCap") ?? getNumber(record, "buyout_cap") ?? 20,
+    expectedHours: getNumber(record, "expectedHours") ?? getNumber(record, "expected_hours") ?? 3,
+    status: normalizeStatus(getString(record, "status")),
+    owner,
+    ownerName: getString(record, "ownerName") || getString(record, "owner_name") || "Community owner",
+    locationLabel,
+    renter: getString(record, "renter") || undefined,
+    rentalStart: getNumber(record, "rentalStart") ?? getNumber(record, "rental_start") ?? undefined,
+    rentalHours: getNumber(record, "rentalHours") ?? getNumber(record, "rental_hours") ?? undefined,
+    category,
+    ownerScore: getNumber(record, "ownerScore") ?? getNumber(record, "owner_score") ?? 90,
+    returnedOkCount: getNumber(record, "returnedOkCount") ?? getNumber(record, "returned_ok_count") ?? 0,
+    autoBuyoutCount: getNumber(record, "autoBuyoutCount") ?? getNumber(record, "auto_buyout_count") ?? 0,
+    disputeCount: getNumber(record, "disputeCount") ?? getNumber(record, "dispute_count") ?? 0,
+    createdAt: getCreatedAt(record),
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object");
+}
+
+function getString(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+  return typeof value === "string" ? value : "";
+}
+
+function getNumber(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+}
+
+function clampNumber(value: number | undefined, min: number, max: number, fallback: number) {
+  if (typeof value !== "number") return fallback;
+  return Math.min(max, Math.max(min, value));
+}
+
+function normalizeStatus(value: string): RentalItem["status"] {
+  if (value === "rented" || value === "return_requested" || value === "buyout" || value === "disputed") return value;
+  return "available";
+}
+
+function getCreatedAt(record: Record<string, unknown>) {
+  const numeric = getNumber(record, "createdAt");
+  if (numeric) return numeric;
+  const createdAt = getString(record, "created_at");
+  if (createdAt) {
+    const parsed = Date.parse(createdAt);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return Date.now();
 }

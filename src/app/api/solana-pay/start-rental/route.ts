@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getItem } from "@/lib/store";
+import { getRentableItem } from "@/lib/rentableItems";
 import {
   AUTO_BUYOUT_GRACE_SECONDS,
   PLATFORM_FEE_BPS,
@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const item = getItem(body.itemId ?? "power_bank_18");
+  const item = await getRentableItem(body.itemId ?? "power_bank_18");
 
   if (!item) {
     return NextResponse.json({ error: "Item not found" }, { status: 404 });

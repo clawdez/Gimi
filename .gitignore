@@ -24,6 +24,7 @@
 /.anchor/
 /target/
 /test-ledger/
+/.rentproof/
 
 # misc
 .DS_Store
