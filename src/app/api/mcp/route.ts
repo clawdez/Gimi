@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getItem, getItems } from "@/lib/store";
+import { getRentableItem, getRentableItems } from "@/lib/rentableItems";
 import { buildSettleRentalTransaction, buildStartRentalTransaction, DEMO_RENTER_WALLET, publicKeyOrFallback } from "@/lib/rentproofProgram";
 
 const tools = [
@@ -31,8 +31,9 @@ export async function POST(req: NextRequest) {
   }
 
   if (tool === "rentproof.find_offers") {
+    const items = await getRentableItems();
     return NextResponse.json({
-      offers: getItems().map((item) => ({
+      offers: items.map((item) => ({
         itemId: item.id,
         name: item.name,
         ratePerHour: item.ratePerHour,
@@ -44,7 +45,11 @@ export async function POST(req: NextRequest) {
   }
 
   if (tool === "rentproof.draft_terms") {
-    const item = getItem(body.itemId ?? "power_bank_18") ?? getItems()[0];
+    const items = await getRentableItems();
+    const item = (await getRentableItem(body.itemId ?? "power_bank_18")) ?? items[0];
+    if (!item) {
+      return NextResponse.json({ error: "No rentable inventory is available" }, { status: 404 });
+    }
     const hours = Number(body.hours ?? item.expectedHours);
     return NextResponse.json({
       draft: {
@@ -59,7 +64,11 @@ export async function POST(req: NextRequest) {
   }
 
   if (tool === "rentproof.create_rental_request") {
-    const item = getItem(body.itemId ?? "power_bank_18") ?? getItems()[0];
+    const items = await getRentableItems();
+    const item = (await getRentableItem(body.itemId ?? "power_bank_18")) ?? items[0];
+    if (!item) {
+      return NextResponse.json({ error: "No rentable inventory is available" }, { status: 404 });
+    }
     const renter = publicKeyOrFallback(body.renterWallet, DEMO_RENTER_WALLET);
     const hours = Number(body.hours ?? item.expectedHours);
     const rentalId = body.rentalId ?? body.draftId ?? `mcp_${item.id}_${crypto.randomUUID()}`;
@@ -87,7 +96,11 @@ export async function POST(req: NextRequest) {
   }
 
   if (tool === "rentproof.request_return" || tool === "rentproof.prepare_auto_buyout") {
-    const item = getItem(body.itemId ?? "power_bank_18") ?? getItems()[0];
+    const items = await getRentableItems();
+    const item = (await getRentableItem(body.itemId ?? "power_bank_18")) ?? items[0];
+    if (!item) {
+      return NextResponse.json({ error: "No rentable inventory is available" }, { status: 404 });
+    }
     const renter = publicKeyOrFallback(body.renterWallet, DEMO_RENTER_WALLET);
     const rentalId = body.rentalId ?? body.draftId;
 

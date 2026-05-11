@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getItem } from "@/lib/store";
+import { getRentableItem } from "@/lib/rentableItems";
 import { buildSettleRentalTransaction, deriveRentProofAccounts } from "@/lib/rentproofProgram";
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const item = getItem(body.itemId ?? "power_bank_18");
+  const item = await getRentableItem(body.itemId ?? "power_bank_18");
 
   if (!item) {
     return NextResponse.json({ error: "Item not found" }, { status: 404 });

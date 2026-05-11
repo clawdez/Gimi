@@ -1,274 +1,629 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { ChatMessage } from "@/lib/types";
-import { useWallet } from "@solana/wallet-adapter-react";
-import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
+import { useCrossmintAuth, useWallet as useCrossmintWallet } from "@crossmint/client-sdk-react-ui";
+import { SolanaWallet } from "@crossmint/wallets-sdk";
+import { useWallet as useSolanaWallet } from "@solana/wallet-adapter-react";
+import { useWalletModal } from "@solana/wallet-adapter-react-ui";
+import { Connection, Transaction } from "@solana/web3.js";
+import { type FormEvent, useMemo, useState } from "react";
 
 interface ListingAgentProps {
   onDone: () => void;
 }
 
-interface AgentState {
-  step: number;
+type ListingStep = "collect" | "review" | "prepare" | "sign" | "publish";
+type ListingStatus = "idle" | "preparing" | "ready" | "signing" | "publishing" | "published" | "error";
+
+interface ListingForm {
+  name: string;
   category: string;
-  itemName: string;
   brand: string;
   model: string;
   condition: number;
+  locationLabel: string;
+  included: string;
+  imageUrl: string;
+  ratePerHour: number;
+  minimumFee: number;
+  buyoutCap: number;
+  autoBuyoutGraceSeconds: number;
   description: string;
 }
 
-const STEPS = [
-  { key: "category", question: "What kind of item are you listing?", options: ["Sports", "Tools", "Electronics", "Kitchen", "Luxury", "Other"] },
-  { key: "itemName", question: "What's the item called?" },
-  { key: "brand", question: "What brand is it?" },
-  { key: "model", question: "What's the specific model?" },
-  { key: "condition", question: "On a scale of 1-10, what condition is it in?", options: ["10 — Like new", "8 — Great", "7 — Good", "5 — Fair", "3 — Rough"] },
-  { key: "description", question: "Describe it briefly — any scratches, what's included, etc." },
-];
-
-function suggestPrice(state: AgentState): { daily: number; retail: number } {
-  const conditionMultiplier = state.condition / 10;
-  const categoryPrices: Record<string, { daily: number; retail: number }> = {
-    Sports: { daily: 18, retail: 1200 },
-    Tools: { daily: 8, retail: 200 },
-    Electronics: { daily: 35, retail: 1500 },
-    Kitchen: { daily: 10, retail: 400 },
-    Luxury: { daily: 40, retail: 2000 },
-    Other: { daily: 15, retail: 500 },
+interface ListingPreview extends Omit<ListingForm, "included"> {
+  schema: "tably.item.v1";
+  id?: string;
+  itemId?: string;
+  itemPda?: string;
+  itemIdHash?: string;
+  paymentMint?: string;
+  metadata?: {
+    schema: "tably.item.v1";
+    itemId: string;
+    name: string;
+    brand: string;
+    model: string;
+    category: string;
+    condition: number;
+    description: string;
+    imageUrl: string;
+    locationLabel: string;
+    included: string[];
+    ownerWallet: string;
+    createdAt: string;
   };
-  const base = categoryPrices[state.category] || categoryPrices.Other;
-  return {
-    daily: Math.round(base.daily * conditionMultiplier),
-    retail: Math.round(base.retail),
+  canonicalMetadataJson?: string;
+  metadataHash?: string;
+  included: string[];
+  ownerWallet: string;
+  createdAt: string;
+}
+
+interface PreparedListingTransaction {
+  draftId: string;
+  itemPda: string;
+  metadataHash: string;
+  listingPreview: ListingPreview;
+  transactionBase64: string;
+  metadata: {
+    blockhash: string;
+    cluster: string;
+    feePayer: string;
+    lastValidBlockHeight: number;
+    paymentMint?: string;
+    requiredSigner: string;
+    rpcUrl: string;
   };
 }
 
+type CrossmintWalletInstance = NonNullable<ReturnType<typeof useCrossmintWallet>["wallet"]>;
+type SolanaSendTransaction = ReturnType<typeof useSolanaWallet>["sendTransaction"];
+
+const categories = ["Power", "Audio", "Video", "Workspace", "Adapters", "Tools", "Other"];
+const crossmintConfigured = Boolean(process.env.NEXT_PUBLIC_CROSSMINT_API_KEY);
+
+const initialForm: ListingForm = {
+  name: "",
+  category: "Power",
+  brand: "",
+  model: "",
+  condition: 8,
+  locationLabel: "",
+  included: "",
+  imageUrl: "",
+  ratePerHour: 2,
+  minimumFee: 3,
+  buyoutCap: 30,
+  autoBuyoutGraceSeconds: 3600,
+  description: "",
+};
+
 export function ListingAgent({ onDone }: ListingAgentProps) {
-  const { connected } = useWallet();
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    { role: "agent", content: "Hey! I'm your RentChain listing agent. I'll help you list your item for rent in about 60 seconds. Let's get started." },
-    { role: "agent", content: STEPS[0].question, options: STEPS[0].options },
-  ]);
-  const [state, setState] = useState<AgentState>({
-    step: 0,
-    category: "",
-    itemName: "",
-    brand: "",
-    model: "",
-    condition: 0,
-    description: "",
-  });
-  const [input, setInput] = useState("");
-  const [minting, setMinting] = useState(false);
-  const [minted, setMinted] = useState(false);
-  const chatEndRef = useRef<HTMLDivElement>(null);
+  const { login, status: authStatus } = useCrossmintAuth();
+  const { wallet: crossmintWallet, status: crossmintWalletStatus } = useCrossmintWallet();
+  const solanaWallet = useSolanaWallet();
+  const { setVisible: setSolanaWalletVisible } = useWalletModal();
+  const crossmintSigner = crossmintWallet?.address ?? "";
+  const solanaSigner = solanaWallet.publicKey?.toBase58() ?? "";
+  const ownerWallet = solanaSigner || crossmintSigner;
+  const [form, setForm] = useState<ListingForm>(initialForm);
+  const [step, setStep] = useState<ListingStep>("collect");
+  const [status, setStatus] = useState<ListingStatus>("idle");
+  const [preparedTx, setPreparedTx] = useState<PreparedListingTransaction | null>(null);
+  const [signature, setSignature] = useState("");
+  const [agentLine, setAgentLine] = useState("Collect the owner listing details, then initialize the item on Solana devnet.");
 
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  const listingPreview = useMemo<ListingPreview>(
+    () => ({
+      schema: "tably.item.v1",
+      name: form.name.trim(),
+      brand: form.brand.trim(),
+      model: form.model.trim(),
+      category: form.category,
+      condition: form.condition,
+      description: form.description.trim(),
+      imageUrl: form.imageUrl.trim(),
+      locationLabel: form.locationLabel.trim(),
+      included: splitIncluded(form.included),
+      ratePerHour: form.ratePerHour,
+      minimumFee: form.minimumFee,
+      buyoutCap: form.buyoutCap,
+      autoBuyoutGraceSeconds: form.autoBuyoutGraceSeconds,
+      ownerWallet,
+      createdAt: new Date().toISOString(),
+    }),
+    [form, ownerWallet]
+  );
 
-  function handleSend(text?: string) {
-    const userText = text || input;
-    if (!userText.trim()) return;
-    setInput("");
+  const isCrossmintBusy = authStatus === "in-progress" || crossmintWalletStatus === "in-progress";
+  const canReview = Boolean(
+    ownerWallet &&
+      form.name.trim() &&
+      form.category &&
+      form.brand.trim() &&
+      form.condition >= 1 &&
+      form.locationLabel.trim() &&
+      form.imageUrl.trim() &&
+      form.ratePerHour > 0 &&
+      form.minimumFee > 0 &&
+      form.buyoutCap >= form.minimumFee &&
+      form.description.trim()
+  );
+  const canSignPrepared = Boolean(
+    preparedTx && (preparedTx.metadata.requiredSigner === solanaSigner || preparedTx.metadata.requiredSigner === crossmintSigner)
+  );
 
-    const newMessages: ChatMessage[] = [...messages, { role: "user", content: userText }];
-    const newState = { ...state };
-    const currentStep = STEPS[state.step];
+  function updateField<K extends keyof ListingForm>(key: K, value: ListingForm[K]) {
+    setForm((current) => ({ ...current, [key]: value }));
+    setStatus("idle");
+    setPreparedTx(null);
+    setSignature("");
+    if (step !== "collect") setStep("collect");
+  }
 
-    // Parse response into state
-    switch (currentStep.key) {
-      case "category":
-        newState.category = userText.replace(/^\d+\s*[—-]\s*/, "");
-        break;
-      case "itemName":
-        newState.itemName = userText;
-        break;
-      case "brand":
-        newState.brand = userText;
-        break;
-      case "model":
-        newState.model = userText;
-        break;
-      case "condition":
-        const num = parseInt(userText);
-        newState.condition = isNaN(num) ? 7 : Math.min(10, Math.max(1, num));
-        break;
-      case "description":
-        newState.description = userText;
-        break;
+  function reviewListing(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!ownerWallet) {
+      setAgentLine("Connect the owner wallet before preparing an item listing.");
+      return;
+    }
+    if (!canReview) {
+      setAgentLine("Fill the required item, pricing, image, and location fields before review.");
+      return;
+    }
+    setStep("review");
+    setAgentLine("Review the canonical listing preview. The backend will hash this metadata before building initialize_item.");
+  }
+
+  async function prepareListing() {
+    if (!canReview) {
+      setAgentLine("Complete the listing details before preparing the transaction.");
+      return;
     }
 
-    const nextStep = state.step + 1;
-    newState.step = nextStep;
+    setStep("prepare");
+    setStatus("preparing");
+    setPreparedTx(null);
+    setSignature("");
+    setAgentLine("Preparing owner-signed initialize_item transaction...");
 
-    if (nextStep < STEPS.length) {
-      // Ask next question
-      const next = STEPS[nextStep];
-      newMessages.push({ role: "agent", content: next.question, options: next.options });
-    } else {
-      // All info collected — suggest pricing
-      const price = suggestPrice(newState);
-      newMessages.push({
-        role: "agent",
-        content: `Here's what I've got:\n\n**${newState.itemName}**\n${newState.brand} ${newState.model}\nCondition: ${newState.condition}/10\n"${newState.description}"\n\nBased on market data, I'd recommend:\n- **$${price.daily}/day** rental rate\n- **$${price.retail}** retail backstop (what renter pays if they don't return it)\n\nReady to mint this on Solana and go live?`,
-        options: ["Mint it!", "Adjust price", "Start over"],
+    try {
+      const res = await fetch("/api/solana-pay/initialize-item", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ownerWallet,
+          name: listingPreview.name,
+          brand: listingPreview.brand,
+          model: listingPreview.model,
+          category: listingPreview.category,
+          condition: listingPreview.condition,
+          description: listingPreview.description,
+          imageUrl: listingPreview.imageUrl,
+          locationLabel: listingPreview.locationLabel,
+          included: listingPreview.included,
+          ratePerHour: listingPreview.ratePerHour,
+          minimumFee: listingPreview.minimumFee,
+          buyoutCap: listingPreview.buyoutCap,
+          autoBuyoutGraceSeconds: listingPreview.autoBuyoutGraceSeconds,
+        }),
       });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to prepare initialize_item");
+      const metadata = data.transactionMetadata ?? {};
+      const preview = normalizeListingPreview(data.listingPreview, listingPreview, data.draftId);
+      setPreparedTx({
+        draftId: data.draftId,
+        itemPda: data.itemPda,
+        metadataHash: data.metadataHash,
+        listingPreview: preview,
+        transactionBase64: data.transaction,
+        metadata: {
+          blockhash: metadata.blockhash,
+          cluster: metadata.cluster ?? "devnet",
+          feePayer: metadata.feePayer ?? ownerWallet,
+          lastValidBlockHeight: metadata.lastValidBlockHeight,
+          paymentMint: data.paymentMint ?? metadata.paymentMint,
+          requiredSigner: metadata.requiredSigner ?? ownerWallet,
+          rpcUrl: metadata.rpcUrl ?? "https://api.devnet.solana.com",
+        },
+      });
+      setStep("sign");
+      setStatus("ready");
+      setAgentLine(`initialize_item prepared for ${preview.name}. Sign with ${shortKey(metadata.requiredSigner ?? ownerWallet)}.`);
+    } catch (error) {
+      setStatus("error");
+      setAgentLine(error instanceof Error ? `Could not prepare listing: ${error.message}` : "Could not prepare the listing transaction.");
+    }
+  }
+
+  async function signInitializeItem() {
+    if (!preparedTx) {
+      await prepareListing();
+      return;
+    }
+    if (!canSignPrepared) {
+      setAgentLine("Connected wallet does not match the required owner signer. Connect the owner wallet and prepare again.");
+      return;
     }
 
-    setMessages(newMessages);
-    setState(newState);
+    setStatus("signing");
+    setAgentLine("Waiting for owner signature...");
+
+    try {
+      const connection = new Connection(preparedTx.metadata.rpcUrl, "confirmed");
+      const txSignature =
+        preparedTx.metadata.requiredSigner === solanaSigner
+          ? await sendWithSolanaAdapter(preparedTx, connection, solanaWallet.sendTransaction)
+          : await sendWithCrossmintWallet(preparedTx, crossmintWallet);
+      await connection.confirmTransaction(
+        {
+          signature: txSignature,
+          blockhash: preparedTx.metadata.blockhash,
+          lastValidBlockHeight: preparedTx.metadata.lastValidBlockHeight,
+        },
+        "confirmed"
+      );
+      setSignature(txSignature);
+      setStep("publish");
+      setStatus("ready");
+      setAgentLine(`initialize_item confirmed on ${preparedTx.metadata.cluster}: ${shortKey(txSignature)}. Publish the listing next.`);
+    } catch (error) {
+      setStatus("error");
+      setAgentLine(error instanceof Error ? `Owner signature failed: ${error.message}` : "Owner signature failed.");
+    }
   }
 
-  async function handleMint() {
-    setMinting(true);
-    setMessages((prev) => [
-      ...prev,
-      { role: "user", content: "Mint it!" },
-      { role: "agent", content: "Minting your item on Solana..." },
-    ]);
+  async function publishListing() {
+    if (!preparedTx || !signature) {
+      setAgentLine("Sign initialize_item before publishing the listing.");
+      return;
+    }
 
-    await new Promise((r) => setTimeout(r, 2500));
+    setStatus("publishing");
+    setAgentLine("Publishing listing after devnet verification...");
 
-    const mintSeed = `${state.category}-${state.itemName}-${state.brand}-${state.model}`.toLowerCase();
-    const mintId = Array.from(mintSeed).reduce((sum, char) => sum + char.charCodeAt(0), 0).toString(36);
-    const fakeMint = `rent_${mintId.padStart(6, "0")}...demo`;
-    setMessages((prev) => [
-      ...prev,
-      {
-        role: "agent",
-        content: `Your item is live!\n\n**${state.itemName}** has been tokenized on Solana.\n\nMint address: \`${fakeMint}\`\nStatus: Available for rent\n\nBuyers can now find and rent your item on the marketplace.`,
-        options: ["View marketplace", "List another item"],
-      },
-    ]);
-    setMinting(false);
-    setMinted(true);
-  }
-
-  function handleOptionClick(option: string) {
-    if (option === "Mint it!") {
-      handleMint();
-    } else if (option === "View marketplace") {
-      onDone();
-    } else if (option === "Start over") {
-      setState({ step: 0, category: "", itemName: "", brand: "", model: "", condition: 0, description: "" });
-      setMessages([
-        { role: "agent", content: "No problem, let's start fresh!" },
-        { role: "agent", content: STEPS[0].question, options: STEPS[0].options },
-      ]);
-    } else if (option === "List another item") {
-      setState({ step: 0, category: "", itemName: "", brand: "", model: "", condition: 0, description: "" });
-      setMessages([
-        { role: "agent", content: "Let's list another one!" },
-        { role: "agent", content: STEPS[0].question, options: STEPS[0].options },
-      ]);
-      setMinted(false);
-    } else if (option === "Adjust price") {
-      setMessages((prev) => [
-        ...prev,
-        { role: "user", content: "Adjust price" },
-        { role: "agent", content: "What daily rate would you like? (just type a number)" },
-      ]);
-    } else {
-      handleSend(option);
+    try {
+      const res = await fetch("/api/listings/publish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          draftId: preparedTx.draftId,
+          initializeSignature: signature,
+          listingPreview: preparedTx.listingPreview,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Failed to publish listing");
+      setStatus("published");
+      setAgentLine(`${preparedTx.listingPreview.name} is published and available to the renter agent inventory.`);
+    } catch (error) {
+      setStatus("error");
+      setAgentLine(error instanceof Error ? `Publish failed: ${error.message}` : "Publish failed.");
     }
   }
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-8">
-      <div className="flex items-center gap-3 mb-6">
-        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-green-400 to-purple-500 flex items-center justify-center">
-          <svg className="w-5 h-5 text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-          </svg>
-        </div>
-        <div>
-          <h2 className="text-xl font-bold">Listing Agent</h2>
-          <p className="text-sm text-gray-500">List your item in 60 seconds</p>
-        </div>
-      </div>
-
-      {/* Progress bar */}
-      <div className="h-1 bg-gray-800 rounded-full mb-6 overflow-hidden">
-        <div
-          className="h-full bg-gradient-to-r from-green-500 to-purple-500 rounded-full transition-all duration-500"
-          style={{ width: `${Math.min(100, (state.step / STEPS.length) * 100)}%` }}
-        />
-      </div>
-
-      {/* Chat messages */}
-      <div className="space-y-4 mb-6 max-h-[60vh] overflow-y-auto pr-2">
-        {messages.map((msg, i) => (
-          <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-            <div className={`max-w-[80%] rounded-2xl px-4 py-3 ${
-              msg.role === "agent" ? "chat-bubble-agent" : "chat-bubble-user"
-            }`}>
-              <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
-              {msg.options && (
-                <div className="flex flex-wrap gap-2 mt-3">
-                  {msg.options.map((opt) => (
-                    <button
-                      key={opt}
-                      onClick={() => handleOptionClick(opt)}
-                      disabled={minting}
-                      className="px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-800 hover:bg-gray-700 text-gray-300 hover:text-white border border-gray-700 hover:border-green-500/50 transition-all disabled:opacity-50"
-                    >
-                      {opt}
-                    </button>
-                  ))}
-                </div>
-              )}
+    <section className="grain-field relative min-h-[100svh] overflow-y-auto bg-[#f7f3ea] px-4 pb-10 pt-32 text-[#061725] sm:px-8 sm:pt-36">
+      <div className="absolute inset-0 bg-[linear-gradient(135deg,#fffaf0_0%,#f7fbff_52%,#fbf3ff_100%)]" />
+      <div className="relative z-10 mx-auto grid max-w-6xl gap-5 lg:grid-cols-[minmax(0,1fr)_390px]">
+        <div className="rounded-[30px] border border-white/80 bg-white/82 p-4 shadow-[0_30px_90px_rgba(6,23,37,0.12)] backdrop-blur-2xl sm:p-6">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-[12px] font-black uppercase tracking-[0.16em] text-[#6b4cff]">Owner listing</p>
+              <h1 className="mt-2 text-3xl font-black tracking-normal text-[#061725] sm:text-5xl">List an item</h1>
+              <p className="mt-3 max-w-2xl text-sm font-bold leading-6 text-[#607489]">
+                Prepare a real devnet item account, sign as the owner, then publish the off-chain product metadata.
+              </p>
             </div>
+            <OwnerWalletControls
+              connectedWallet={ownerWallet}
+              crossmintBusy={isCrossmintBusy}
+              onCrossmintLogin={() => {
+                setAgentLine(
+                  crossmintConfigured
+                    ? "Opening Crossmint owner wallet sign-in."
+                    : "Crossmint is not configured. Add NEXT_PUBLIC_CROSSMINT_API_KEY to enable email wallet login."
+                );
+                if (crossmintConfigured) login();
+              }}
+              onSolanaConnect={() => setSolanaWalletVisible(true)}
+              solanaBusy={solanaWallet.connecting}
+            />
           </div>
-        ))}
-        {minting && (
-          <div className="flex justify-start">
-            <div className="chat-bubble-agent rounded-2xl px-4 py-3">
-              <div className="flex items-center gap-2 text-sm text-green-400">
-                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
-                Minting on Solana...
-              </div>
-            </div>
-          </div>
-        )}
-        <div ref={chatEndRef} />
-      </div>
 
-      {/* Input */}
-      {!minted && state.step < STEPS.length + 1 && (
-        <div className="flex gap-2">
-          {!connected ? (
-            <div className="flex-1 flex justify-center">
-              <WalletMultiButton className="!bg-purple-600 !rounded-xl !h-12" />
-            </div>
-          ) : (
-            <>
-              <input
-                type="text"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSend()}
-                placeholder="Type your answer..."
-                className="flex-1 bg-gray-900 border border-gray-700 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-green-500/50 transition-colors"
+          <StepRail step={step} status={status} />
+
+          <form onSubmit={reviewListing} className="mt-5 grid gap-4 sm:grid-cols-2">
+            <TextField label="Product name" value={form.name} onChange={(value) => updateField("name", value)} placeholder="Anker Power Bank" />
+            <SelectField label="Category" value={form.category} options={categories} onChange={(value) => updateField("category", value)} />
+            <TextField label="Brand" value={form.brand} onChange={(value) => updateField("brand", value)} placeholder="Anker" />
+            <TextField label="Model" value={form.model} onChange={(value) => updateField("model", value)} placeholder="20K USB-C" />
+            <NumberField label="Condition" value={form.condition} min={1} max={10} onChange={(value) => updateField("condition", value)} />
+            <TextField label="Location" value={form.locationLabel} onChange={(value) => updateField("locationLabel", value)} placeholder="Main hall table B" />
+            <TextField label="Included" value={form.included} onChange={(value) => updateField("included", value)} placeholder="USB-C cable, pouch" />
+            <TextField label="Photo URL" value={form.imageUrl} onChange={(value) => updateField("imageUrl", value)} placeholder="https://..." />
+            <NumberField label="Hourly rate" value={form.ratePerHour} min={0.1} step={0.1} suffix="USDC" onChange={(value) => updateField("ratePerHour", value)} />
+            <NumberField label="Minimum fee" value={form.minimumFee} min={0.1} step={0.1} suffix="USDC" onChange={(value) => updateField("minimumFee", value)} />
+            <NumberField label="Buyout cap" value={form.buyoutCap} min={1} step={1} suffix="USDC" onChange={(value) => updateField("buyoutCap", value)} />
+            <NumberField
+              label="Grace period"
+              value={form.autoBuyoutGraceSeconds}
+              min={60}
+              step={60}
+              suffix="sec"
+              onChange={(value) => updateField("autoBuyoutGraceSeconds", value)}
+            />
+            <label className="sm:col-span-2">
+              <span className="text-[12px] font-black uppercase tracking-[0.12em] text-[#607489]">Description</span>
+              <textarea
+                value={form.description}
+                onChange={(event) => updateField("description", event.target.value)}
+                placeholder="High capacity USB-C power bank with cable."
+                className="mt-2 min-h-[94px] w-full rounded-[18px] border border-[#dfe7ef] bg-white px-4 py-3 text-sm font-bold text-[#061725] outline-none transition focus:border-[#6b4cff]"
               />
-              <button
-                onClick={() => handleSend()}
-                disabled={!input.trim()}
-                className="px-4 py-3 rounded-xl bg-green-500 hover:bg-green-400 text-black font-medium transition-colors disabled:opacity-50"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                </svg>
-              </button>
-            </>
-          )}
+            </label>
+            <button
+              type="submit"
+              disabled={!canReview}
+              className="min-h-[46px] rounded-full bg-[#061725] px-5 text-sm font-black text-white transition hover:bg-[#c8ff18] hover:text-[#061725] disabled:cursor-default disabled:bg-[#dfe7ef] disabled:text-[#8a98a5] sm:col-span-2"
+            >
+              Review listing metadata
+            </button>
+          </form>
         </div>
-      )}
+
+        <aside className="rounded-[30px] border border-white/80 bg-white/74 p-4 shadow-[0_30px_90px_rgba(6,23,37,0.1)] backdrop-blur-2xl sm:p-5">
+          <p className="text-[12px] font-black uppercase tracking-[0.16em] text-[#607489]">Agent status</p>
+          <p className="mt-3 text-sm font-bold leading-6 text-[#061725]">{agentLine}</p>
+
+          <div className="mt-5 rounded-[22px] border border-[#e7edf3] bg-white/80 p-4">
+            <p className="text-[13px] font-black text-[#061725]">Canonical preview</p>
+            <dl className="mt-3 space-y-2 text-[12px] font-bold text-[#607489]">
+              <PreviewRow label="Owner" value={ownerWallet ? shortKey(ownerWallet) : "not connected"} />
+              <PreviewRow label="Item" value={listingPreview.name || "missing"} />
+              <PreviewRow label="Category" value={listingPreview.category} />
+              <PreviewRow label="Location" value={listingPreview.locationLabel || "missing"} />
+              <PreviewRow label="Pricing" value={`$${listingPreview.ratePerHour}/h, min $${listingPreview.minimumFee}`} />
+              <PreviewRow label="Buyout" value={`$${listingPreview.buyoutCap}, ${listingPreview.autoBuyoutGraceSeconds}s grace`} />
+              <PreviewRow label="Included" value={listingPreview.included.length ? listingPreview.included.join(", ") : "none"} />
+              {preparedTx && <PreviewRow label="Item PDA" value={shortKey(preparedTx.itemPda)} />}
+              {preparedTx && <PreviewRow label="Metadata" value={shortKey(preparedTx.metadataHash)} />}
+              {signature && <PreviewRow label="Signature" value={shortKey(signature)} />}
+            </dl>
+          </div>
+
+          <div className="mt-4 grid gap-2">
+            <button
+              type="button"
+              onClick={() => void prepareListing()}
+              disabled={!canReview || status === "preparing" || status === "signing" || status === "publishing"}
+              className="min-h-[44px] rounded-full bg-[#c8ff18] px-4 text-[13px] font-black text-[#061725] transition hover:bg-[#ff7867] disabled:cursor-default disabled:bg-[#dfe7ef] disabled:text-[#8a98a5]"
+            >
+              {status === "preparing" ? "Preparing..." : "Prepare initialize_item"}
+            </button>
+            <button
+              type="button"
+              onClick={() => void signInitializeItem()}
+              disabled={!preparedTx || !canSignPrepared || status === "signing" || status === "publishing" || status === "published"}
+              className="min-h-[44px] rounded-full bg-[#061725] px-4 text-[13px] font-black text-white transition hover:bg-[#6b4cff] disabled:cursor-default disabled:bg-[#dfe7ef] disabled:text-[#8a98a5]"
+            >
+              {status === "signing" ? "Signing..." : "Sign owner transaction"}
+            </button>
+            <button
+              type="button"
+              onClick={() => void publishListing()}
+              disabled={!signature || status === "publishing" || status === "published"}
+              className="min-h-[44px] rounded-full border border-[#dfe7ef] bg-white px-4 text-[13px] font-black text-[#061725] transition hover:border-[#c8ff18] disabled:cursor-default disabled:bg-[#f1f4f7] disabled:text-[#8a98a5]"
+            >
+              {status === "publishing" ? "Publishing..." : status === "published" ? "Published" : "Publish listing"}
+            </button>
+            {status === "published" && (
+              <button
+                type="button"
+                onClick={onDone}
+                className="min-h-[44px] rounded-full bg-[#061725] px-4 text-[13px] font-black text-white transition hover:bg-[#c8ff18] hover:text-[#061725]"
+              >
+                View renter inventory
+              </button>
+            )}
+          </div>
+        </aside>
+      </div>
+    </section>
+  );
+}
+
+function OwnerWalletControls({
+  connectedWallet,
+  crossmintBusy,
+  onCrossmintLogin,
+  onSolanaConnect,
+  solanaBusy,
+}: {
+  connectedWallet: string;
+  crossmintBusy: boolean;
+  onCrossmintLogin: () => void;
+  onSolanaConnect: () => void;
+  solanaBusy: boolean;
+}) {
+  if (connectedWallet) {
+    return <div className="rounded-full bg-[#c8ff18] px-4 py-2 text-[12px] font-black text-[#061725]">Owner {shortKey(connectedWallet)}</div>;
+  }
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      <button
+        type="button"
+        onClick={onCrossmintLogin}
+        disabled={crossmintBusy}
+        className="min-h-[38px] rounded-full bg-[#061725] px-4 text-[12px] font-black text-white transition hover:bg-[#c8ff18] hover:text-[#061725] disabled:opacity-60"
+      >
+        {crossmintBusy ? "Connecting..." : "Crossmint"}
+      </button>
+      <button
+        type="button"
+        onClick={onSolanaConnect}
+        disabled={solanaBusy}
+        className="min-h-[38px] rounded-full border border-[#dfe7ef] bg-white px-4 text-[12px] font-black text-[#061725] transition hover:border-[#6b4cff] disabled:opacity-60"
+      >
+        {solanaBusy ? "Connecting..." : "Solana wallet"}
+      </button>
     </div>
   );
+}
+
+function StepRail({ step, status }: { step: ListingStep; status: ListingStatus }) {
+  const steps: Array<{ key: ListingStep; label: string }> = [
+    { key: "collect", label: "Collect" },
+    { key: "review", label: "Review" },
+    { key: "prepare", label: "Prepare" },
+    { key: "sign", label: "Sign" },
+    { key: "publish", label: "Publish" },
+  ];
+  const currentIndex = steps.findIndex((item) => item.key === step);
+
+  return (
+    <div className="mt-6 grid grid-cols-5 gap-2">
+      {steps.map((item, index) => {
+        const active = index <= currentIndex;
+        return (
+          <div key={item.key} className={`rounded-full px-2 py-2 text-center text-[11px] font-black ${active ? "bg-[#061725] text-white" : "bg-[#eef2f6] text-[#607489]"}`}>
+            {item.label}
+          </div>
+        );
+      })}
+      {status === "error" && <p className="col-span-5 text-[12px] font-black text-[#ff4c36]">Resolve the issue above, then retry the current step.</p>}
+    </div>
+  );
+}
+
+function TextField({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (value: string) => void; placeholder: string }) {
+  return (
+    <label>
+      <span className="text-[12px] font-black uppercase tracking-[0.12em] text-[#607489]">{label}</span>
+      <input
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        className="mt-2 h-12 w-full rounded-[18px] border border-[#dfe7ef] bg-white px-4 text-sm font-bold text-[#061725] outline-none transition focus:border-[#6b4cff]"
+      />
+    </label>
+  );
+}
+
+function SelectField({ label, value, options, onChange }: { label: string; value: string; options: string[]; onChange: (value: string) => void }) {
+  return (
+    <label>
+      <span className="text-[12px] font-black uppercase tracking-[0.12em] text-[#607489]">{label}</span>
+      <select
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="mt-2 h-12 w-full rounded-[18px] border border-[#dfe7ef] bg-white px-4 text-sm font-bold text-[#061725] outline-none transition focus:border-[#6b4cff]"
+      >
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function NumberField({
+  label,
+  value,
+  min,
+  max,
+  step = 1,
+  suffix,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max?: number;
+  step?: number;
+  suffix?: string;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <label>
+      <span className="text-[12px] font-black uppercase tracking-[0.12em] text-[#607489]">{label}</span>
+      <span className="mt-2 flex h-12 items-center rounded-[18px] border border-[#dfe7ef] bg-white px-4 transition focus-within:border-[#6b4cff]">
+        <input
+          type="number"
+          value={value}
+          min={min}
+          max={max}
+          step={step}
+          onChange={(event) => onChange(Number(event.target.value))}
+          className="min-w-0 flex-1 bg-transparent text-sm font-bold text-[#061725] outline-none"
+        />
+        {suffix && <span className="ml-2 text-[11px] font-black uppercase tracking-[0.1em] text-[#607489]">{suffix}</span>}
+      </span>
+    </label>
+  );
+}
+
+function PreviewRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <dt className="shrink-0 text-[#8a98a5]">{label}</dt>
+      <dd className="min-w-0 text-right text-[#061725]">{value}</dd>
+    </div>
+  );
+}
+
+function splitIncluded(value: string) {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function normalizeListingPreview(value: unknown, fallback: ListingPreview, draftId: unknown): ListingPreview {
+  if (!value || typeof value !== "object") {
+    return { ...fallback, itemId: typeof draftId === "string" ? draftId : fallback.itemId };
+  }
+  const record = value as Partial<ListingPreview>;
+  return {
+    ...fallback,
+    ...record,
+    schema: "tably.item.v1",
+    included: Array.isArray(record.included) ? record.included.filter((item): item is string => typeof item === "string") : fallback.included,
+    itemId: typeof record.itemId === "string" ? record.itemId : typeof draftId === "string" ? draftId : fallback.itemId,
+  };
+}
+
+function shortKey(value: unknown) {
+  if (typeof value !== "string" || value.length < 10) return "wallet";
+  return `${value.slice(0, 4)}...${value.slice(-4)}`;
+}
+
+async function sendWithSolanaAdapter(
+  preparedTx: PreparedListingTransaction,
+  connection: Connection,
+  sendTransaction: SolanaSendTransaction
+) {
+  const transaction = Transaction.from(base64ToUint8Array(preparedTx.transactionBase64));
+  return sendTransaction(transaction, connection);
+}
+
+async function sendWithCrossmintWallet(preparedTx: PreparedListingTransaction, wallet: CrossmintWalletInstance | undefined) {
+  if (!wallet) throw new Error("Crossmint wallet is not loaded.");
+  const solanaWallet = SolanaWallet.from(wallet);
+  const result = await solanaWallet.sendTransaction({ serializedTransaction: preparedTx.transactionBase64 });
+  if (!result.hash) throw new Error("Crossmint did not return a transaction hash.");
+  return result.hash;
+}
+
+function base64ToUint8Array(value: string) {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
 }
