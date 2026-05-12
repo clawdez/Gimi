@@ -29,7 +29,7 @@ The MVP is designed for physical-world rentals where the agent helps people borr
 - Gimi one-page agent shell at `/`, served from `public/gimi.html`.
 - Central orb plus bottom chat input for natural-language rental requests.
 - Clickable nearby inventory and product checkout drawer.
-- Privy wallet bridge at `/privy-bridge` for direct email or Google login into an embedded Solana checkout wallet.
+- Privy wallet bridge at `/privy-bridge` for direct email, Google, or Solana wallet login. The bridge signs a Solana sign-in message before the shell stores the wallet session.
 - Wallet session reuse: once Privy connects, the checkout drawer changes from `Connect wallet` to `Start rental` instead of asking the user to connect again.
 - Demo inventory, rental session state, return flow, receipt copy, and reputation-ready result.
 - Receipt/history page for recent settled rentals, item context, wallet parties, payout/refund split, and Solana explorer links.
@@ -38,7 +38,7 @@ The MVP is designed for physical-world rentals where the agent helps people borr
 - Owner listing flow that prepares an owner-signed `initialize_item` devnet transaction, verifies the confirmed item PDA, and publishes it into renter inventory.
 - Supabase-backed listing storage when `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are configured, with local file fallback for development.
 - Program-aware Solana Pay endpoints returning unsigned serialized wallet transactions for `initialize_item`, `start_rental`, `confirm_return`, and `auto_buyout`.
-- Wallet signing/sending through Privy Solana wallets, with Solana wallet adapter support retained in the React agent components.
+- Wallet signing/sending through Privy Solana wallets from the active Gimi shell.
 - LI.FI quote endpoint at `/api/lifi/quote` using live LI.FI REST quotes when real source/destination wallets are supplied, with demo fallback for local UI mode.
 - ElevenLabs server tools endpoint at `/api/elevenlabs/tools`.
 - MCP-style read/prepare endpoint at `/api/mcp`.
@@ -110,21 +110,22 @@ The Vercel fallback is ephemeral and should only be used for smoke tests.
 
 ## Privy Wallet Flow
 
-The static Gimi shell cannot call Privy hooks directly, so it uses a bridge route:
+The static Gimi shell cannot call Privy hooks directly, so it opens a small bridge popup. This avoids running wallet-extension signing inside an iframe, which is unreliable for external Solana wallets.
 
 ```text
 public/gimi.html
--> hidden iframe opens /privy-bridge?action=connect&returnTo=/&mode=modal
+-> popup opens /privy-bridge?action=connect
 -> Privy modal opens immediately from the wallet CTA
--> bridge posts the connected wallet to the shell
+-> bridge asks the connected wallet to sign a Gimi sign-in message
+-> bridge posts the signed wallet session to the shell
 -> shell writes gimi.walletSession and updates the checkout drawer
 ```
 
 For rental checkout, `public/gimi.html` stores the prepared base64 transaction in
-`gimi.pendingPrivyTransaction` and opens the bridge iframe at:
+`gimi.pendingPrivyTransaction` and opens the bridge popup at:
 
 ```text
-/privy-bridge?action=send-transaction&returnTo=/&mode=modal
+/privy-bridge?action=send-transaction
 ```
 
 The bridge signs and sends through the connected Privy Solana wallet, then posts

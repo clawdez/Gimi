@@ -454,20 +454,6 @@
   }
   .item-sheet.open { transform: translateY(0); }
 
-  .privy-bridge {
-    position: fixed;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    border: 0;
-    background: transparent;
-    display: none;
-    z-index: 200;
-  }
-  .privy-bridge.open {
-    display: block;
-  }
-
   .sheet-handle {
     width: 38px; height: 4px; border-radius: 10px;
     background: rgba(240, 242, 247, 0.22);
@@ -1454,13 +1440,6 @@
       </div>
 
       <div class="home-indicator"></div>
-      <iframe
-        class="privy-bridge"
-        id="privyBridge"
-        title="Gimi wallet login"
-        allowtransparency="true"
-        allow="clipboard-read; clipboard-write; publickey-credentials-get"
-      ></iframe>
     </div>
   </div>
 
@@ -2273,7 +2252,7 @@ const sheetCTASub    = document.getElementById('sheetCTASub');
 const sheetSimilar   = document.getElementById('sheetSimilar');
 const sheetContent   = document.querySelector('.sheet-content');
 const navWallet      = document.getElementById('navWallet');
-const privyBridge    = document.getElementById('privyBridge');
+let privyBridgeWindow = null;
 let connectedWallet = '';
 let connectedWalletSource = '';
 let activeSheetItem = null;
@@ -2381,19 +2360,31 @@ function buildPrivyBridgeUrl(action) {
 }
 
 function closePrivyBridge() {
-  if (!privyBridge) return;
-  privyBridge.classList.remove('open');
-  privyBridge.removeAttribute('src');
+  if (privyBridgeWindow && !privyBridgeWindow.closed) {
+    try { privyBridgeWindow.close(); } catch (_) {}
+  }
+  privyBridgeWindow = null;
 }
 
 function openPrivyBridge(action) {
-  if (!privyBridge) {
-    setSheetStatus('Wallet login is unavailable on this page', 'error');
+  persistActiveSheetState();
+  const width = 440;
+  const height = 680;
+  const left = Math.max(0, Math.round(window.screenX + (window.outerWidth - width) / 2));
+  const top = Math.max(0, Math.round(window.screenY + (window.outerHeight - height) / 2));
+  privyBridgeWindow = window.open(
+    buildPrivyBridgeUrl(action),
+    'gimiPrivyBridge',
+    `popup=yes,width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`
+  );
+
+  if (!privyBridgeWindow) {
+    setSheetStatus('Enable popups to connect your wallet', 'error');
+    updateCheckoutCTA();
     return;
   }
-  persistActiveSheetState();
-  privyBridge.src = buildPrivyBridgeUrl(action);
-  privyBridge.classList.add('open');
+
+  try { privyBridgeWindow.focus(); } catch (_) {}
 }
 
 function stashPreparedRental(prepared) {
@@ -2474,7 +2465,7 @@ function connectPrivyWallet() {
 
 function isPrivyBridgeMessage(event) {
   if (event.origin !== window.location.origin) return false;
-  if (privyBridge?.contentWindow && event.source !== privyBridge.contentWindow) return false;
+  if (privyBridgeWindow && !privyBridgeWindow.closed && event.source !== privyBridgeWindow) return false;
   return true;
 }
 

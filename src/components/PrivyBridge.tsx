@@ -6,6 +6,7 @@ import { PrivyProvider, useLogin, usePrivy } from "@privy-io/react-auth";
 import {
   toSolanaWalletConnectors,
   useCreateWallet,
+  useSignMessage as usePrivySolanaSignMessage,
   useSignTransaction as usePrivySolanaSignTransaction,
   useWallets as useSolanaWallets,
   type ConnectedStandardSolanaWallet,
@@ -17,6 +18,11 @@ const privyAppId = process.env.NEXT_PUBLIC_PRIVY_APP_ID;
 const bridgeLoginMethods = ["email", "google", "wallet"] as const;
 
 function postToParent(message: Record<string, unknown>) {
+  if (window.opener && !window.opener.closed) {
+    window.opener.postMessage(message, window.location.origin);
+    return;
+  }
+
   if (window.parent && window.parent !== window) {
     window.parent.postMessage(message, window.location.origin);
   }
@@ -38,6 +44,7 @@ function signatureToBase58(signature: unknown) {
 }
 
 type PendingPrivyTransaction = { transactionBase64: string; cluster: string };
+type PrivySolanaSignMessage = ReturnType<typeof usePrivySolanaSignMessage>["signMessage"];
 type PrivySolanaSignTransaction = ReturnType<typeof usePrivySolanaSignTransaction>["signTransaction"];
 
 function privyClusterToChain(cluster: string) {
@@ -75,6 +82,33 @@ async function signAndSendPrivyTransaction(
   }
 }
 
+function buildSignInMessage(address: string) {
+  return [
+    "Sign in to Gimi",
+    "",
+    "This signature proves wallet ownership and does not start a transaction.",
+    `Wallet: ${address}`,
+    `Issued at: ${new Date().toISOString()}`,
+  ].join("\n");
+}
+
+async function signPrivyLoginMessage(wallet: ConnectedStandardSolanaWallet, signMessage: PrivySolanaSignMessage) {
+  const message = buildSignInMessage(wallet.address);
+  const { signature } = await signMessage({
+    message: new TextEncoder().encode(message),
+    wallet,
+    options: {
+      uiOptions: {
+        title: "Sign in to Gimi",
+        description: "Confirm this wallet for rental checkout.",
+        buttonText: "Sign in",
+      },
+    },
+  });
+
+  return { message, signature: signatureToBase58(signature) };
+}
+
 function BridgeClient() {
   const [pending, setPending] = useState(false);
   const [pendingTx, setPendingTx] = useState<{ transactionBase64: string; cluster: string } | null>(null);
@@ -82,16 +116,21 @@ function BridgeClient() {
   const [routeAction, setRouteAction] = useState<"connect" | "send-transaction">("connect");
   const hasTriedCreate = useRef(false);
   const hasAutoStarted = useRef(false);
+  const hasStartedAuthSigning = useRef(false);
   const hasStartedSigning = useRef(false);
   const { ready, authenticated } = usePrivy();
   const { wallets, ready: walletsReady } = useSolanaWallets();
   const { createWallet } = useCreateWallet();
+  const { signMessage } = usePrivySolanaSignMessage();
   const { signTransaction } = usePrivySolanaSignTransaction();
 
-  const finish = useCallback((address: string) => {
+  const finish = useCallback((address: string, auth?: { message: string; signature: string }) => {
     setPending(false);
     setStatus("Wallet connected");
-    postToParent({ type: "gimi:privy-wallet-connected", address });
+    postToParent({ type: "gimi:privy-wallet-connected", address, auth });
+    if (window.opener && !window.opener.closed) {
+      window.setTimeout(() => window.close(), 250);
+    }
   }, []);
 
   const fail = useCallback((message: string) => {
@@ -105,12 +144,16 @@ function BridgeClient() {
     setPending(false);
     setPendingTx(null);
     hasStartedSigning.current = false;
+    hasStartedAuthSigning.current = false;
     setStatus("Transaction sent");
     const payload = { type: "gimi:privy-transaction-sent", signature };
     try {
       window.localStorage.removeItem("gimi.pendingPrivyTransaction");
     } catch {}
     postToParent(payload);
+    if (window.opener && !window.opener.closed) {
+      window.setTimeout(() => window.close(), 250);
+    }
   }, []);
 
   const { login } = useLogin({
@@ -127,6 +170,7 @@ function BridgeClient() {
 
   const startPrivyFlow = useCallback(() => {
     hasTriedCreate.current = false;
+    hasStartedAuthSigning.current = false;
     setPending(true);
 
     if (!ready) {
@@ -157,6 +201,7 @@ function BridgeClient() {
     if (action === "connect") {
       setRouteAction("connect");
       hasTriedCreate.current = false;
+      hasStartedAuthSigning.current = false;
       hasStartedSigning.current = false;
       setPending(false);
       setPendingTx(null);
@@ -183,6 +228,7 @@ function BridgeClient() {
       }
 
       hasTriedCreate.current = false;
+      hasStartedAuthSigning.current = false;
       hasStartedSigning.current = false;
       setPending(false);
       setPendingTx({ transactionBase64, cluster });
@@ -201,10 +247,19 @@ function BridgeClient() {
   useEffect(() => {
     if (!pending || !ready || !authenticated || !walletsReady) return;
 
-    const existing = wallets[0]?.address;
-    if (existing) {
+    const existingWallet = wallets[0] as ConnectedStandardSolanaWallet | undefined;
+    const existing = existingWallet?.address;
+    if (existing && existingWallet) {
       if (!pendingTx) {
-        finish(existing);
+        if (hasStartedAuthSigning.current) return;
+        hasStartedAuthSigning.current = true;
+        setStatus("Awaiting wallet sign-in message...");
+        signPrivyLoginMessage(existingWallet, signMessage)
+          .then((auth) => finish(existing, auth))
+          .catch(() => {
+            hasStartedAuthSigning.current = false;
+            fail("Could not sign wallet login message");
+          });
       }
       return;
     }
@@ -218,10 +273,10 @@ function BridgeClient() {
           setStatus("Wallet ready. Opening transaction approval...");
           return;
         }
-        finish(wallet.address);
+        setStatus(`Wallet ${wallet.address.slice(0, 4)}... created. Waiting for sign-in approval...`);
       })
       .catch(() => fail("Could not create Solana wallet"));
-  }, [authenticated, createWallet, fail, finish, pending, pendingTx, ready, wallets, walletsReady]);
+  }, [authenticated, createWallet, fail, finish, pending, pendingTx, ready, signMessage, wallets, walletsReady]);
 
   useEffect(() => {
     if (!pendingTx || !ready || !authenticated || !walletsReady) return;
