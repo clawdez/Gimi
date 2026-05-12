@@ -2252,7 +2252,6 @@ const sheetCTASub    = document.getElementById('sheetCTASub');
 const sheetSimilar   = document.getElementById('sheetSimilar');
 const sheetContent   = document.querySelector('.sheet-content');
 const navWallet      = document.getElementById('navWallet');
-let privyBridgeWindow = null;
 let connectedWallet = '';
 let connectedWalletSource = '';
 let activeSheetItem = null;
@@ -2354,37 +2353,26 @@ function clearActiveSheetState() {
   } catch (_) {}
 }
 
-function buildPrivyBridgeUrl(action) {
-  const params = new URLSearchParams({ action });
-  return `/privy-bridge?${params.toString()}`;
+function closePrivyRequest() {
+  // The active Privy controller lives in the parent Next page.
 }
 
-function closePrivyBridge() {
-  if (privyBridgeWindow && !privyBridgeWindow.closed) {
-    try { privyBridgeWindow.close(); } catch (_) {}
-  }
-  privyBridgeWindow = null;
-}
-
-function openPrivyBridge(action) {
+function requestPrivyAction(action) {
   persistActiveSheetState();
-  const width = 440;
-  const height = 680;
-  const left = Math.max(0, Math.round(window.screenX + (window.outerWidth - width) / 2));
-  const top = Math.max(0, Math.round(window.screenY + (window.outerHeight - height) / 2));
-  privyBridgeWindow = window.open(
-    buildPrivyBridgeUrl(action),
-    'gimiPrivyBridge',
-    `popup=yes,width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`
-  );
-
-  if (!privyBridgeWindow) {
-    setSheetStatus('Enable popups to connect your wallet', 'error');
-    updateCheckoutCTA();
+  if (window.parent && window.parent !== window) {
+    window.parent.postMessage(
+      {
+        type: action === 'send-transaction'
+          ? 'gimi:request-privy-transaction'
+          : 'gimi:request-privy-connect',
+      },
+      window.location.origin
+    );
     return;
   }
 
-  try { privyBridgeWindow.focus(); } catch (_) {}
+  setSheetStatus('Wallet login requires the Gimi app shell at /', 'error');
+  updateCheckoutCTA();
 }
 
 function stashPreparedRental(prepared) {
@@ -2459,33 +2447,37 @@ function updateCheckoutCTA() {
 function connectPrivyWallet() {
   sheetCTA.textContent = 'Opening Privy...';
   setSheetStatus('Waiting for wallet login...', 'pending');
-  openPrivyBridge('connect');
+  requestPrivyAction('connect');
   return '';
 }
 
-function isPrivyBridgeMessage(event) {
+function isPrivyControllerMessage(event) {
   if (event.origin !== window.location.origin) return false;
-  if (privyBridgeWindow && !privyBridgeWindow.closed && event.source !== privyBridgeWindow) return false;
+  if (window.parent && window.parent !== window && event.source !== window.parent) return false;
   return true;
 }
 
 window.addEventListener('message', async (event) => {
-  if (!isPrivyBridgeMessage(event)) return;
+  if (!isPrivyControllerMessage(event)) return;
+  if (event.data?.type === 'gimi:privy-status') {
+    setSheetStatus(String(event.data.message || 'Opening Privy...'), 'pending');
+    return;
+  }
   if (event.data?.type === 'gimi:privy-wallet-connected') {
-    closePrivyBridge();
+    closePrivyRequest();
     saveWalletSession(String(event.data.address || ''), 'privy');
     setSheetStatus(`Wallet connected · ${shortWallet(connectedWallet)}`, 'success');
     return;
   }
   if (event.data?.type === 'gimi:privy-wallet-error') {
-    closePrivyBridge();
+    closePrivyRequest();
     const message = String(event.data.message || 'Wallet connection cancelled');
     updateCheckoutCTA();
     setSheetStatus(message, 'error');
     return;
   }
   if (event.data?.type === 'gimi:privy-transaction-sent') {
-    closePrivyBridge();
+    closePrivyRequest();
     const signature = String(event.data.signature || '');
     if (!signature) {
       updateCheckoutCTA();
@@ -2642,7 +2634,7 @@ sheetClose.addEventListener('click', closeSheet);
 sheetBackdrop.addEventListener('click', closeSheet);
 navWallet?.addEventListener('click', () => {
   if (connectedWallet) return;
-  openPrivyBridge('connect');
+  requestPrivyAction('connect');
 });
 sheetCTA.addEventListener('click', async (event) => {
   try {
@@ -2651,7 +2643,7 @@ sheetCTA.addEventListener('click', async (event) => {
       event.preventDefault();
       sheetCTA.textContent = 'Opening Privy...';
       setSheetStatus('Waiting for wallet login...', 'pending');
-      openPrivyBridge('connect');
+      requestPrivyAction('connect');
       return;
     }
 
@@ -2674,10 +2666,17 @@ sheetCTA.addEventListener('click', async (event) => {
     try {
       window.localStorage.setItem(
         'gimi.pendingPrivyTransaction',
-        JSON.stringify({ transactionBase64: prepared.transaction, cluster: 'solana:devnet', createdAt: Date.now() })
+        JSON.stringify({
+          transactionBase64: prepared.transaction,
+          cluster: prepared.transactionMetadata?.cluster || 'solana:devnet',
+          requiredSigner: prepared.transactionMetadata?.requiredSigner || connectedWallet,
+          draftId: prepared.draftId,
+          itemId: prepared.itemId,
+          createdAt: Date.now(),
+        })
       );
     } catch (_) {}
-    openPrivyBridge('send-transaction');
+    requestPrivyAction('send-transaction');
     return;
   } catch (error) {
     sheetCTA.textContent = 'Checkout failed';

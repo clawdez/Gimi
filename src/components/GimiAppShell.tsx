@@ -1,0 +1,350 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { PrivyProvider, useLogin, usePrivy } from "@privy-io/react-auth";
+import {
+  toSolanaWalletConnectors,
+  useCreateWallet,
+  useSignMessage as usePrivySolanaSignMessage,
+  useSignTransaction as usePrivySolanaSignTransaction,
+  useWallets as useSolanaWallets,
+  type ConnectedStandardSolanaWallet,
+} from "@privy-io/react-auth/solana";
+import { clusterApiUrl, Connection, PublicKey, Transaction } from "@solana/web3.js";
+import bs58 from "bs58";
+
+const privyAppId = process.env.NEXT_PUBLIC_PRIVY_APP_ID;
+const loginMethods = ["email", "google", "wallet"] as const;
+
+type WalletAction = "connect" | "send-transaction";
+type PendingTransaction = { transactionBase64: string; cluster: string; requiredSigner?: string };
+type PrivySolanaSignMessage = ReturnType<typeof usePrivySolanaSignMessage>["signMessage"];
+type PrivySolanaSignTransaction = ReturnType<typeof usePrivySolanaSignTransaction>["signTransaction"];
+
+function signatureToBase58(signature: unknown) {
+  if (!signature) return "";
+  if (typeof signature === "string") return signature;
+  if (signature instanceof Uint8Array) return bs58.encode(signature);
+  if (Array.isArray(signature)) return bs58.encode(Uint8Array.from(signature));
+  if (typeof signature === "object" && signature && "signature" in signature) {
+    return signatureToBase58((signature as { signature?: unknown }).signature);
+  }
+  return "";
+}
+
+function base64ToUint8Array(value: string) {
+  return Uint8Array.from(atob(value), (char) => char.charCodeAt(0));
+}
+
+function getRequiredSigners(transactionBase64: string) {
+  return Transaction.from(base64ToUint8Array(transactionBase64)).signatures.map(({ publicKey }) => publicKey.toBase58());
+}
+
+function validateRequiredSigner(pendingTx: PendingTransaction, walletAddress: string) {
+  const requiredSigners = getRequiredSigners(pendingTx.transactionBase64);
+  const expectedSigner = pendingTx.requiredSigner;
+
+  if (expectedSigner && !new PublicKey(expectedSigner).equals(new PublicKey(walletAddress))) {
+    throw new Error("Connected wallet does not match the required transaction signer");
+  }
+
+  if (!requiredSigners.some((signer) => new PublicKey(signer).equals(new PublicKey(walletAddress)))) {
+    throw new Error("Connected wallet is not a required signer for this transaction");
+  }
+
+  if (expectedSigner && !requiredSigners.some((signer) => new PublicKey(signer).equals(new PublicKey(expectedSigner)))) {
+    throw new Error("Transaction signer metadata does not match the serialized transaction");
+  }
+}
+
+function clusterToChain(cluster: string) {
+  return cluster === "solana:mainnet" || cluster === "mainnet-beta" ? "solana:mainnet" : "solana:devnet";
+}
+
+function clusterToRpcUrl(cluster: string) {
+  return cluster === "solana:mainnet" || cluster === "mainnet-beta"
+    ? clusterApiUrl("mainnet-beta")
+    : clusterApiUrl("devnet");
+}
+
+function buildSignInMessage(address: string) {
+  return [
+    "Sign in to Gimi",
+    "",
+    "This signature proves wallet ownership and does not start a transaction.",
+    `Wallet: ${address}`,
+    `Issued at: ${new Date().toISOString()}`,
+  ].join("\n");
+}
+
+async function signWalletLogin(wallet: ConnectedStandardSolanaWallet, signMessage: PrivySolanaSignMessage) {
+  const message = buildSignInMessage(wallet.address);
+  const { signature } = await signMessage({
+    message: new TextEncoder().encode(message),
+    wallet,
+    options: {
+      uiOptions: {
+        title: "Sign in to Gimi",
+        description: "Confirm this wallet for rental checkout.",
+        buttonText: "Sign in",
+      },
+    },
+  });
+
+  return { message, signature: signatureToBase58(signature) };
+}
+
+async function signAndSendTransaction(
+  wallet: ConnectedStandardSolanaWallet,
+  pendingTx: PendingTransaction,
+  signTransaction: PrivySolanaSignTransaction
+) {
+  const transaction = base64ToUint8Array(pendingTx.transactionBase64);
+  const chain = clusterToChain(pendingTx.cluster);
+
+  try {
+    const { signedTransaction } = await signTransaction({ transaction, wallet, chain });
+    return new Connection(clusterToRpcUrl(pendingTx.cluster), "confirmed").sendRawTransaction(signedTransaction);
+  } catch (error) {
+    try {
+      const result = await wallet.signAndSendTransaction({ transaction, chain });
+      return signatureToBase58(result);
+    } catch {
+      throw error;
+    }
+  }
+}
+
+export function GimiAppShell() {
+  const solanaConnectors = useMemo<ReturnType<typeof toSolanaWalletConnectors> | undefined>(
+    () => (typeof window === "undefined" ? undefined : toSolanaWalletConnectors()),
+    []
+  );
+
+  if (!privyAppId) {
+    return (
+      <main className="grid min-h-screen place-items-center bg-[#080a12] px-6 text-center text-white">
+        <div className="max-w-md rounded-[28px] border border-white/10 bg-white/8 p-6 shadow-[0_24px_80px_rgba(0,0,0,0.35)] backdrop-blur-2xl">
+          <p className="text-sm font-black uppercase tracking-[0.16em] text-[#c7ff00]">Privy setup needed</p>
+          <h1 className="mt-3 text-3xl font-black">Add a valid Privy app id</h1>
+          <p className="mt-3 text-sm font-bold leading-6 text-white/62">
+            Set NEXT_PUBLIC_PRIVY_APP_ID in Vercel or .env.local, then reload Gimi.
+          </p>
+        </div>
+      </main>
+    );
+  }
+
+  return (
+    <PrivyProvider
+      appId={privyAppId}
+      config={{
+        loginMethods: [...loginMethods],
+        appearance: {
+          theme: "light",
+          accentColor: "#c7ff00",
+          landingHeader: "Connect to Gimi",
+          loginMessage: "Use email, Google, or an existing Solana wallet.",
+          showWalletLoginFirst: false,
+          walletChainType: "solana-only",
+          walletList: ["detected_solana_wallets", "phantom", "solflare", "backpack"] as never,
+        },
+        embeddedWallets: {
+          solana: { createOnLogin: "users-without-wallets" },
+        },
+        externalWallets: {
+          solana: { connectors: solanaConnectors },
+        },
+      }}
+    >
+      <GimiShellFrame />
+    </PrivyProvider>
+  );
+}
+
+function GimiShellFrame() {
+  const frameRef = useRef<HTMLIFrameElement>(null);
+  const pendingAction = useRef<WalletAction | null>(null);
+  const pendingTx = useRef<PendingTransaction | null>(null);
+  const hasStartedSignIn = useRef(false);
+  const hasStartedTransaction = useRef(false);
+  const hasTriedCreateWallet = useRef(false);
+  const hasOpenedLogin = useRef(false);
+  const [actionVersion, setActionVersion] = useState(0);
+  const { ready, authenticated } = usePrivy();
+  const { wallets, ready: walletsReady } = useSolanaWallets();
+  const { createWallet } = useCreateWallet();
+  const { signMessage } = usePrivySolanaSignMessage();
+  const { signTransaction } = usePrivySolanaSignTransaction();
+
+  const postToShell = useCallback((message: Record<string, unknown>) => {
+    frameRef.current?.contentWindow?.postMessage(message, window.location.origin);
+  }, []);
+
+  const fail = useCallback((message: string) => {
+    pendingAction.current = null;
+    pendingTx.current = null;
+    hasStartedSignIn.current = false;
+    hasStartedTransaction.current = false;
+    hasOpenedLogin.current = false;
+    postToShell({ type: "gimi:privy-wallet-error", message });
+  }, [postToShell]);
+
+  const { login } = useLogin({
+    onComplete: () => {
+      postToShell({ type: "gimi:privy-status", message: "Wallet connected. Preparing signature..." });
+    },
+    onError: () => fail("Privy login was cancelled. Try again when ready."),
+  });
+
+  const ensureWallet = useCallback(async () => {
+    const existing = wallets[0] as ConnectedStandardSolanaWallet | undefined;
+    if (existing) return existing;
+    const created = await createWallet();
+    return wallets.find((wallet) => wallet.address === created.wallet.address) as ConnectedStandardSolanaWallet | undefined;
+  }, [createWallet, wallets]);
+
+  const startAction = useCallback((action: WalletAction) => {
+    pendingAction.current = action;
+    hasStartedSignIn.current = false;
+    hasStartedTransaction.current = false;
+    hasTriedCreateWallet.current = false;
+    hasOpenedLogin.current = false;
+
+    if (action === "send-transaction") {
+      try {
+        const raw = window.localStorage.getItem("gimi.pendingPrivyTransaction");
+        const parsed = raw ? JSON.parse(raw) as Partial<PendingTransaction> : {};
+        if (!parsed.transactionBase64) {
+          fail("Missing serialized transaction");
+          return;
+        }
+        pendingTx.current = {
+          transactionBase64: parsed.transactionBase64,
+          cluster: parsed.cluster || "solana:devnet",
+          requiredSigner: typeof parsed.requiredSigner === "string" ? parsed.requiredSigner : undefined,
+        };
+      } catch {
+        fail("Missing serialized transaction");
+        return;
+      }
+    }
+
+    setActionVersion((version) => version + 1);
+
+    if (!ready) {
+      postToShell({ type: "gimi:privy-status", message: "Loading wallet login..." });
+      return;
+    }
+
+    if (!authenticated) {
+      postToShell({ type: "gimi:privy-status", message: "Opening Privy..." });
+      hasOpenedLogin.current = true;
+      login({ loginMethods: [...loginMethods] });
+      return;
+    }
+
+    postToShell({ type: "gimi:privy-status", message: "Preparing wallet signature..." });
+  }, [authenticated, fail, login, postToShell, ready]);
+
+  useEffect(() => {
+    function onMessage(event: MessageEvent) {
+      if (event.origin !== window.location.origin) return;
+      if (event.source !== frameRef.current?.contentWindow) return;
+
+      const type = event.data?.type;
+      if (type === "gimi:request-privy-connect") {
+        startAction("connect");
+      }
+      if (type === "gimi:request-privy-transaction") {
+        startAction("send-transaction");
+      }
+    }
+
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [startAction]);
+
+  useEffect(() => {
+    if (!pendingAction.current || !ready || authenticated || hasOpenedLogin.current) return;
+    hasOpenedLogin.current = true;
+    postToShell({ type: "gimi:privy-status", message: "Opening Privy..." });
+    login({ loginMethods: [...loginMethods] });
+  }, [authenticated, login, postToShell, ready]);
+
+  useEffect(() => {
+    const action = pendingAction.current;
+    if (!action || !ready || !authenticated || !walletsReady) return;
+
+    const wallet = wallets[0] as ConnectedStandardSolanaWallet | undefined;
+    if (!wallet) {
+      if (hasTriedCreateWallet.current) return;
+      hasTriedCreateWallet.current = true;
+      postToShell({ type: "gimi:privy-status", message: "Creating your Solana wallet..." });
+      ensureWallet()
+        .then(() => {
+          postToShell({ type: "gimi:privy-status", message: "Wallet ready. Preparing signature..." });
+        })
+        .catch(() => fail("Could not create Solana wallet"));
+      return;
+    }
+
+    if (action === "connect") {
+      if (hasStartedSignIn.current) return;
+      hasStartedSignIn.current = true;
+      postToShell({ type: "gimi:privy-status", message: "Awaiting wallet sign-in message..." });
+      signWalletLogin(wallet, signMessage)
+        .then((auth) => {
+          pendingAction.current = null;
+          hasOpenedLogin.current = false;
+          setActionVersion((version) => version + 1);
+          postToShell({ type: "gimi:privy-wallet-connected", address: wallet.address, auth });
+        })
+        .catch(() => {
+          hasStartedSignIn.current = false;
+          fail("Could not sign wallet login message");
+        });
+      return;
+    }
+
+    if (action === "send-transaction") {
+      const transaction = pendingTx.current;
+      if (!transaction || hasStartedTransaction.current) return;
+      try {
+        validateRequiredSigner(transaction, wallet.address);
+      } catch (error) {
+        fail(error instanceof Error ? error.message : "Could not verify transaction signer");
+        return;
+      }
+      hasStartedTransaction.current = true;
+      postToShell({ type: "gimi:privy-status", message: "Awaiting wallet approval..." });
+      signAndSendTransaction(wallet, transaction, signTransaction)
+        .then((signature) => {
+          pendingAction.current = null;
+          pendingTx.current = null;
+          hasOpenedLogin.current = false;
+          setActionVersion((version) => version + 1);
+          try {
+            window.localStorage.removeItem("gimi.pendingPrivyTransaction");
+          } catch {}
+          postToShell({ type: "gimi:privy-transaction-sent", signature });
+        })
+        .catch(() => {
+          hasStartedTransaction.current = false;
+          fail("Could not sign rental transaction");
+        });
+    }
+  }, [actionVersion, authenticated, ensureWallet, fail, postToShell, ready, signMessage, signTransaction, wallets, walletsReady]);
+
+  return (
+    <main className="h-screen overflow-hidden bg-[#080a12]">
+      <iframe
+        ref={frameRef}
+        src="/gimi.html?embedded=1"
+        title="Gimi"
+        className="block h-full w-full border-0"
+        allow="clipboard-read; clipboard-write; publickey-credentials-get"
+      />
+    </main>
+  );
+}

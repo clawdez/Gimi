@@ -4,7 +4,7 @@ AI rental agent for school, community, and hackathon inventory.
 
 Gimi is one product: an agentic rental marketplace with Solana settlement built in. It handles community inventory search, refundable escrow, temporary rental-token state, return-confirm burn, on-chain receipt events, and reputation-ready outcomes.
 
-The current demo opens at `/` and serves the Gimi one-page agent shell from `public/gimi.html`: a large central agent orb, a bottom chat input, nearby inventory, a product checkout drawer, and Privy wallet connection for email or Google users.
+The current demo opens at `/` and renders the Gimi one-page agent shell from `public/gimi.html` inside a Next controller shell: a large central agent orb, a bottom chat input, nearby inventory, a product checkout drawer, and same-page Privy wallet connection for email, Google, or Solana wallet users.
 
 ## Product Loop
 
@@ -26,10 +26,10 @@ The MVP is designed for physical-world rentals where the agent helps people borr
 
 ## What Is Implemented
 
-- Gimi one-page agent shell at `/`, served from `public/gimi.html`.
+- Gimi one-page agent shell at `/`, rendered by `src/app/page.tsx` with `public/gimi.html` as the visual shell.
 - Central orb plus bottom chat input for natural-language rental requests.
 - Clickable nearby inventory and product checkout drawer.
-- Privy wallet bridge at `/privy-bridge` for direct email, Google, or Solana wallet login. The bridge signs a Solana sign-in message before the shell stores the wallet session.
+- Same-page Privy controller for direct email, Google, or Solana wallet login. The controller signs a Solana sign-in message before the shell stores the wallet session.
 - Wallet session reuse: once Privy connects, the checkout drawer changes from `Connect wallet` to `Start rental` instead of asking the user to connect again.
 - Demo inventory, rental session state, return flow, receipt copy, and reputation-ready result.
 - Receipt/history page for recent settled rentals, item context, wallet parties, payout/refund split, and Solana explorer links.
@@ -71,7 +71,7 @@ For wallet login, create `.env.local`:
 NEXT_PUBLIC_PRIVY_APP_ID=YOUR_PRIVY_APP_ID
 ```
 
-The production Vercel project must also have `NEXT_PUBLIC_PRIVY_APP_ID` configured. Without it, the app still renders but wallet login is disabled.
+The production Vercel project must also have `NEXT_PUBLIC_PRIVY_APP_ID` configured. Without it, Gimi shows a setup screen instead of the rental shell.
 
 Useful checks:
 
@@ -110,25 +110,25 @@ The Vercel fallback is ephemeral and should only be used for smoke tests.
 
 ## Privy Wallet Flow
 
-The static Gimi shell cannot call Privy hooks directly, so it opens a small bridge popup. This avoids running wallet-extension signing inside an iframe, which is unreliable for external Solana wallets.
+The static Gimi visual shell cannot call Privy hooks directly, so `/` renders a small React controller around it. The visible shell sends wallet requests to the parent page with `postMessage`; the parent page opens Privy's modal directly in the same page and then asks the Solana wallet to sign a Gimi sign-in message.
 
 ```text
 public/gimi.html
--> popup opens /privy-bridge?action=connect
--> Privy modal opens immediately from the wallet CTA
--> bridge asks the connected wallet to sign a Gimi sign-in message
--> bridge posts the signed wallet session to the shell
+-> posts gimi:request-privy-connect to the parent Next page
+-> parent opens the Privy modal directly on the current page
+-> parent asks the connected wallet to sign a Gimi sign-in message
+-> parent posts the signed wallet session back to the shell
 -> shell writes gimi.walletSession and updates the checkout drawer
 ```
 
 For rental checkout, `public/gimi.html` stores the prepared base64 transaction in
-`gimi.pendingPrivyTransaction` and opens the bridge popup at:
+`gimi.pendingPrivyTransaction` and asks the parent controller to sign/send it:
 
 ```text
-/privy-bridge?action=send-transaction
+gimi:request-privy-transaction
 ```
 
-The bridge signs and sends through the connected Privy Solana wallet, then posts
+The parent controller signs and sends through the connected Privy Solana wallet, then posts
 the devnet signature to the shell so `/api/rentals/start` can persist the rental
 session and update listing status.
 
