@@ -1,37 +1,25 @@
 "use client";
 
 /* eslint-disable react-hooks/set-state-in-effect */
-import { useCallback, useEffect, useRef, useState } from "react";
-import { PrivyProvider, useLogin, useModalStatus, usePrivy } from "@privy-io/react-auth";
-import { useCreateWallet, useWallets as useSolanaWallets } from "@privy-io/react-auth/solana";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { PrivyProvider, useLogin, usePrivy } from "@privy-io/react-auth";
+import {
+  toSolanaWalletConnectors,
+  useCreateWallet,
+  useSignTransaction as usePrivySolanaSignTransaction,
+  useWallets as useSolanaWallets,
+  type ConnectedStandardSolanaWallet,
+} from "@privy-io/react-auth/solana";
+import { clusterApiUrl, Connection } from "@solana/web3.js";
 import bs58 from "bs58";
 
 const privyAppId = process.env.NEXT_PUBLIC_PRIVY_APP_ID;
-const bridgeLoginMethods = ["email", "google"] as const;
+const bridgeLoginMethods = ["email", "google", "wallet"] as const;
 
 function postToParent(message: Record<string, unknown>) {
-  if (window.opener && !window.opener.closed) {
-    window.opener.postMessage(message, window.location.origin);
-    return;
-  }
   if (window.parent && window.parent !== window) {
     window.parent.postMessage(message, window.location.origin);
   }
-}
-
-function returnToApp(message: Record<string, unknown>) {
-  const params = new URLSearchParams(window.location.search);
-  const returnTo = params.get("returnTo") || "/gimi.html?v=soft1";
-  try {
-    window.localStorage.setItem("gimi.privyResult", JSON.stringify(message));
-    if (message.type === "gimi:privy-wallet-connected" && typeof message.address === "string") {
-      window.localStorage.setItem(
-        "gimi.walletSession",
-        JSON.stringify({ address: message.address, source: "privy", savedAt: Date.now() })
-      );
-    }
-  } catch {}
-  window.location.assign(returnTo);
 }
 
 function base64ToUint8Array(value: string) {
@@ -49,72 +37,81 @@ function signatureToBase58(signature: unknown) {
   return "";
 }
 
+type PendingPrivyTransaction = { transactionBase64: string; cluster: string };
+type PrivySolanaSignTransaction = ReturnType<typeof usePrivySolanaSignTransaction>["signTransaction"];
+
+function privyClusterToChain(cluster: string) {
+  return cluster === "solana:mainnet" || cluster === "mainnet-beta" ? "solana:mainnet" : "solana:devnet";
+}
+
+function clusterToRpcUrl(cluster: string) {
+  return cluster === "solana:mainnet" || cluster === "mainnet-beta"
+    ? clusterApiUrl("mainnet-beta")
+    : clusterApiUrl("devnet");
+}
+
+async function signAndSendPrivyTransaction(
+  wallet: ConnectedStandardSolanaWallet,
+  pendingTx: PendingPrivyTransaction,
+  signTransaction: PrivySolanaSignTransaction
+) {
+  const transaction = base64ToUint8Array(pendingTx.transactionBase64);
+  const chain = privyClusterToChain(pendingTx.cluster);
+
+  try {
+    const { signedTransaction } = await signTransaction({
+      transaction,
+      wallet,
+      chain,
+    });
+    return new Connection(clusterToRpcUrl(pendingTx.cluster), "confirmed").sendRawTransaction(signedTransaction);
+  } catch (error) {
+    try {
+      const result = await wallet.signAndSendTransaction({ transaction, chain });
+      return signatureToBase58(result);
+    } catch {
+      throw error;
+    }
+  }
+}
+
 function BridgeClient() {
   const [pending, setPending] = useState(false);
   const [pendingTx, setPendingTx] = useState<{ transactionBase64: string; cluster: string } | null>(null);
   const [status, setStatus] = useState("Ready to connect");
   const [routeAction, setRouteAction] = useState<"connect" | "send-transaction">("connect");
-  const [bridgeMode, setBridgeMode] = useState<"page" | "modal">("page");
   const hasTriedCreate = useRef(false);
   const hasAutoStarted = useRef(false);
-  const hasSeenPrivyModal = useRef(false);
+  const hasStartedSigning = useRef(false);
   const { ready, authenticated } = usePrivy();
-  const { isOpen: isPrivyModalOpen } = useModalStatus();
   const { wallets, ready: walletsReady } = useSolanaWallets();
   const { createWallet } = useCreateWallet();
-  const isModalBridge = bridgeMode === "modal";
+  const { signTransaction } = usePrivySolanaSignTransaction();
 
   const finish = useCallback((address: string) => {
     setPending(false);
     setStatus("Wallet connected");
-    const payload = { type: "gimi:privy-wallet-connected", address };
-    if (isModalBridge || (window.parent && window.parent !== window)) {
-      postToParent(payload);
-      return;
-    }
-    if (window.opener && !window.opener.closed) {
-      postToParent(payload);
-      window.setTimeout(() => window.close(), 150);
-      return;
-    }
-    returnToApp(payload);
-  }, [isModalBridge]);
+    postToParent({ type: "gimi:privy-wallet-connected", address });
+  }, []);
 
   const fail = useCallback((message: string) => {
     setPending(false);
     setPendingTx(null);
     setStatus(message);
-    const payload = { type: "gimi:privy-wallet-error", message };
-    if (isModalBridge || (window.parent && window.parent !== window)) {
-      postToParent(payload);
-      return;
-    }
-    if (window.opener && !window.opener.closed) {
-      postToParent(payload);
-      return;
-    }
-    returnToApp(payload);
-  }, [isModalBridge]);
+    postToParent({ type: "gimi:privy-wallet-error", message });
+  }, []);
 
   const finishTransaction = useCallback((signature: string) => {
     setPending(false);
     setPendingTx(null);
+    hasStartedSigning.current = false;
     setStatus("Transaction sent");
     const payload = { type: "gimi:privy-transaction-sent", signature };
     try {
       window.localStorage.removeItem("gimi.pendingPrivyTransaction");
     } catch {}
-    if (isModalBridge || (window.parent && window.parent !== window)) {
-      postToParent(payload);
-      return;
-    }
-    if (window.opener && !window.opener.closed) {
-      postToParent(payload);
-      window.setTimeout(() => window.close(), 150);
-      return;
-    }
-    returnToApp(payload);
-  }, [isModalBridge]);
+    postToParent(payload);
+  }, []);
 
   const { login } = useLogin({
     onComplete: () => {
@@ -124,9 +121,7 @@ function BridgeClient() {
     onError: () => {
       setPending(false);
       setStatus("Privy login was cancelled. Try again when ready.");
-      if (isModalBridge) {
-        postToParent({ type: "gimi:privy-wallet-error", message: "Privy login was cancelled. Try again when ready." });
-      }
+      postToParent({ type: "gimi:privy-wallet-error", message: "Privy login was cancelled. Try again when ready." });
     },
   });
 
@@ -157,17 +152,15 @@ function BridgeClient() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const action = params.get("action");
-    const mode = params.get("mode") === "modal" ? "modal" : "page";
-    setBridgeMode(mode);
     hasAutoStarted.current = false;
-    hasSeenPrivyModal.current = false;
 
     if (action === "connect") {
       setRouteAction("connect");
       hasTriedCreate.current = false;
+      hasStartedSigning.current = false;
       setPending(false);
       setPendingTx(null);
-      setStatus(mode === "modal" ? "Opening Privy..." : "Continue to connect your Solana wallet.");
+      setStatus("Opening Privy...");
       return;
     }
 
@@ -190,93 +183,20 @@ function BridgeClient() {
       }
 
       hasTriedCreate.current = false;
+      hasStartedSigning.current = false;
       setPending(false);
       setPendingTx({ transactionBase64, cluster });
-      setStatus(mode === "modal" ? "Opening Privy..." : "Continue to approve the rental transaction.");
+      setStatus("Opening Privy...");
     }
   }, [fail]);
 
   useEffect(() => {
-    if (!isModalBridge || hasAutoStarted.current || !ready) return;
+    if (hasAutoStarted.current || !ready) return;
     if (routeAction === "send-transaction" && !pendingTx) return;
 
     hasAutoStarted.current = true;
     startPrivyFlow();
-  }, [isModalBridge, pendingTx, ready, routeAction, startPrivyFlow]);
-
-  useEffect(() => {
-    if (!isModalBridge || !pending || authenticated || !hasAutoStarted.current) return;
-
-    if (isPrivyModalOpen) {
-      hasSeenPrivyModal.current = true;
-      return;
-    }
-
-    if (!hasSeenPrivyModal.current) return;
-
-    const timeout = window.setTimeout(() => {
-      if (!authenticated) fail("Privy login cancelled");
-    }, 600);
-
-    return () => window.clearTimeout(timeout);
-  }, [authenticated, fail, isModalBridge, isPrivyModalOpen, pending]);
-
-  useEffect(() => {
-    const onMessage = (event: MessageEvent) => {
-      if (event.origin !== window.location.origin) return;
-      hasTriedCreate.current = false;
-
-      if (event.data?.type === "gimi:send-transaction") {
-        const transactionBase64 =
-          typeof event.data.transactionBase64 === "string" ? event.data.transactionBase64 : "";
-        const cluster = typeof event.data.cluster === "string" ? event.data.cluster : "solana:devnet";
-        if (!transactionBase64) {
-          fail("Missing serialized transaction");
-          return;
-        }
-        setPending(true);
-        setPendingTx({ transactionBase64, cluster });
-
-        if (!ready) {
-          setStatus("Loading wallet signer...");
-          return;
-        }
-
-        if (!authenticated) {
-          setStatus("Opening Privy...");
-          login({
-            loginMethods: [...bridgeLoginMethods],
-          });
-          return;
-        }
-
-        setStatus("Preparing your Solana wallet for checkout...");
-        return;
-      }
-
-      if (event.data?.type !== "gimi:connect-wallet") return;
-      setPending(true);
-      setPendingTx(null);
-
-      if (!ready) {
-        setStatus("Loading wallet login...");
-        return;
-      }
-
-      if (!authenticated) {
-        setStatus("Opening Privy...");
-        login({
-          loginMethods: [...bridgeLoginMethods],
-        });
-        return;
-      }
-
-      setStatus("Preparing your Solana wallet...");
-    };
-
-    window.addEventListener("message", onMessage);
-    return () => window.removeEventListener("message", onMessage);
-  }, [authenticated, fail, login, ready]);
+  }, [pendingTx, ready, routeAction, startPrivyFlow]);
 
   useEffect(() => {
     if (!pending || !ready || !authenticated || !walletsReady) return;
@@ -305,29 +225,22 @@ function BridgeClient() {
 
   useEffect(() => {
     if (!pendingTx || !ready || !authenticated || !walletsReady) return;
+    if (hasStartedSigning.current) return;
 
-    const wallet = wallets[0] as
-      | {
-          signAndSendTransaction?: (args: { transaction: Uint8Array; chain: string }) => Promise<unknown>;
-        }
-      | undefined;
+    const wallet = wallets[0] as ConnectedStandardSolanaWallet | undefined;
 
-    if (!wallet?.signAndSendTransaction) {
+    if (!wallet) {
       fail("Connected wallet cannot sign this Solana transaction");
       return;
     }
 
     let cancelled = false;
+    hasStartedSigning.current = true;
     setStatus("Awaiting transaction approval...");
 
-    wallet
-      .signAndSendTransaction({
-        transaction: base64ToUint8Array(pendingTx.transactionBase64),
-        chain: pendingTx.cluster,
-      })
-      .then((result) => {
+    signAndSendPrivyTransaction(wallet, pendingTx, signTransaction)
+      .then((signature) => {
         if (cancelled) return;
-        const signature = signatureToBase58(result);
         if (!signature) {
           fail("Transaction sent but signature was unavailable");
           return;
@@ -336,60 +249,26 @@ function BridgeClient() {
       })
       .catch(() => {
         if (cancelled) return;
+        hasStartedSigning.current = false;
         fail("Could not sign rental transaction");
       });
 
     return () => {
       cancelled = true;
     };
-  }, [authenticated, fail, finishTransaction, pendingTx, ready, wallets, walletsReady]);
-
-  if (isModalBridge) {
-    return (
-      <main className="min-h-screen bg-transparent text-slate-950">
-        <button
-          type="button"
-          onClick={() => fail("Privy login cancelled")}
-          className="sr-only"
-          aria-label="Close wallet login"
-        >
-          Close wallet login
-        </button>
-        <p className="sr-only">{status}</p>
-      </main>
-    );
-  }
+  }, [authenticated, fail, finishTransaction, pendingTx, ready, signTransaction, wallets, walletsReady]);
 
   return (
-    <main className="grid min-h-screen place-items-center bg-black/45 p-6 text-slate-950 backdrop-blur-sm">
+    <main className="min-h-screen bg-transparent text-slate-950">
       <button
         type="button"
         onClick={() => fail("Privy login cancelled")}
-        className="fixed right-6 top-6 rounded-full bg-white/90 px-4 py-2 text-sm font-semibold shadow-lg"
+        className="sr-only"
+        aria-label="Close wallet login"
       >
-        Close
+        Close wallet login
       </button>
-      <div className="w-full max-w-sm rounded-[28px] border border-white/60 bg-white/92 p-5 text-center shadow-[0_24px_90px_rgba(0,0,0,0.28)] backdrop-blur-2xl">
-        <div className="mx-auto mb-4 grid h-11 w-11 place-items-center rounded-full bg-[#c8ff18] text-lg font-black text-[#061725]">
-          G
-        </div>
-        <h1 className="text-2xl font-black text-[#061725]">
-          {routeAction === "send-transaction" ? "Approve rental" : "Connect wallet"}
-        </h1>
-        <p className="mt-2 text-sm font-semibold leading-6 text-[#607489]">{status}</p>
-        <button
-          type="button"
-          onClick={startPrivyFlow}
-          disabled={!ready || pending}
-          className="mt-5 min-h-[52px] w-full rounded-full bg-[#061725] px-5 text-sm font-black text-white transition hover:bg-[#c8ff18] hover:text-[#061725] disabled:cursor-wait disabled:opacity-60"
-        >
-          {pending
-            ? "Opening..."
-            : routeAction === "send-transaction"
-              ? "Continue with email or Google"
-              : "Continue with email or Google"}
-        </button>
-      </div>
+      <p className="sr-only">{status}</p>
     </main>
   );
 }
@@ -397,38 +276,22 @@ function BridgeClient() {
 function MissingPrivyAppId() {
   useEffect(() => {
     postToParent({ type: "gimi:privy-ready" });
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("mode") === "modal" && params.get("action")) {
-      postToParent({
-        type: "gimi:privy-wallet-error",
-        message: "Privy app id is missing",
-      });
-    }
-
-    const onMessage = (event: MessageEvent) => {
-      if (event.origin !== window.location.origin) return;
-      if (event.data?.type !== "gimi:connect-wallet" && event.data?.type !== "gimi:send-transaction") return;
-      postToParent({
-        type: "gimi:privy-wallet-error",
-        message: "Privy app id is missing",
-      });
-    };
-
-    window.addEventListener("message", onMessage);
-    return () => window.removeEventListener("message", onMessage);
+    postToParent({
+      type: "gimi:privy-wallet-error",
+      message: "Privy app id is missing",
+    });
   }, []);
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-black/35 p-6 backdrop-blur-sm">
-      <div className="max-w-sm rounded-2xl bg-white p-5 text-sm text-slate-800 shadow-xl">
-        Missing <code>NEXT_PUBLIC_PRIVY_APP_ID</code>. Add it in Vercel and local env to enable wallet login.
-      </div>
+    <main className="min-h-screen bg-transparent">
+      <p className="sr-only">Missing NEXT_PUBLIC_PRIVY_APP_ID.</p>
     </main>
   );
 }
 
 export function PrivyBridge() {
   const [mounted, setMounted] = useState(false);
+  const solanaConnectors = useMemo(() => toSolanaWalletConnectors(), []);
 
   useEffect(() => {
     setMounted(true);
@@ -436,10 +299,8 @@ export function PrivyBridge() {
 
   if (!mounted) {
     return (
-      <main className="min-h-screen bg-black/35 p-6 text-slate-950 backdrop-blur-sm">
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 rounded-full bg-white/90 px-5 py-3 text-sm font-medium shadow-lg">
-          Loading wallet login...
-        </div>
+      <main className="min-h-screen bg-transparent text-slate-950">
+        <p className="sr-only">Loading wallet login...</p>
       </main>
     );
   }
@@ -457,12 +318,16 @@ export function PrivyBridge() {
           theme: "light",
           accentColor: "#c7ff00",
           landingHeader: "Connect to Gimi",
-          loginMessage: "Use email or Google to create a Solana checkout wallet.",
+          loginMessage: "Use email, Google, or an existing Solana wallet.",
           showWalletLoginFirst: false,
           walletChainType: "solana-only",
+          walletList: ["detected_solana_wallets", "phantom", "solflare", "backpack"] as never,
         },
         embeddedWallets: {
           solana: { createOnLogin: "users-without-wallets" },
+        },
+        externalWallets: {
+          solana: { connectors: solanaConnectors },
         },
       }}
     >
