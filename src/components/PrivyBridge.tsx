@@ -43,6 +43,7 @@ function BridgeClient() {
   const [pending, setPending] = useState(false);
   const [pendingTx, setPendingTx] = useState<{ transactionBase64: string; cluster: string } | null>(null);
   const [status, setStatus] = useState("Ready to connect");
+  const [routeAction, setRouteAction] = useState<"connect" | "send-transaction">("connect");
   const hasTriedCreate = useRef(false);
   const hasRequestedLogin = useRef(false);
   const { ready, authenticated } = usePrivy();
@@ -94,8 +95,32 @@ function BridgeClient() {
       setPending(true);
       setStatus(pendingTx ? "Preparing your Solana wallet for checkout..." : "Preparing your Solana wallet...");
     },
-    onError: () => fail("Privy login cancelled"),
+    onError: () => {
+      setPending(false);
+      setStatus("Privy login was cancelled. Try again when ready.");
+    },
   });
+
+  const startPrivyFlow = useCallback(() => {
+    hasRequestedLogin.current = false;
+    hasTriedCreate.current = false;
+    setPending(true);
+
+    if (!ready) {
+      setStatus("Loading wallet login...");
+      return;
+    }
+
+    if (!authenticated) {
+      setStatus("Opening Privy...");
+      login({
+        loginMethods: ["email", "google", "wallet"],
+      });
+      return;
+    }
+
+    setStatus(pendingTx ? "Preparing your Solana wallet for checkout..." : "Preparing your Solana wallet...");
+  }, [authenticated, login, pendingTx, ready]);
 
   useEffect(() => {
     postToParent({ type: "gimi:privy-ready" });
@@ -105,14 +130,16 @@ function BridgeClient() {
     const params = new URLSearchParams(window.location.search);
     const action = params.get("action");
     if (action === "connect") {
+      setRouteAction("connect");
       hasTriedCreate.current = false;
-      setPending(true);
+      setPending(false);
       setPendingTx(null);
-      setStatus("Opening Privy...");
+      setStatus("Continue to connect your Solana wallet.");
       return;
     }
 
     if (action === "send-transaction") {
+      setRouteAction("send-transaction");
       let transactionBase64 = "";
       let cluster = "solana:devnet";
       try {
@@ -130,9 +157,9 @@ function BridgeClient() {
       }
 
       hasTriedCreate.current = false;
-      setPending(true);
+      setPending(false);
       setPendingTx({ transactionBase64, cluster });
-      setStatus("Opening Privy...");
+      setStatus("Continue to approve the rental transaction.");
     }
   }, [fail]);
 
@@ -274,7 +301,7 @@ function BridgeClient() {
   }, [authenticated, fail, finishTransaction, pendingTx, ready, wallets, walletsReady]);
 
   return (
-    <main className="min-h-screen bg-black/35 p-6 text-slate-950 backdrop-blur-sm">
+    <main className="grid min-h-screen place-items-center bg-black/45 p-6 text-slate-950 backdrop-blur-sm">
       <button
         type="button"
         onClick={() => fail("Privy login cancelled")}
@@ -282,8 +309,26 @@ function BridgeClient() {
       >
         Close
       </button>
-      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 rounded-full bg-white/90 px-5 py-3 text-sm font-medium shadow-lg">
-        {status}
+      <div className="w-full max-w-sm rounded-[28px] border border-white/60 bg-white/92 p-5 text-center shadow-[0_24px_90px_rgba(0,0,0,0.28)] backdrop-blur-2xl">
+        <div className="mx-auto mb-4 grid h-11 w-11 place-items-center rounded-full bg-[#c8ff18] text-lg font-black text-[#061725]">
+          G
+        </div>
+        <h1 className="text-2xl font-black text-[#061725]">
+          {routeAction === "send-transaction" ? "Approve rental" : "Connect wallet"}
+        </h1>
+        <p className="mt-2 text-sm font-semibold leading-6 text-[#607489]">{status}</p>
+        <button
+          type="button"
+          onClick={startPrivyFlow}
+          disabled={!ready || pending}
+          className="mt-5 min-h-[52px] w-full rounded-full bg-[#061725] px-5 text-sm font-black text-white transition hover:bg-[#c8ff18] hover:text-[#061725] disabled:cursor-wait disabled:opacity-60"
+        >
+          {pending
+            ? "Opening..."
+            : routeAction === "send-transaction"
+              ? "Continue with Privy"
+              : "Continue with Privy"}
+        </button>
       </div>
     </main>
   );
