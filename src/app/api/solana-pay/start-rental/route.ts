@@ -31,7 +31,8 @@ export async function POST(req: NextRequest) {
 
   const draftId = body.draftId ?? `draft_${item.id}_${crypto.randomUUID()}`;
   const solanaPayUrl = `solana:https://rentproof.local/api/solana-pay/start-rental?draftId=${draftId}`;
-  const hours = body.hours ?? item.expectedHours;
+  const requestedHours = Number(body.hours ?? item.expectedHours);
+  const hours = Number.isFinite(requestedHours) ? Math.min(24 * 7, Math.max(1, requestedHours)) : item.expectedHours;
   const renterWallet = body.account ?? body.renterWallet;
 
   if (!renterWallet) {
