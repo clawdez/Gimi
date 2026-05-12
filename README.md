@@ -2,7 +2,7 @@
 
 AI rental agent for school, community, and hackathon inventory.
 
-Gimi is one product: an agentic rental marketplace with Solana settlement built in. It handles community inventory search, refundable escrow, temporary rental-token state, return-confirm burn, on-chain receipt events, and reputation-ready outcomes.
+Gimi is one product: an agentic rental marketplace with Solana settlement built in. It handles community inventory search, buyout-cap escrow, hourly rent accrual inside escrow, temporary rental-token state, return-confirm burn, on-chain receipt events, and reputation-ready outcomes.
 
 The current demo opens at `/` and renders the Gimi one-page agent shell from `public/gimi.html` inside a Next controller shell: a large central agent orb, a bottom chat input, nearby inventory, a product checkout drawer, and same-page Privy wallet connection for email, Google, or Solana wallet users.
 
@@ -16,10 +16,11 @@ User asks for an item
 -> LI.FI quote routes Base USDC into Solana USDC when real wallet addresses are supplied
 -> Solana Pay endpoint returns an unsigned serialized devnet transaction
 -> Wallet signs and sends the prepared transaction from the chat UI
--> Gimi Anchor program locks escrow and creates rental session state
+-> Gimi Anchor program locks buyout-cap escrow and creates rental session state
 -> Renter receives a program-owned rental token PDA
+-> Rent accrues hourly inside escrow
 -> Owner confirms physical return, or auto-buyout triggers after grace
--> Rental token closes, escrow settles, receipt event is emitted
+-> Rental token closes, accrued rent splits to host/platform, renter refund settles, receipt event is emitted
 ```
 
 The MVP is designed for physical-world rentals where the agent helps people borrow real items from a school, community, apartment, coworking space, or hackathon venue.
@@ -33,6 +34,7 @@ The MVP is designed for physical-world rentals where the agent helps people borr
 - Wallet session reuse: once Privy connects, the checkout drawer changes from `Connect wallet` to `Start rental` instead of asking the user to connect again.
 - Demo inventory, rental session state, return flow, receipt copy, and reputation-ready result.
 - Receipt/history page for recent settled rentals, item context, wallet parties, payout/refund split, and Solana explorer links.
+- Active rental profile showing escrow locked, rent accrued so far, and estimated renter refund if returned now.
 - Anchor `rental_session` program for SPL-token escrow and rental lifecycle.
 - Public generated IDL at `/idl/rental_session.json`.
 - Owner listing flow that prepares an owner-signed `initialize_item` devnet transaction, verifies the confirmed item PDA, and publishes it into renter inventory.
@@ -132,6 +134,22 @@ The parent controller signs and sends through the connected Privy Solana wallet,
 the devnet signature to the shell so `/api/rentals/start` can persist the rental
 session and update listing status.
 
+## Escrow And Metering Model
+
+Gimi does not stream funds directly to the host every hour in the MVP. The renter funds the buyout-cap amount into program escrow at `start_rental`. Time then marks an internal accrued-rent balance: `max(minimum_fee, elapsed_time * rate_per_second)`, capped by the escrow amount. On settlement, that accrued rent is split into owner payout and platform fee.
+
+The preferred MVP settlement path is:
+
+```text
+renter funds escrow
+-> session stays active while rent accrues inside escrow
+-> owner confirms return
+-> program splits accrued rent into owner payout + platform fee
+-> program refunds the remaining escrow to renter
+```
+
+`auto_buyout` handles the case where the item does not come back after due time plus grace by letting the host claim the buyout-cap escrow. Partial host withdraw before return is intentionally out of scope because it adds dispute and refund complexity.
+
 ## Anchor Program
 
 Program path:
@@ -162,8 +180,8 @@ Instructions:
 
 - `initialize_config` sets platform fee authority and fee bps.
 - `initialize_item` records owner, payment mint, metered rate, minimum fee, buyout cap, and auto-buyout grace window.
-- `start_rental` transfers the full SPL-token buyout cap from renter to escrow, creates `RentalSession`, and creates the non-transferable `RentalToken` PDA.
-- `confirm_return` settles metered fee, platform fee, owner payout, renter refund, closes escrow, closes rental token, and emits `RentalReturned`.
+- `start_rental` transfers the full SPL-token buyout cap from renter to escrow, creates `RentalSession`, starts metered rent accrual, and creates the non-transferable `RentalToken` PDA.
+- `confirm_return` settles accrued rent into platform fee and owner payout, refunds the renter remainder, closes escrow, closes rental token, and emits `RentalReturned`.
 - `auto_buyout` lets the owner claim the buyout cap after due time plus grace, closes escrow/token state, marks the item bought out, and emits `RentalBoughtOut`.
 
 The rental token is intentionally a program-owned PDA account, not a transferable SPL token. That keeps the rental right bound to the session and prevents a renter from transferring away the obligation.
@@ -205,6 +223,11 @@ Returns a Solana Pay request payload, Gimi PDA metadata, and an unsigned seriali
 Before returning a transaction, the route checks the item PDA, demo USDC mint,
 renter token account, and renter escrow balance. If the renter cannot pay the
 buyout-cap escrow, it returns `409` with `preflight.problems`.
+
+This endpoint prepares the funding transaction only. It locks the buyout cap
+into escrow and starts the metered session; it does not pay the host every hour.
+The active-rental UI shows accrued rent inside escrow, and final payout happens
+through `confirm_return` or `auto_buyout`.
 
 Example request:
 
@@ -255,7 +278,7 @@ Response includes:
 
 ### `POST /api/solana-pay/confirm-return`
 
-Returns an unsigned serialized devnet `confirm_return` transaction for the owner wallet to sign. It settles metered fee, platform fee, owner payout, renter refund, closes escrow/rental-token state, and emits the return receipt event.
+Returns an unsigned serialized devnet `confirm_return` transaction for the owner wallet to sign. It splits accrued rent from escrow into owner payout and platform fee, refunds the renter remainder, closes escrow/rental-token state, and emits the return receipt event.
 The route verifies that the item/session PDAs exist before returning a
 transaction. The settlement transaction idempotently creates missing renter,
 owner, and platform fee token accounts before escrow settlement.
@@ -316,7 +339,9 @@ Response includes:
 
 ### `GET /api/rentals/history`
 
-Returns recent settled receipt rows for the user-visible receipt history page.
+Returns active rentals plus recent settled receipt rows for the user-visible
+profile/history page. Active rentals include item pricing inputs so the client
+can show escrow locked, rent accrued so far, and estimated refund if returned now.
 Each receipt is enriched with item display data when the listing or demo item
 can be found, plus a Solana explorer URL for the settlement transaction.
 
@@ -334,6 +359,10 @@ curl -s 'http://localhost:3000/api/rentals/history?limit=10'
 
 Response includes:
 
+- `activeRentals[].amounts.escrow`
+- `activeRentals[].item.ratePerHour`
+- `activeRentals[].item.minimumFee`
+- `activeRentals[].item.buyoutCap`
 - `receipts[].rentalId`
 - `receipts[].item.name`
 - `receipts[].outcome`
@@ -372,7 +401,7 @@ Handles tool calls:
 - `rentproof.draft_terms`
 - `rentproof.quote_funding`
 - `rentproof.create_rental_request`
-- `rentproof.prepare_return`
+- `rentproof.prepare_return_confirmation`
 - `rentproof.prepare_auto_buyout`
 
 ### `POST /api/rent`

@@ -86,7 +86,7 @@ export async function POST(req: NextRequest) {
     demoFunding,
     programStatus: "devnet_program_deployed_unsigned_transaction_serialized",
     transaction: serialized.transactionBase64,
-    message: `Start Gimi rental for ${item.name}. This unsigned devnet transaction locks ${item.buyoutCap} demo USDC escrow.`,
+    message: `Start Gimi rental for ${item.name}. This unsigned devnet transaction locks ${item.buyoutCap} demo USDC into metered escrow; rent accrues hourly until return or auto-buyout settlement.`,
     transactionMetadata: {
       cluster: serialized.cluster,
       rpcUrl: serialized.rpcUrl,
@@ -99,6 +99,7 @@ export async function POST(req: NextRequest) {
       "start_rental",
       "preflight_renter_demo_usdc_ata_and_balance",
       `lock_${item.buyoutCap}_usdc_escrow`,
+      "meter_rent_accrual_inside_escrow",
       "create_rental_session",
       "mint_program_owned_rental_token_pda",
     ],

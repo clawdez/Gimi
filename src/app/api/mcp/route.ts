@@ -15,7 +15,7 @@ const tools = [
   "rentproof.quote_funding",
   "rentproof.create_rental_request",
   "rentproof.get_session",
-  "rentproof.request_return",
+  "rentproof.prepare_return_confirmation",
   "rentproof.prepare_auto_buyout",
   "rentproof.get_receipt",
 ];
@@ -115,7 +115,7 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  if (tool === "rentproof.request_return" || tool === "rentproof.prepare_auto_buyout") {
+  if (tool === "rentproof.prepare_return_confirmation" || tool === "rentproof.prepare_auto_buyout") {
     const items = await getRentableItems();
     const item = (await getRentableItem(body.itemId ?? "power_bank_18")) ?? items[0];
     if (!item) {
@@ -140,7 +140,7 @@ export async function POST(req: NextRequest) {
     }
 
     const serialized = await buildSettleRentalTransaction({
-      kind: tool === "rentproof.request_return" ? "confirm_return" : "auto_buyout",
+      kind: tool === "rentproof.prepare_return_confirmation" ? "confirm_return" : "auto_buyout",
       itemId: item.id,
       ownerWallet: item.owner,
       renterWallet: renter.toBase58(),
@@ -160,6 +160,10 @@ export async function POST(req: NextRequest) {
       },
       rentProof: serialized.rentProof,
       preflight,
+      settlementModel:
+        tool === "rentproof.prepare_return_confirmation"
+          ? "Owner-signed return confirmation splits accrued rent into owner payout and platform fee, then refunds the renter remainder."
+          : "Owner-signed auto-buyout claims escrow after due time plus grace.",
     });
   }
 

@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
     preflight,
     programStatus: "devnet_program_deployed_unsigned_transaction_serialized",
     transaction: serialized.transactionBase64,
-    message: `Confirm return for ${item.name}. Owner signs to burn/close rental token state, settle platform fee, owner payout, and renter refund.`,
+    message: `Confirm return for ${item.name}. Owner signs to burn/close rental token state, split accrued rent from escrow into owner payout and platform fee, and refund the renter remainder.`,
     transactionMetadata: {
       cluster: serialized.cluster,
       rpcUrl: serialized.rpcUrl,
@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
       "confirm_return",
       "preflight_session_and_token_accounts",
       "idempotently_create_missing_destination_atas",
-      "settle_metered_fee",
+      "settle_accrued_rent_from_escrow",
       "pay_owner_and_platform",
       "refund_renter",
       "close_escrow_and_rental_token",
