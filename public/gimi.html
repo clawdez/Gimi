@@ -425,9 +425,9 @@
   /* ─── item detail bottom sheet ─── */
   .sheet-backdrop {
     position: absolute; inset: 0;
-    background: rgba(0, 0, 0, 0.55);
-    -webkit-backdrop-filter: blur(4px);
-    backdrop-filter: blur(4px);
+    background: transparent;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
     opacity: 0;
     pointer-events: none;
     transition: opacity .3s var(--ease);
@@ -453,6 +453,19 @@
     box-shadow: 0 -30px 80px rgba(0, 0, 0, 0.4);
   }
   .item-sheet.open { transform: translateY(0); }
+
+  .privy-bridge {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    display: none;
+    z-index: 200;
+  }
+  .privy-bridge.open {
+    display: block;
+  }
 
   .sheet-handle {
     width: 38px; height: 4px; border-radius: 10px;
@@ -1008,6 +1021,8 @@
   .top {
     grid-column: 1;
     grid-row: 2;
+    position: relative;
+    z-index: 20;
     align-items: center;
     justify-content: center;
     padding: 0;
@@ -1062,11 +1077,26 @@
       0 0 80px rgba(126, 205, 255, 0.09);
   }
   .chips-block {
+    display: block;
+    position: relative;
+    z-index: 35;
+    margin-top: 14px;
+    opacity: 0.88;
+  }
+  .chips-label {
     display: none;
+  }
+  .chips {
+    justify-content: center;
+    flex-wrap: wrap;
+    overflow: visible;
+    gap: 8px;
   }
   .catalog-scroll {
     grid-column: 1;
     grid-row: 3;
+    position: relative;
+    z-index: 1;
     align-self: stretch;
     width: 100%;
     height: auto;
@@ -1201,18 +1231,29 @@
     height: auto;
     min-height: 100svh;
     overflow: visible;
-    grid-template-rows: auto minmax(540px, calc(100svh - 142px)) auto;
+    grid-template-rows: auto minmax(610px, calc(100svh - 116px)) auto;
   }
   .top {
     min-height: 0;
   }
   .oracle-wrap {
-    margin-bottom: clamp(-18px, -2vh, -10px);
+    height: clamp(410px, 58vh, 620px);
+    margin-bottom: clamp(30px, 5vh, 68px);
+  }
+  .oracle-wrap canvas {
+    width: clamp(460px, 54vw, 760px);
+    height: clamp(460px, 54vw, 760px);
   }
   .chat-bar {
     position: sticky;
     bottom: clamp(18px, 3vh, 34px);
     z-index: 30;
+  }
+  body:not([data-state="idle"]) .speech {
+    margin-bottom: clamp(16px, 2.5vh, 32px);
+  }
+  body[data-state="idle"] .speech {
+    margin-bottom: 0;
   }
   .catalog-scroll {
     height: auto;
@@ -1236,7 +1277,15 @@
   @media (max-width: 980px) {
     .screen {
       min-height: 100svh;
-      grid-template-rows: auto minmax(520px, calc(100svh - 116px)) auto;
+      grid-template-rows: auto minmax(590px, calc(100svh - 92px)) auto;
+    }
+    .oracle-wrap {
+      height: clamp(360px, 52vh, 500px);
+      margin-bottom: 34px;
+    }
+    .oracle-wrap canvas {
+      width: clamp(390px, 84vw, 560px);
+      height: clamp(390px, 84vw, 560px);
     }
     .catalog {
       grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1246,7 +1295,15 @@
 
   @media (max-width: 640px) {
     .screen {
-      grid-template-rows: auto minmax(500px, calc(100svh - 92px)) auto;
+      grid-template-rows: auto minmax(560px, calc(100svh - 72px)) auto;
+    }
+    .oracle-wrap {
+      height: clamp(330px, 48vh, 430px);
+      margin-bottom: 28px;
+    }
+    .oracle-wrap canvas {
+      width: clamp(340px, 94vw, 430px);
+      height: clamp(340px, 94vw, 430px);
     }
     .catalog-scroll {
       margin-top: -82px;
@@ -1255,6 +1312,16 @@
     .catalog {
       grid-template-columns: repeat(2, minmax(0, 1fr));
       padding-top: 82px;
+    }
+    .chips-block {
+      display: block;
+      margin-top: 10px;
+    }
+    .chips {
+      flex-wrap: nowrap;
+      justify-content: flex-start;
+      overflow-x: auto;
+      padding-bottom: 2px;
     }
   }
 
@@ -1364,6 +1431,14 @@
           <div class="sheet-cta-sub">Owner typically replies in ~10 min</div>
         </div>
       </div>
+
+      <iframe
+        class="privy-bridge"
+        id="privyBridge"
+        src="/privy-bridge"
+        title="Privy wallet login"
+        allow="clipboard-read; clipboard-write; publickey-credentials-get *"
+      ></iframe>
 
       <div class="home-indicator"></div>
     </div>
@@ -1628,7 +1703,7 @@ function render(now) {
   ctx.clearRect(0, 0, cw, ch);
 
   const cx = cw / 2, cy = ch / 2;
-  const R = Math.min(cw, ch) * 0.28 * cp.zoom;
+  const R = Math.min(cw, ch) * 0.36 * cp.zoom;
   const breath = 1 + Math.sin(t * 1.4) * 0.014;
 
   /* chromatic liquid wash */
@@ -1967,7 +2042,8 @@ function ask(query) {
   later(listenDur, () => {
     setState('processing');
     const matches = matchItems(query);
-    topMatches = matches.slice(0, 4).map(m => ITEMS.indexOf(m));
+    const selectedMatches = matches.length ? matches : ITEMS.slice(0, 4);
+    topMatches = selectedMatches.slice(0, 4).map(m => ITEMS.indexOf(m));
     bestIdx = topMatches[0] ?? -1;
     let n = 0;
     const tick = () => { n = (n + 1) % 4; dotsEl.textContent = '.'.repeat(n); later(280, tick); };
@@ -1999,6 +2075,14 @@ function ask(query) {
       highlightMatches(matchIds);
       metaEl.textContent = `${matchIds.length} match${matchIds.length === 1 ? '' : 'es'}`;
     });
+
+    // Let the chosen item appear inside the orb first, then move into checkout.
+    later(1450, () => {
+      const item = ITEMS[bestIdx];
+      if (!item) return;
+      replyEl.innerHTML = `Best match ready.<span class="glow"> Opening checkout.</span>`;
+      openSheet(item);
+    });
   });
 
   later(listenDur + 6500, () => {
@@ -2008,7 +2092,11 @@ function ask(query) {
 }
 
 document.querySelectorAll('.chip').forEach(el => {
-  el.addEventListener('click', () => ask(el.dataset.q));
+  el.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    ask(el.dataset.q);
+  });
 });
 
 const ELEVENLABS_SDK_URL = 'https://esm.sh/@elevenlabs/client';
@@ -2162,31 +2250,158 @@ const sheetPrice     = document.getElementById('sheetPrice');
 const sheetCTA       = document.getElementById('sheetCTA');
 const sheetSimilar   = document.getElementById('sheetSimilar');
 const sheetContent   = document.querySelector('.sheet-content');
+const privyBridge    = document.getElementById('privyBridge');
 let connectedWallet = '';
+let privyBridgeReady = false;
+let pendingPrivyConnect = null;
 
 function shortWallet(address) {
   return address ? `${address.slice(0, 4)}…${address.slice(-4)}` : '';
 }
 
 function updateCheckoutCTA() {
-  sheetCTA.textContent = connectedWallet
-    ? `Request rental · ${shortWallet(connectedWallet)}`
-    : 'Connect wallet to request';
+  if (connectedWallet) {
+    sheetCTA.textContent = `Request rental · ${shortWallet(connectedWallet)}`;
+  } else {
+    sheetCTA.textContent = 'Connect wallet with Privy';
+  }
   sheetCTA.style.background = '';
 }
 
+function closePrivyBridge() {
+  privyBridge.classList.remove('open');
+}
+
+function sendPrivyConnectRequest() {
+  privyBridge.contentWindow?.postMessage({ type: 'gimi:connect-wallet' }, window.location.origin);
+}
+
+function connectPrivyWallet() {
+  closePrivyBridge();
+  privyBridge.classList.add('open');
+  sheetCTA.textContent = 'Opening Privy...';
+
+  return new Promise((resolve) => {
+    const timeout = window.setTimeout(() => {
+      pendingPrivyConnect = null;
+      closePrivyBridge();
+      sheetCTA.textContent = 'Privy did not respond';
+      window.setTimeout(updateCheckoutCTA, 1600);
+      resolve('');
+    }, 45000);
+
+    pendingPrivyConnect = (address) => {
+      window.clearTimeout(timeout);
+      pendingPrivyConnect = null;
+      closePrivyBridge();
+      if (address) {
+        connectedWallet = address;
+        updateCheckoutCTA();
+        resolve(address);
+      } else {
+        updateCheckoutCTA();
+        resolve('');
+      }
+    };
+
+    if (privyBridgeReady) {
+      sendPrivyConnectRequest();
+    } else {
+      privyBridge.addEventListener('load', sendPrivyConnectRequest, { once: true });
+    }
+  });
+}
+
+window.addEventListener('message', (event) => {
+  if (event.origin !== window.location.origin) return;
+  if (event.data?.type === 'gimi:privy-ready') {
+    privyBridgeReady = true;
+    return;
+  }
+  if (event.data?.type === 'gimi:privy-wallet-connected') {
+    pendingPrivyConnect?.(String(event.data.address || ''));
+    return;
+  }
+  if (event.data?.type === 'gimi:privy-wallet-error') {
+    const message = String(event.data.message || 'Wallet connection cancelled');
+    sheetCTA.textContent = message;
+    pendingPrivyConnect?.('');
+  }
+});
+privyBridge.addEventListener('load', () => {
+  privyBridgeReady = true;
+});
+
+function getSolanaWalletProviders() {
+  const providers = [];
+  const seen = new Set();
+  const add = (name, provider) => {
+    if (!provider || typeof provider.connect !== 'function') return;
+    if (seen.has(provider)) return;
+    seen.add(provider);
+    providers.push({ name, provider });
+  };
+
+  add('Phantom', window.phantom?.solana);
+  add('Solflare', window.solflare);
+  add('Backpack', window.backpack?.solana || window.backpack);
+  add(window.solana?.isPhantom ? 'Phantom' : 'Solana wallet', window.solana);
+
+  if (Array.isArray(window.solana?.providers)) {
+    window.solana.providers.forEach((provider) => {
+      const name = provider?.isPhantom ? 'Phantom' : provider?.isSolflare ? 'Solflare' : 'Solana wallet';
+      add(name, provider);
+    });
+  }
+
+  return providers;
+}
+
+function getPreferredSolanaWallet() {
+  const providers = getSolanaWalletProviders();
+  return (
+    providers.find((wallet) => wallet.name === 'Phantom') ||
+    providers.find((wallet) => wallet.name === 'Solflare') ||
+    providers.find((wallet) => wallet.name === 'Backpack') ||
+    providers[0] ||
+    null
+  );
+}
+
+function walletAddressFromResult(provider, result) {
+  const key =
+    result?.publicKey ||
+    result?.account?.address ||
+    result?.accounts?.[0]?.address ||
+    provider?.publicKey ||
+    provider?.account?.address;
+  if (!key) return '';
+  if (typeof key === 'string') return key;
+  if (typeof key.toBase58 === 'function') return key.toBase58();
+  if (typeof key.toString === 'function') return key.toString();
+  return '';
+}
+
 async function connectSolanaWallet() {
-  const provider = window.phantom?.solana || window.solana || window.backpack?.solana;
-  if (!provider?.connect) {
-    sheetCTA.textContent = 'Open with Phantom or Backpack';
+  const privyWallet = await connectPrivyWallet();
+  if (privyWallet) return privyWallet;
+
+  const wallet = getPreferredSolanaWallet();
+  if (!wallet) {
+    sheetCTA.textContent = 'Install Phantom, Solflare, or Backpack';
     setTimeout(updateCheckoutCTA, 1600);
     return '';
   }
 
-  sheetCTA.textContent = 'Connecting wallet...';
+  sheetCTA.textContent = `Connecting ${wallet.name}...`;
   try {
-    const res = await provider.connect();
-    connectedWallet = String(res?.publicKey || provider.publicKey || '');
+    const res = await wallet.provider.connect();
+    connectedWallet = walletAddressFromResult(wallet.provider, res);
+    if (!connectedWallet) {
+      sheetCTA.textContent = `${wallet.name} connected without address`;
+      setTimeout(updateCheckoutCTA, 1600);
+      return '';
+    }
     updateCheckoutCTA();
     return connectedWallet;
   } catch (err) {
