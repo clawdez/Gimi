@@ -678,6 +678,61 @@
     color: var(--ink-3);
     text-align: center;
   }
+  .profile-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin: 0 0 20px;
+    padding: 5px;
+    border: 1px solid rgba(240, 242, 247, 0.1);
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.16);
+  }
+  .profile-tab {
+    border: 0;
+    border-radius: 999px;
+    padding: 11px 10px;
+    color: var(--ink-3);
+    background: transparent;
+    font: 600 12px/1 'Inter', sans-serif;
+    cursor: pointer;
+    transition: color .2s var(--ease), background .2s var(--ease), box-shadow .2s var(--ease);
+  }
+  .profile-tab.is-active {
+    color: var(--ink);
+    background: rgba(240, 242, 247, 0.12);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+  .profile-pane {
+    display: none;
+  }
+  .profile-pane.is-active {
+    display: block;
+  }
+  .profile-status {
+    display: none;
+    margin: 0 0 14px;
+    border: 1px solid rgba(244, 224, 143, 0.18);
+    border-radius: 16px;
+    background: rgba(244, 224, 143, 0.08);
+    padding: 11px 13px;
+    color: var(--ink-2);
+    font-size: 12px;
+    line-height: 1.35;
+  }
+  .profile-status.is-visible {
+    display: block;
+  }
+  .profile-status.is-error {
+    border-color: rgba(255, 143, 143, 0.22);
+    background: rgba(255, 143, 143, 0.08);
+    color: #ffb8b8;
+  }
+  .profile-status.is-success {
+    border-color: rgba(107, 212, 155, 0.24);
+    background: rgba(107, 212, 155, 0.09);
+    color: #b9f5d1;
+  }
   .profile-section-label {
     margin: 22px 2px 12px;
     font-family: 'Geist Mono', monospace;
@@ -765,6 +820,39 @@
     color: var(--ink-3);
     font-size: 11px;
     line-height: 1.35;
+  }
+  .owner-action-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr);
+    gap: 10px;
+    margin-top: 14px;
+  }
+  .owner-settle-btn {
+    border: 0;
+    border-radius: 999px;
+    padding: 13px 14px;
+    color: #071018;
+    background: var(--accent);
+    font: 700 13px/1 'Inter', sans-serif;
+    cursor: pointer;
+    transition: transform .2s var(--ease), opacity .2s var(--ease), background .2s var(--ease);
+  }
+  .owner-settle-btn.is-secondary {
+    color: var(--ink);
+    background: rgba(240, 242, 247, 0.12);
+    border: 1px solid rgba(240, 242, 247, 0.14);
+  }
+  .owner-settle-btn:hover {
+    transform: translateY(-1px);
+  }
+  .owner-settle-btn:disabled {
+    opacity: 0.58;
+    cursor: progress;
+    transform: none;
+  }
+  .active-rental-card.is-settling .owner-settle-btn {
+    opacity: 0.58;
+    pointer-events: none;
   }
   .receipt-card,
   .empty-profile-card {
@@ -1626,13 +1714,26 @@
           <div class="sheet-handle"></div>
           <div class="profile-title">Your rentals</div>
           <div class="profile-wallet" id="profileWallet">Connect wallet</div>
-          <div class="profile-section-label">Borrowing now</div>
-          <div id="activeRentalsPanel">
-            <div class="empty-profile-card">Connect your wallet to see active rentals.</div>
+          <div class="profile-tabs" role="tablist" aria-label="Rental profile">
+            <button class="profile-tab is-active" type="button" role="tab" data-profile-tab="borrowing">Borrowing now</button>
+            <button class="profile-tab" type="button" role="tab" data-profile-tab="lending">Lending now</button>
           </div>
-          <div class="profile-section-label">Receipts</div>
-          <div id="rentalReceiptsPanel">
-            <div class="empty-profile-card">Returned items and buyout receipts will appear here.</div>
+          <div class="profile-pane is-active" id="borrowingPane">
+            <div class="profile-section-label">Borrowing now</div>
+            <div id="activeRentalsPanel">
+              <div class="empty-profile-card">Connect your wallet to see active rentals.</div>
+            </div>
+            <div class="profile-section-label">Receipts</div>
+            <div id="rentalReceiptsPanel">
+              <div class="empty-profile-card">Returned items and buyout receipts will appear here.</div>
+            </div>
+          </div>
+          <div class="profile-pane" id="lendingPane">
+            <div class="profile-section-label">Lending now</div>
+            <div class="profile-status" id="lendingStatus"></div>
+            <div id="lendingRentalsPanel">
+              <div class="empty-profile-card">Items you are lending will appear here after a renter starts checkout.</div>
+            </div>
           </div>
         </div>
       </div>
@@ -2455,15 +2556,22 @@ const navWallet      = document.getElementById('navWallet');
 const profileSheet   = document.getElementById('profileSheet');
 const profileClose   = document.getElementById('profileClose');
 const profileWallet  = document.getElementById('profileWallet');
+const profileTabs    = document.querySelectorAll('.profile-tab');
+const borrowingPane  = document.getElementById('borrowingPane');
+const lendingPane    = document.getElementById('lendingPane');
+const lendingStatus  = document.getElementById('lendingStatus');
 const activeRentalsPanel = document.getElementById('activeRentalsPanel');
 const rentalReceiptsPanel = document.getElementById('rentalReceiptsPanel');
+const lendingRentalsPanel = document.getElementById('lendingRentalsPanel');
 let connectedWallet = '';
 let connectedWalletSource = '';
 let activeSheetItem = null;
 let lastQuery = '';
 let selectedRentalHours = 3;
+let latestLendingRentals = [];
 const WALLET_SESSION_KEY = 'gimi.walletSession';
 const ACTIVE_RENTALS_CACHE_KEY = 'gimi.activeRentals';
+const PENDING_SETTLEMENT_KEY = 'gimi.pendingRentalSettlement';
 
 const ITEM_TO_RENTPROOF = {
   'golf-set': 'keyboard_15',
@@ -2530,6 +2638,25 @@ function updateWalletUI() {
     profileWallet.textContent = connectedWallet ? `Wallet ${shortWallet(connectedWallet)}` : 'Connect wallet';
   }
   if (sheetCTA) updateCheckoutCTA();
+}
+
+function setProfileTab(tab) {
+  const nextTab = tab === 'lending' ? 'lending' : 'borrowing';
+  profileTabs.forEach((button) => {
+    const isActive = button.dataset.profileTab === nextTab;
+    button.classList.toggle('is-active', isActive);
+    button.setAttribute('aria-selected', String(isActive));
+  });
+  borrowingPane?.classList.toggle('is-active', nextTab === 'borrowing');
+  lendingPane?.classList.toggle('is-active', nextTab === 'lending');
+}
+
+function setLendingStatus(message = '', tone = 'pending') {
+  if (!lendingStatus) return;
+  lendingStatus.textContent = message;
+  lendingStatus.classList.toggle('is-visible', Boolean(message));
+  lendingStatus.classList.toggle('is-error', tone === 'error');
+  lendingStatus.classList.toggle('is-success', tone === 'success');
 }
 
 function formatRentalTime(seconds) {
@@ -2680,6 +2807,48 @@ function renderActiveRentals(rentals) {
   }).join('');
 }
 
+function renderLendingRentals(rentals) {
+  if (!lendingRentalsPanel) return;
+  latestLendingRentals = rentals;
+  if (!rentals.length) {
+    lendingRentalsPanel.innerHTML = '<div class="empty-profile-card">No active lending sessions yet. When someone rents your item, it appears here for return settlement.</div>';
+    return;
+  }
+  lendingRentalsPanel.innerHTML = rentals.map((rental) => {
+    const item = rental.item || {};
+    const glyph = rental.glyph || glyphForItemId(rental.itemId);
+    const renter = rental.renterWalletShort || shortWallet(rental.renterWallet) || 'Renter';
+    const pickup = item.locationLabel || rental.pickupLocation || 'Owner pickup point';
+    const due = rental.dueTs ? formatRentalTime(rental.dueTs) : 'After checkout confirms';
+    const escrow = formatUsdcAmount(rental.amounts?.escrow || rental.escrowAmount);
+    const economics = rentalEscrowEconomics(rental);
+    return `
+      <div class="active-rental-card" data-rental-id="${escapeHtml(rental.rentalId || '')}">
+        <div class="active-rental-head">
+          <div class="active-rental-glyph">${escapeHtml(glyph)}</div>
+          <div>
+            <div class="active-rental-name">${escapeHtml(item.name || rental.itemName || 'Rental item')}</div>
+            <div class="active-rental-sub">Lending · ${escapeHtml(rental.rentalId || 'pending')}</div>
+          </div>
+        </div>
+        <div class="rental-detail-grid">
+          <div class="rental-detail"><span>Renter</span><strong>${escapeHtml(renter)}</strong></div>
+          <div class="rental-detail"><span>Pickup</span><strong>${escapeHtml(pickup)}</strong></div>
+          <div class="rental-detail"><span>Due</span><strong>${escapeHtml(due)}</strong></div>
+          <div class="rental-detail"><span>Escrow locked</span><strong>${escapeHtml(escrow)}</strong></div>
+          <div class="rental-detail"><span>Accrued rent</span><strong>${escapeHtml(formatUsdcEstimate(economics.rentAccrued))}</strong></div>
+          <div class="rental-detail"><span>Renter refund est.</span><strong>${escapeHtml(formatUsdcEstimate(economics.refundNow))}</strong></div>
+        </div>
+        <div class="owner-action-row">
+          <button class="owner-settle-btn" type="button" data-kind="return" data-rental-id="${escapeHtml(rental.rentalId || '')}">Confirm return</button>
+          <button class="owner-settle-btn is-secondary" type="button" data-kind="buyout" data-rental-id="${escapeHtml(rental.rentalId || '')}">Auto-buyout</button>
+        </div>
+        <div class="rental-return-note">Confirm return pays accrued rent from escrow and makes the listing available again. Auto-buyout is only valid after due time plus grace.</div>
+      </div>
+    `;
+  }).join('');
+}
+
 function renderReceipts(receipts) {
   if (!rentalReceiptsPanel) return;
   if (!receipts.length) {
@@ -2697,10 +2866,12 @@ function renderReceipts(receipts) {
 async function refreshRentalProfile() {
   if (!connectedWallet) {
     renderActiveRentals([]);
+    renderLendingRentals([]);
     renderReceipts([]);
     return;
   }
   activeRentalsPanel.innerHTML = '<div class="empty-profile-card">Loading active rentals...</div>';
+  lendingRentalsPanel.innerHTML = '<div class="empty-profile-card">Loading lending sessions...</div>';
   rentalReceiptsPanel.innerHTML = '<div class="empty-profile-card">Loading receipts...</div>';
   try {
     const res = await fetch(`/api/rentals/history?wallet=${encodeURIComponent(connectedWallet)}&limit=8`);
@@ -2709,12 +2880,19 @@ async function refreshRentalProfile() {
     const settledRentalIds = new Set((data.receipts || []).map((receipt) => receipt.rentalId));
     const localRentals = activeLocalRentalsForWallet(connectedWallet, settledRentalIds);
     const remoteIds = new Set((data.activeRentals || []).map((rental) => rental.rentalId));
-    const activeRentals = [...(data.activeRentals || []), ...localRentals.filter((rental) => !remoteIds.has(rental.rentalId))];
-    renderActiveRentals(activeRentals);
+    const remoteActiveRentals = data.activeRentals || [];
+    const borrowingRentals = [
+      ...remoteActiveRentals.filter((rental) => rental.renterWallet === connectedWallet),
+      ...localRentals.filter((rental) => !remoteIds.has(rental.rentalId)),
+    ];
+    const lendingRentals = remoteActiveRentals.filter((rental) => rental.ownerWallet === connectedWallet);
+    renderActiveRentals(borrowingRentals);
+    renderLendingRentals(lendingRentals);
     renderReceipts(data.receipts || []);
   } catch (error) {
     const localRentals = activeLocalRentalsForWallet(connectedWallet);
     renderActiveRentals(localRentals);
+    renderLendingRentals([]);
     rentalReceiptsPanel.innerHTML = `<div class="empty-profile-card">${escapeHtml(error instanceof Error ? error.message : 'Could not load receipts')}</div>`;
   }
 }
@@ -2826,6 +3004,37 @@ function clearPendingRentalStart() {
   } catch (_) {}
 }
 
+function stashPreparedSettlement(prepared) {
+  try {
+    window.localStorage.setItem(
+      PENDING_SETTLEMENT_KEY,
+      JSON.stringify({
+        kind: prepared.kind,
+        rentalId: prepared.rentalId,
+        itemId: prepared.itemId,
+        renterWallet: prepared.renterWallet,
+        ownerWallet: prepared.ownerWallet,
+        savedAt: Date.now(),
+      })
+    );
+  } catch (_) {}
+}
+
+function readPendingSettlement() {
+  try {
+    const raw = window.localStorage.getItem(PENDING_SETTLEMENT_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function clearPendingSettlement() {
+  try {
+    window.localStorage.removeItem(PENDING_SETTLEMENT_KEY);
+  } catch (_) {}
+}
+
 function setSheetStatus(message, tone = 'muted') {
   sheetCTASub.textContent = message;
   sheetCTASub.style.color =
@@ -2925,6 +3134,13 @@ window.addEventListener('message', async (event) => {
   if (event.data?.type === 'gimi:privy-wallet-error') {
     closePrivyRequest();
     const message = String(event.data.message || 'Wallet connection cancelled');
+    if (readPendingSettlement()) {
+      clearPendingSettlement();
+      try { window.localStorage.removeItem('gimi.pendingPrivyTransaction'); } catch (_) {}
+      setLendingStatus(message, 'error');
+      await refreshRentalProfile();
+      return;
+    }
     updateCheckoutCTA();
     setSheetStatus(message, 'error');
     return;
@@ -2935,6 +3151,10 @@ window.addEventListener('message', async (event) => {
     if (!signature) {
       updateCheckoutCTA();
       setSheetStatus('Wallet returned without a transaction signature', 'error');
+      return;
+    }
+    if (readPendingSettlement()) {
+      await completePrivySettlementSignature(signature);
       return;
     }
     await completePrivyRentalSignature(signature);
@@ -2984,6 +3204,150 @@ async function recordRentalStart(prepared, signature) {
     await new Promise((resolve) => setTimeout(resolve, 1200 * (attempt + 1)));
   }
   throw lastError || new Error('Rental status sync failed');
+}
+
+async function prepareOwnerSettlement(rental, kind) {
+  const endpoint = kind === 'buyout' ? '/api/solana-pay/auto-buyout' : '/api/solana-pay/confirm-return';
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      itemId: rental.itemId,
+      rentalId: rental.rentalId,
+      renterWallet: rental.renterWallet,
+      ownerWallet: rental.ownerWallet || connectedWallet,
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    const problems = Array.isArray(data?.problems) && data.problems.length
+      ? ` (${data.problems.join('; ')})`
+      : '';
+    throw new Error((data?.error || 'Could not prepare settlement transaction') + problems);
+  }
+  return {
+    kind,
+    itemId: rental.itemId,
+    rentalId: rental.rentalId,
+    renterWallet: rental.renterWallet,
+    ownerWallet: rental.ownerWallet || connectedWallet,
+    transaction: data.transaction,
+    transactionMetadata: data.transactionMetadata || {},
+  };
+}
+
+async function recordOwnerSettlement(prepared, signature) {
+  let lastError = null;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const res = await fetch('/api/rentals/settle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        kind: prepared.kind,
+        itemId: prepared.itemId,
+        rentalId: prepared.rentalId,
+        renterWallet: prepared.renterWallet,
+        settlementSignature: signature,
+      }),
+    });
+    const data = await res.json();
+    if (res.ok) return data;
+    lastError = new Error(data?.error || 'Settlement status sync failed');
+    await new Promise((resolve) => setTimeout(resolve, 1200 * (attempt + 1)));
+  }
+  throw lastError || new Error('Settlement status sync failed');
+}
+
+async function startOwnerSettlement(rental, kind, button) {
+  if (readPendingSettlement()) {
+    throw new Error('Finish the current wallet approval before starting another settlement');
+  }
+  if (!connectedWallet) {
+    requestPrivyAction('connect');
+    return;
+  }
+  if (!rental?.rentalId || !rental?.itemId || !rental?.renterWallet) {
+    throw new Error('Rental session is missing settlement metadata');
+  }
+  if (rental.ownerWallet && rental.ownerWallet !== connectedWallet) {
+    throw new Error(`Connect the owner wallet ${shortWallet(rental.ownerWallet)} to settle this rental`);
+  }
+
+  const originalText = button?.textContent || '';
+  const ownerCard = button?.closest('.active-rental-card');
+  if (button) {
+    button.disabled = true;
+    button.textContent = kind === 'buyout' ? 'Preparing buyout...' : 'Preparing return...';
+  }
+  ownerCard?.classList.add('is-settling');
+  setLendingStatus(
+    kind === 'buyout'
+      ? 'Preparing owner-signed auto-buyout transaction...'
+      : 'Preparing owner-signed confirm return transaction...',
+    'pending'
+  );
+
+  try {
+    const prepared = await prepareOwnerSettlement(rental, kind);
+    stashPreparedSettlement(prepared);
+    try {
+      window.localStorage.setItem(
+        'gimi.pendingPrivyTransaction',
+        JSON.stringify({
+          transactionBase64: prepared.transaction,
+          cluster: prepared.transactionMetadata?.cluster || 'solana:devnet',
+          requiredSigner: prepared.transactionMetadata?.requiredSigner || prepared.ownerWallet || connectedWallet,
+          action: 'owner-settlement',
+          kind,
+          rentalId: prepared.rentalId,
+          itemId: prepared.itemId,
+          createdAt: Date.now(),
+        })
+      );
+    } catch (_) {}
+    setLendingStatus(`Wallet approval required · signer ${shortWallet(prepared.ownerWallet || connectedWallet)}`, 'pending');
+    requestPrivyAction('send-transaction');
+  } catch (error) {
+    clearPendingSettlement();
+    try { window.localStorage.removeItem('gimi.pendingPrivyTransaction'); } catch (_) {}
+    setLendingStatus(error instanceof Error ? error.message : 'Could not prepare settlement transaction', 'error');
+    if (button) {
+      button.disabled = false;
+      button.textContent = originalText;
+    }
+    ownerCard?.classList.remove('is-settling');
+  }
+}
+
+async function completePrivySettlementSignature(signature) {
+  const pending = readPendingSettlement();
+  if (!pending) return false;
+
+  setProfileTab('lending');
+  setLendingStatus(`Tx ${shortWallet(signature)} sent. Syncing settlement receipt...`, 'pending');
+  try {
+    await recordOwnerSettlement(pending, signature);
+    clearPendingSettlement();
+    try {
+      window.localStorage.removeItem('gimi.pendingPrivyTransaction');
+    } catch (_) {}
+    setLendingStatus(
+      pending.kind === 'buyout'
+        ? 'Auto-buyout settled. Receipt saved and item status updated.'
+        : 'Return confirmed. Listing is available again and renter receipt is saved.',
+      'success'
+    );
+    await refreshRentalProfile();
+    return true;
+  } catch (error) {
+    clearPendingSettlement();
+    try {
+      window.localStorage.removeItem('gimi.pendingPrivyTransaction');
+    } catch (_) {}
+    setLendingStatus(error instanceof Error ? error.message : 'Settlement sync failed', 'error');
+    await refreshRentalProfile();
+    return true;
+  }
 }
 
 async function completePrivyRentalSignature(signature) {
@@ -3116,6 +3480,9 @@ durationOptions?.addEventListener('click', (e) => {
 sheetClose.addEventListener('click', closeSheet);
 profileClose.addEventListener('click', closeProfileSheet);
 sheetBackdrop.addEventListener('click', closeOpenSheets);
+profileTabs.forEach((button) => {
+  button.addEventListener('click', () => setProfileTab(button.dataset.profileTab));
+});
 navWallet?.addEventListener('click', () => {
   if (connectedWallet) {
     openProfileSheet();
@@ -3135,6 +3502,10 @@ sheetCTA.addEventListener('click', async (event) => {
     }
 
     event.preventDefault();
+
+    if (readPendingSettlement()) {
+      throw new Error('Finish the current owner settlement approval before starting another checkout');
+    }
 
     sheetCTA.textContent = 'Preparing checkout...';
     setSheetStatus('Building serialized Solana devnet transaction...', 'pending');
@@ -3169,6 +3540,17 @@ sheetCTA.addEventListener('click', async (event) => {
     sheetCTA.textContent = 'Checkout failed';
     setSheetStatus(error instanceof Error ? error.message : 'Checkout failed', 'error');
     setTimeout(updateCheckoutCTA, 2200);
+  }
+});
+lendingRentalsPanel?.addEventListener('click', async (event) => {
+  const button = event.target.closest('.owner-settle-btn');
+  if (!button) return;
+  const rentalId = button.dataset.rentalId || '';
+  const rental = latestLendingRentals.find((entry) => entry.rentalId === rentalId);
+  try {
+    await startOwnerSettlement(rental, button.dataset.kind === 'buyout' ? 'buyout' : 'return', button);
+  } catch (error) {
+    setLendingStatus(error instanceof Error ? error.message : 'Settlement failed', 'error');
   }
 });
 document.addEventListener('keydown', (e) => {
