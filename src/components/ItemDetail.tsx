@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Image from "next/image";
 import { RentalItem, RentalReceipt } from "@/lib/types";
+import { PrivyWalletButton } from "@/components/PrivyWalletButton";
 
 interface ItemDetailProps {
   item: RentalItem;
@@ -13,12 +14,14 @@ export function ItemDetail({ item, onBack }: ItemDetailProps) {
   const [hours, setHours] = useState(item.expectedHours);
   const [status, setStatus] = useState(item.status);
   const [receipt, setReceipt] = useState<RentalReceipt | null>(null);
+  const [walletAddress, setWalletAddress] = useState("");
 
   const grossFee = Math.min(Math.max(item.minimumFee, hours * item.ratePerHour), item.buyoutCap);
   const refundable = Math.max(0, item.buyoutCap - grossFee);
   const platformFee = Number((grossFee * 0.05).toFixed(2));
 
   async function startRental() {
+    if (!walletAddress) return;
     setStatus("rented");
   }
 
@@ -115,9 +118,16 @@ export function ItemDetail({ item, onBack }: ItemDetailProps) {
           </div>
 
           <div className="mt-6 flex flex-wrap gap-2">
-            {status === "available" && (
+            {status === "available" && !walletAddress && (
+              <PrivyWalletButton
+                onAddress={setWalletAddress}
+                connectLabel="Connect wallet to request"
+                className="border border-black bg-black px-5 py-3 text-[11px] font-bold uppercase tracking-[0.08em] text-white hover:bg-[#c8ff18] hover:text-black"
+              />
+            )}
+            {status === "available" && walletAddress && (
               <button onClick={startRental} className="border border-black bg-black px-5 py-3 text-[11px] font-bold uppercase tracking-[0.08em] text-white hover:bg-white hover:text-black">
-                Start rental demo
+                Start rental demo · {shortKey(walletAddress)}
               </button>
             )}
             {status === "rented" && (
@@ -164,4 +174,8 @@ function Metric({ label, value }: { label: string; value: string }) {
       <p className="mt-2 text-lg font-black text-black">{value}</p>
     </div>
   );
+}
+
+function shortKey(value: string) {
+  return `${value.slice(0, 4)}...${value.slice(-4)}`;
 }

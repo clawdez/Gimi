@@ -14,6 +14,10 @@
   },
   "dependencies": {
     "@crossmint/client-sdk-react-ui": "^4.2.0",
+    "@privy-io/react-auth": "^3.24.0",
+    "@solana-program/memo": "^0.11.0",
+    "@solana-program/system": "^0.12.0",
+    "@solana/kit": "^6.9.0",
     "@solana/spl-token": "^0.4.14",
     "@solana/wallet-adapter-base": "^0.9.27",
     "@solana/wallet-adapter-react": "^0.15.39",
