@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { WalletProviderWrapper } from "@/components/WalletProvider";
 
 export const metadata: Metadata = {
   title: "Gimi — Agentic Rentals",
@@ -11,7 +10,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className="h-full antialiased">
       <body className="min-h-full flex flex-col bg-white text-black">
-        <WalletProviderWrapper>{children}</WalletProviderWrapper>
+        {children}
       </body>
     </html>
   );
