@@ -15,7 +15,7 @@ const tools = [
   "rentproof.draft_terms",
   "rentproof.quote_funding",
   "rentproof.create_rental_request",
-  "rentproof.prepare_return",
+  "rentproof.prepare_return_confirmation",
   "rentproof.prepare_auto_buyout",
 ] as const;
 
@@ -48,8 +48,8 @@ export async function GET(req: NextRequest) {
             ? "Quote cross-chain funding into Solana USDC using LI.FI."
               : tool === "rentproof.create_rental_request"
                 ? "Create an unsigned serialized Solana devnet start_rental transaction."
-                : tool === "rentproof.prepare_return"
-                  ? "Create an unsigned serialized Solana devnet confirm_return transaction for the owner to sign."
+                : tool === "rentproof.prepare_return_confirmation"
+                  ? "Create an unsigned serialized Solana devnet confirm_return transaction for the owner to sign after physical return."
                   : "Create an unsigned serialized Solana devnet auto_buyout transaction for the owner to sign.",
     })),
     request_body_schema: {
@@ -132,8 +132,8 @@ export async function POST(req: NextRequest) {
   const renter = publicKeyOrFallback(body.renterWallet, DEMO_RENTER_WALLET);
   const rentalId = body.draftId ?? `elevenlabs_${item.id}_${crypto.randomUUID()}`;
 
-  if (tool === "rentproof.prepare_return" || tool === "rentproof.prepare_auto_buyout") {
-    const kind = tool === "rentproof.prepare_return" ? "confirm_return" : "auto_buyout";
+  if (tool === "rentproof.prepare_return_confirmation" || tool === "rentproof.prepare_auto_buyout") {
+    const kind = tool === "rentproof.prepare_return_confirmation" ? "confirm_return" : "auto_buyout";
     const settleRentalId = body.rentalId ?? body.draftId ?? rentalId;
     const preflight = await preflightSettleRental({
       itemId: item.id,
@@ -168,6 +168,10 @@ export async function POST(req: NextRequest) {
       },
       rentProof: serialized.rentProof,
       preflight,
+      settlementModel:
+        kind === "confirm_return"
+          ? "Owner confirmation splits accrued rent from escrow into owner payout and platform fee, then refunds the renter remainder."
+          : "Auto-buyout claims escrow after due time plus grace.",
       safety: "Unsigned owner transaction only. The ElevenLabs tool cannot sign or move funds.",
     });
   }
@@ -208,6 +212,7 @@ export async function POST(req: NextRequest) {
     },
     rentProof: serialized.rentProof,
     preflight,
+    settlementModel: "Renter funds buyout-cap escrow up front; rent accrues inside escrow until return confirmation or auto-buyout.",
     safety: "Unsigned wallet transaction only. The ElevenLabs tool cannot sign or move funds.",
   });
 }

@@ -56,9 +56,7 @@ export async function GET(req: NextRequest) {
   try {
     const repository = getRentalReceiptsRepository();
     const sessionsRepository = getRentalSessionsRepository();
-    const activeSessions = wallet
-      ? await sessionsRepository.listByWallet(wallet, { status: "active", limit })
-      : [];
+    const activeSessions = wallet ? await sessionsRepository.listByWallet(wallet, { status: "active", limit }) : [];
     const receipts = await repository.listRecent({
       wallet: wallet || undefined,
       rentalId: rentalId || undefined,
@@ -102,6 +100,7 @@ async function enrichSession(session: PersistedRentalSession) {
           ownerName: item.ownerName,
           ownerScore: item.ownerScore,
           ratePerHour: item.ratePerHour,
+          minimumFee: item.minimumFee,
           buyoutCap: item.buyoutCap,
         }
       : null,
