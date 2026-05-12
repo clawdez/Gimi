@@ -616,6 +616,116 @@
   }
   .sheet-similar-row::-webkit-scrollbar { display: none; }
 
+  .profile-sheet .sheet-content {
+    text-align: left;
+    padding-bottom: 20px;
+  }
+  .profile-title {
+    margin: 22px 0 8px;
+    color: var(--ink);
+    font-size: 28px;
+    font-weight: 600;
+    letter-spacing: -0.03em;
+    text-align: center;
+  }
+  .profile-wallet {
+    margin-bottom: 22px;
+    font-family: 'Geist Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    text-align: center;
+  }
+  .profile-section-label {
+    margin: 22px 2px 12px;
+    font-family: 'Geist Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .active-rental-card,
+  .receipt-card,
+  .empty-profile-card {
+    border: 1px solid var(--hairline);
+    border-radius: 22px;
+    background: rgba(240, 242, 247, 0.075);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  }
+  .active-rental-card {
+    padding: 18px;
+  }
+  .active-rental-head {
+    display: grid;
+    grid-template-columns: 54px 1fr;
+    gap: 14px;
+    align-items: center;
+    margin-bottom: 16px;
+  }
+  .active-rental-glyph {
+    position: relative;
+    width: 54px;
+    height: 54px;
+    border-radius: 18px;
+    display: grid;
+    place-items: center;
+    font-size: 30px;
+    background: radial-gradient(circle at 50% 50%, rgba(143, 164, 255, 0.22), rgba(240, 242, 247, 0.05));
+  }
+  .active-rental-name {
+    color: var(--ink);
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+  .active-rental-sub {
+    margin-top: 4px;
+    color: var(--ink-3);
+    font-size: 12px;
+  }
+  .rental-detail-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .rental-detail {
+    border-radius: 16px;
+    background: rgba(0, 0, 0, 0.18);
+    padding: 12px;
+  }
+  .rental-detail span {
+    display: block;
+    margin-bottom: 5px;
+    font-family: 'Geist Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .rental-detail strong {
+    color: var(--ink);
+    font-size: 13px;
+    line-height: 1.25;
+    font-weight: 500;
+  }
+  .receipt-card,
+  .empty-profile-card {
+    padding: 14px 16px;
+    color: var(--ink-2);
+    font-size: 13px;
+    line-height: 1.45;
+  }
+  .receipt-card + .receipt-card {
+    margin-top: 10px;
+  }
+  .receipt-card strong {
+    display: block;
+    color: var(--ink);
+    font-size: 14px;
+    margin-bottom: 3px;
+  }
+
   .mini-card {
     flex: 0 0 auto;
     width: 104px;
@@ -1439,6 +1549,25 @@
         </div>
       </div>
 
+      <div class="item-sheet profile-sheet" id="profileSheet" role="dialog" aria-modal="true">
+        <button class="sheet-close" id="profileClose" aria-label="Close profile">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+        <div class="sheet-content">
+          <div class="sheet-handle"></div>
+          <div class="profile-title">Your rentals</div>
+          <div class="profile-wallet" id="profileWallet">Connect wallet</div>
+          <div class="profile-section-label">Borrowing now</div>
+          <div id="activeRentalsPanel">
+            <div class="empty-profile-card">Connect your wallet to see active rentals.</div>
+          </div>
+          <div class="profile-section-label">Receipts</div>
+          <div id="rentalReceiptsPanel">
+            <div class="empty-profile-card">Returned items and buyout receipts will appear here.</div>
+          </div>
+        </div>
+      </div>
+
       <div class="home-indicator"></div>
     </div>
   </div>
@@ -2252,11 +2381,17 @@ const sheetCTASub    = document.getElementById('sheetCTASub');
 const sheetSimilar   = document.getElementById('sheetSimilar');
 const sheetContent   = document.querySelector('.sheet-content');
 const navWallet      = document.getElementById('navWallet');
+const profileSheet   = document.getElementById('profileSheet');
+const profileClose   = document.getElementById('profileClose');
+const profileWallet  = document.getElementById('profileWallet');
+const activeRentalsPanel = document.getElementById('activeRentalsPanel');
+const rentalReceiptsPanel = document.getElementById('rentalReceiptsPanel');
 let connectedWallet = '';
 let connectedWalletSource = '';
 let activeSheetItem = null;
 let lastQuery = '';
 const WALLET_SESSION_KEY = 'gimi.walletSession';
+const ACTIVE_RENTALS_CACHE_KEY = 'gimi.activeRentals';
 
 const ITEM_TO_RENTPROOF = {
   'golf-set': 'keyboard_15',
@@ -2316,10 +2451,170 @@ function hydrateWalletSession() {
 
 function updateWalletUI() {
   if (navWallet) {
-    navWallet.textContent = connectedWallet ? shortWallet(connectedWallet) : 'Connect wallet';
+    navWallet.textContent = connectedWallet ? `My rentals · ${shortWallet(connectedWallet)}` : 'Connect wallet';
     navWallet.classList.toggle('is-connected', Boolean(connectedWallet));
   }
+  if (profileWallet) {
+    profileWallet.textContent = connectedWallet ? `Wallet ${shortWallet(connectedWallet)}` : 'Connect wallet';
+  }
   if (sheetCTA) updateCheckoutCTA();
+}
+
+function formatRentalTime(seconds) {
+  const date = new Date(Number(seconds) * 1000);
+  if (!Number.isFinite(date.getTime())) return 'Pending';
+  return date.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+function formatUsdcAmount(amount) {
+  if (!amount) return '0 USDC';
+  if (typeof amount === 'object' && amount.uiAmount !== undefined) return `${amount.uiAmount} USDC`;
+  const value = Number(amount) / 1_000_000;
+  if (!Number.isFinite(value)) return '0 USDC';
+  return `${value.toLocaleString([], { maximumFractionDigits: 2 })} USDC`;
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (char) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  }[char]));
+}
+
+function glyphForItemId(itemId) {
+  const prototype = Object.entries(ITEM_TO_RENTPROOF).find(([, rentproofId]) => rentproofId === itemId)?.[0];
+  return ITEMS.find((item) => item.id === prototype)?.glyph || '📦';
+}
+
+function readLocalActiveRentals() {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(ACTIVE_RENTALS_CACHE_KEY) || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function writeLocalActiveRental(rental) {
+  try {
+    const existing = readLocalActiveRentals().filter((entry) => entry.rentalId !== rental.rentalId);
+    window.localStorage.setItem(ACTIVE_RENTALS_CACHE_KEY, JSON.stringify([rental, ...existing].slice(0, 8)));
+  } catch (_) {}
+}
+
+function replaceLocalActiveRentals(rentals) {
+  try {
+    window.localStorage.setItem(ACTIVE_RENTALS_CACHE_KEY, JSON.stringify(rentals.slice(0, 8)));
+  } catch (_) {}
+}
+
+function activeLocalRentalsForWallet(wallet, settledRentalIds = new Set()) {
+  const allRentals = readLocalActiveRentals();
+  const freshRentals = allRentals.filter((rental) => {
+    if (Date.now() - Number(rental.savedAt || 0) >= 10 * 60 * 1000) return false;
+    if (settledRentalIds.has(rental.rentalId)) return false;
+    return true;
+  });
+  if (freshRentals.length !== allRentals.length) replaceLocalActiveRentals(freshRentals);
+  return freshRentals.filter((rental) => rental.renterWallet === wallet);
+}
+
+function renderActiveRentals(rentals) {
+  if (!activeRentalsPanel) return;
+  if (!rentals.length) {
+    activeRentalsPanel.innerHTML = '<div class="empty-profile-card">No active rentals yet. Ask Gimi for something nearby and start checkout.</div>';
+    return;
+  }
+  activeRentalsPanel.innerHTML = rentals.map((rental) => {
+    const item = rental.item || {};
+    const glyph = rental.glyph || glyphForItemId(rental.itemId);
+    const pickup = item.locationLabel || rental.pickupLocation || 'Owner pickup point';
+    const owner = item.ownerName || rental.ownerName || rental.ownerWalletShort || 'Owner';
+    const due = rental.dueTs ? formatRentalTime(rental.dueTs) : 'After checkout confirms';
+    const escrow = formatUsdcAmount(rental.amounts?.escrow || rental.escrowAmount);
+    return `
+      <div class="active-rental-card">
+        <div class="active-rental-head">
+          <div class="active-rental-glyph">${escapeHtml(glyph)}</div>
+          <div>
+            <div class="active-rental-name">${escapeHtml(item.name || rental.itemName || 'Rental item')}</div>
+            <div class="active-rental-sub">Active rental · ${escapeHtml(rental.rentalId || 'pending')}</div>
+          </div>
+        </div>
+        <div class="rental-detail-grid">
+          <div class="rental-detail"><span>Pickup</span><strong>${escapeHtml(pickup)}</strong></div>
+          <div class="rental-detail"><span>Owner</span><strong>${escapeHtml(owner)}</strong></div>
+          <div class="rental-detail"><span>Return by</span><strong>${escapeHtml(due)}</strong></div>
+          <div class="rental-detail"><span>Escrow</span><strong>${escapeHtml(escrow)}</strong></div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderReceipts(receipts) {
+  if (!rentalReceiptsPanel) return;
+  if (!receipts.length) {
+    rentalReceiptsPanel.innerHTML = '<div class="empty-profile-card">Receipts appear after return or auto-buyout settlement.</div>';
+    return;
+  }
+  rentalReceiptsPanel.innerHTML = receipts.map((receipt) => `
+    <div class="receipt-card">
+      <strong>${escapeHtml(receipt.item?.name || receipt.itemId)}</strong>
+      ${escapeHtml(receipt.outcome === 'returned_ok' ? 'Returned successfully' : 'Auto-buyout')} · Refund ${escapeHtml(formatUsdcAmount(receipt.amounts?.renterRefund))}
+    </div>
+  `).join('');
+}
+
+async function refreshRentalProfile() {
+  if (!connectedWallet) {
+    renderActiveRentals([]);
+    renderReceipts([]);
+    return;
+  }
+  activeRentalsPanel.innerHTML = '<div class="empty-profile-card">Loading active rentals...</div>';
+  rentalReceiptsPanel.innerHTML = '<div class="empty-profile-card">Loading receipts...</div>';
+  try {
+    const res = await fetch(`/api/rentals/history?wallet=${encodeURIComponent(connectedWallet)}&limit=8`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data?.error || 'Could not load rentals');
+    const settledRentalIds = new Set((data.receipts || []).map((receipt) => receipt.rentalId));
+    const localRentals = activeLocalRentalsForWallet(connectedWallet, settledRentalIds);
+    const remoteIds = new Set((data.activeRentals || []).map((rental) => rental.rentalId));
+    const activeRentals = [...(data.activeRentals || []), ...localRentals.filter((rental) => !remoteIds.has(rental.rentalId))];
+    renderActiveRentals(activeRentals);
+    renderReceipts(data.receipts || []);
+  } catch (error) {
+    const localRentals = activeLocalRentalsForWallet(connectedWallet);
+    renderActiveRentals(localRentals);
+    rentalReceiptsPanel.innerHTML = `<div class="empty-profile-card">${escapeHtml(error instanceof Error ? error.message : 'Could not load receipts')}</div>`;
+  }
+}
+
+function openProfileSheet() {
+  if (!connectedWallet) {
+    requestPrivyAction('connect');
+    return;
+  }
+  itemSheet.classList.remove('open');
+  clearActiveSheetState();
+  profileSheet.classList.add('open');
+  sheetBackdrop.classList.add('open');
+  updateWalletUI();
+  refreshRentalProfile();
+}
+
+function closeProfileSheet() {
+  profileSheet.classList.remove('open');
+  if (!itemSheet.classList.contains('open')) sheetBackdrop.classList.remove('open');
+}
+
+function closeOpenSheets() {
+  closeSheet();
+  closeProfileSheet();
 }
 
 function persistActiveSheetState() {
@@ -2552,14 +2847,29 @@ async function completePrivyRentalSignature(signature) {
   setSheetStatus(`Tx ${shortWallet(signature)} sent. Confirming rental session...`, 'pending');
 
   try {
-    await recordRentalStart(pending, signature);
+    const recorded = await recordRentalStart(pending, signature);
     clearPendingRentalStart();
     try {
       window.localStorage.removeItem('gimi.pendingPrivyTransaction');
     } catch (_) {}
+    writeLocalActiveRental({
+      rentalId: pending.draftId,
+      itemId: pending.itemId,
+      itemName: activeSheetItem?.name || recorded?.listing?.name || 'Rental item',
+      glyph: activeSheetItem?.glyph || glyphForItemId(pending.itemId),
+      pickupLocation: activeSheetItem?.owner ? `${activeSheetItem.owner} · ${activeSheetItem.dist}` : recorded?.listing?.locationLabel,
+      ownerName: activeSheetItem?.owner || recorded?.listing?.ownerName,
+      renterWallet: pending.renterWallet || connectedWallet,
+      ownerWalletShort: recorded?.rentalSession?.ownerWallet ? shortWallet(recorded.rentalSession.ownerWallet) : '',
+      dueTs: recorded?.rentalSession?.dueTs,
+      escrowAmount: recorded?.rentalSession?.escrowAmount,
+      startSignature: signature,
+      savedAt: Date.now(),
+    });
     sheetCTA.textContent = 'Rental started ✓';
     sheetCTA.style.background = '#6bd49b';
-    setSheetStatus(`Devnet tx ${shortWallet(signature)} confirmed`, 'success');
+    setSheetStatus(`Devnet tx ${shortWallet(signature)} confirmed · pickup details saved`, 'success');
+    setTimeout(openProfileSheet, 700);
   } catch (error) {
     sheetCTA.textContent = 'Checkout failed';
     setSheetStatus(error instanceof Error ? error.message : 'Checkout failed', 'error');
@@ -2631,9 +2941,13 @@ sheetSimilar.addEventListener('click', (e) => {
 });
 
 sheetClose.addEventListener('click', closeSheet);
-sheetBackdrop.addEventListener('click', closeSheet);
+profileClose.addEventListener('click', closeProfileSheet);
+sheetBackdrop.addEventListener('click', closeOpenSheets);
 navWallet?.addEventListener('click', () => {
-  if (connectedWallet) return;
+  if (connectedWallet) {
+    openProfileSheet();
+    return;
+  }
   requestPrivyAction('connect');
 });
 sheetCTA.addEventListener('click', async (event) => {

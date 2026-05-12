@@ -1,8 +1,11 @@
 import { createHash } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
 import {
   Connection,
+  Keypair,
   PublicKey,
   SYSVAR_RENT_PUBKEY,
+  sendAndConfirmTransaction,
   SystemProgram,
   Transaction,
   TransactionInstruction,
@@ -10,6 +13,7 @@ import {
 import {
   TOKEN_PROGRAM_ID,
   createAssociatedTokenAccountIdempotentInstruction,
+  createMintToInstruction,
   getAssociatedTokenAddressSync,
 } from "@solana/spl-token";
 
@@ -352,6 +356,11 @@ interface TokenAccountCheck {
   uiAmount?: number | null;
 }
 
+function loadOptionalKeypair(path: string) {
+  if (!existsSync(path)) return null;
+  return Keypair.fromSecretKey(Uint8Array.from(JSON.parse(readFileSync(path, "utf8"))));
+}
+
 async function getTokenAccountCheck(connection: Connection, address: string): Promise<TokenAccountCheck> {
   const pubkey = new PublicKey(address);
   const accountInfo = await connection.getAccountInfo(pubkey, "confirmed");
@@ -364,6 +373,83 @@ async function getTokenAccountCheck(connection: Connection, address: string): Pr
     owner: accountInfo.owner.toBase58(),
     amount: balance.value.amount,
     uiAmount: balance.value.uiAmount,
+  };
+}
+
+export async function ensureDemoRenterUsdc(input: {
+  renterWallet: string | PublicKey;
+  minimumUiAmount: number;
+}) {
+  if (process.env.GIMI_ENABLE_DEMO_USDC_FAUCET !== "true") {
+    return {
+      ok: false,
+      changed: false,
+      skipped: true,
+      reason: "Demo USDC faucet is disabled. Set GIMI_ENABLE_DEMO_USDC_FAUCET=true for local demos.",
+    };
+  }
+
+  const renter = publicKeyFromInput(input.renterWallet, "renterWallet");
+  const connection = new Connection(SOLANA_RPC_URL, "confirmed");
+  const renterTokenAccount = getAssociatedTokenAddressSync(DEMO_USDC_MINT, renter);
+  const requiredAmount = BigInt(usdcBaseUnits(input.minimumUiAmount));
+  const targetAmount = BigInt(usdcBaseUnits(Math.max(input.minimumUiAmount, 1000)));
+  const tokenAccount = await getTokenAccountCheck(connection, renterTokenAccount.toBase58());
+  const currentAmount = BigInt(tokenAccount.amount ?? "0");
+
+  if (tokenAccount.exists && currentAmount >= requiredAmount) {
+    return {
+      ok: true,
+      changed: false,
+      renterTokenAccount: renterTokenAccount.toBase58(),
+      amount: tokenAccount.amount,
+      uiAmount: tokenAccount.uiAmount,
+    };
+  }
+
+  const payerPath = process.env.PAYER_KEYPAIR ?? `${process.env.HOME}/.config/solana/id.json`;
+  const payer = loadOptionalKeypair(payerPath);
+  if (!payer) {
+    return {
+      ok: false,
+      changed: false,
+      renterTokenAccount: renterTokenAccount.toBase58(),
+      reason: `Demo USDC mint authority keypair not found at ${payerPath}`,
+    };
+  }
+
+  const mintAmount = targetAmount > currentAmount ? targetAmount - currentAmount : requiredAmount;
+  const transaction = new Transaction().add(
+    createAssociatedTokenAccountIdempotentInstruction(
+      payer.publicKey,
+      renterTokenAccount,
+      renter,
+      DEMO_USDC_MINT
+    ),
+    createMintToInstruction(DEMO_USDC_MINT, renterTokenAccount, payer.publicKey, mintAmount)
+  );
+  let signature: string;
+  try {
+    signature = await sendAndConfirmTransaction(connection, transaction, [payer], {
+      commitment: "confirmed",
+    });
+  } catch (error) {
+    return {
+      ok: false,
+      changed: false,
+      renterTokenAccount: renterTokenAccount.toBase58(),
+      reason: error instanceof Error ? error.message : "Could not mint demo USDC to renter wallet",
+    };
+  }
+  const refreshed = await getTokenAccountCheck(connection, renterTokenAccount.toBase58());
+
+  return {
+    ok: true,
+    changed: true,
+    signature,
+    renterTokenAccount: renterTokenAccount.toBase58(),
+    amount: refreshed.amount,
+    uiAmount: refreshed.uiAmount,
   };
 }
 

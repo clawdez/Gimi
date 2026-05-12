@@ -5,6 +5,7 @@ import {
   PLATFORM_FEE_BPS,
   deriveRentProofAccounts,
   buildStartRentalTransaction,
+  ensureDemoRenterUsdc,
   preflightStartRental,
   ratePerSecondBaseUnits,
   usdcBaseUnits,
@@ -38,6 +39,10 @@ export async function POST(req: NextRequest) {
   }
 
   const rentalSeconds = Math.ceil(hours * 3600);
+  const demoFunding = await ensureDemoRenterUsdc({
+    renterWallet,
+    minimumUiAmount: item.buyoutCap,
+  });
   const rentProof = deriveRentProofAccounts({
     itemId: item.id,
     ownerWallet: item.owner,
@@ -58,6 +63,7 @@ export async function POST(req: NextRequest) {
         error: "Token account preflight failed",
         problems: preflight.problems,
         preflight,
+        demoFunding,
         rentProof,
       },
       { status: 409 }
@@ -77,6 +83,7 @@ export async function POST(req: NextRequest) {
     solanaPayUrl,
     rentProof,
     preflight,
+    demoFunding,
     programStatus: "devnet_program_deployed_unsigned_transaction_serialized",
     transaction: serialized.transactionBase64,
     message: `Start Gimi rental for ${item.name}. This unsigned devnet transaction locks ${item.buyoutCap} demo USDC escrow.`,
