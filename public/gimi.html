@@ -554,6 +554,47 @@
     margin-right: 7px;
     vertical-align: 1px;
   }
+  .rental-length {
+    margin: 18px 0 2px;
+    text-align: left;
+  }
+  .rental-length-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+    font-family: 'Geist Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .rental-length-total {
+    color: var(--ink-2);
+    white-space: nowrap;
+  }
+  .duration-options {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .duration-option {
+    min-height: 42px;
+    border: 1px solid rgba(240, 242, 247, 0.12);
+    border-radius: 14px;
+    background: rgba(240, 242, 247, 0.075);
+    color: var(--ink-2);
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 550;
+    cursor: pointer;
+    transition: border-color .18s var(--ease), background .18s var(--ease), color .18s var(--ease);
+  }
+  .duration-option.is-selected {
+    border-color: rgba(205, 255, 0, 0.78);
+    background: rgba(205, 255, 0, 0.16);
+    color: var(--ink);
+  }
 
   .sheet-cta {
     flex: 0 0 auto;
@@ -715,6 +756,12 @@
     border-radius: 16px;
     background: rgba(107, 212, 155, 0.08);
     padding: 10px 12px;
+    color: var(--ink-3);
+    font-size: 11px;
+    line-height: 1.35;
+  }
+  .rental-return-note {
+    margin-top: 8px;
     color: var(--ink-3);
     font-size: 11px;
     line-height: 1.35;
@@ -1548,6 +1595,18 @@
             <span class="sheet-price-unit">/day</span>
           </div>
           <div class="sheet-availability"><span class="dot"></span>Available now</div>
+          <div class="rental-length">
+            <div class="rental-length-head">
+              <span>Borrow for</span>
+              <span class="rental-length-total" id="rentalLengthTotal">3h estimate</span>
+            </div>
+            <div class="duration-options" id="durationOptions" aria-label="Rental duration">
+              <button class="duration-option" type="button" data-hours="1">1h</button>
+              <button class="duration-option" type="button" data-hours="3">3h</button>
+              <button class="duration-option" type="button" data-hours="6">6h</button>
+              <button class="duration-option" type="button" data-hours="24">1d</button>
+            </div>
+          </div>
 
           <div class="sheet-divider"></div>
           <div class="sheet-similar-label">Often paired with</div>
@@ -2389,6 +2448,8 @@ const sheetPrice     = document.getElementById('sheetPrice');
 const sheetCTA       = document.getElementById('sheetCTA');
 const sheetCTASub    = document.getElementById('sheetCTASub');
 const sheetSimilar   = document.getElementById('sheetSimilar');
+const durationOptions = document.getElementById('durationOptions');
+const rentalLengthTotal = document.getElementById('rentalLengthTotal');
 const sheetContent   = document.querySelector('.sheet-content');
 const navWallet      = document.getElementById('navWallet');
 const profileSheet   = document.getElementById('profileSheet');
@@ -2400,6 +2461,7 @@ let connectedWallet = '';
 let connectedWalletSource = '';
 let activeSheetItem = null;
 let lastQuery = '';
+let selectedRentalHours = 3;
 const WALLET_SESSION_KEY = 'gimi.walletSession';
 const ACTIVE_RENTALS_CACHE_KEY = 'gimi.activeRentals';
 
@@ -2612,6 +2674,7 @@ function renderActiveRentals(rentals) {
           <div class="rental-detail"><span>Refund est.</span><strong>${escapeHtml(formatUsdcEstimate(economics.refundNow))}</strong></div>
         </div>
         <div class="rental-escrow-note">Estimated rent accrues inside escrow every hour. The host receives payout after return confirmation; the rest is refunded to you.</div>
+        <div class="rental-return-note">You can return early at ${escapeHtml(pickup)}. Once the owner confirms return, Gimi closes the rental token, pays accrued rent, and releases the refund.</div>
       </div>
     `;
   }).join('');
@@ -2777,9 +2840,41 @@ function mappedRentalItemId(item) {
 }
 
 function inferRequestedHours(query, item) {
-  const match = String(query || '').toLowerCase().match(/(\d+(?:\.\d+)?)\s*(h|hr|hour|hours|小時|小时)/);
+  const normalized = String(query || '').toLowerCase();
+  const dayMatch = normalized.match(/(\d+(?:\.\d+)?)\s*(d|day|days|天|日)/);
+  if (dayMatch) return Math.min(24 * 7, Math.max(1, Number(dayMatch[1]) * 24));
+  const match = normalized.match(/(\d+(?:\.\d+)?)\s*(h|hr|hour|hours|小時|小时)/);
   if (match) return Number(match[1]);
   return item?.id === 'lens-50' || item?.id === 'drone' ? 4 : 3;
+}
+
+function clampRentalHours(hours) {
+  if (!Number.isFinite(hours)) return 3;
+  return Math.min(24 * 7, Math.max(1, Math.round(hours * 4) / 4));
+}
+
+function itemHourlyEstimate(item) {
+  const dailyPrice = Number(item?.price || 0);
+  if (!Number.isFinite(dailyPrice) || dailyPrice <= 0) return 0;
+  return dailyPrice / 24;
+}
+
+function formatDuration(hours) {
+  if (hours >= 24 && hours % 24 === 0) return `${hours / 24}d`;
+  return `${hours}h`;
+}
+
+function updateDurationUI() {
+  const hours = clampRentalHours(selectedRentalHours);
+  selectedRentalHours = hours;
+  durationOptions?.querySelectorAll('.duration-option').forEach((button) => {
+    button.classList.toggle('is-selected', Number(button.dataset.hours) === hours);
+  });
+  const hourly = itemHourlyEstimate(activeSheetItem);
+  const estimated = hourly > 0 ? Math.max(hourly * hours, hourly).toFixed(2) : '0.00';
+  if (rentalLengthTotal) {
+    rentalLengthTotal.textContent = `${formatDuration(hours)} · ~$${estimated}`;
+  }
 }
 
 function updateCheckoutCTA() {
@@ -2790,12 +2885,13 @@ function updateCheckoutCTA() {
   }
   sheetCTA.style.background = '';
   if (activeSheetItem) {
-    const hours = inferRequestedHours(lastQuery, activeSheetItem);
+    const hours = clampRentalHours(selectedRentalHours);
     setSheetStatus(
       connectedWallet
-        ? `Ready for ${hours} hour${hours === 1 ? '' : 's'} devnet checkout`
-        : `Connect once to rent for ${hours} hour${hours === 1 ? '' : 's'}`
+        ? `Ready for ${formatDuration(hours)} devnet checkout`
+        : `Connect once to rent for ${formatDuration(hours)}`
     );
+    updateDurationUI();
   } else {
     setSheetStatus(connectedWallet ? `Wallet connected · ${shortWallet(connectedWallet)}` : 'Use Privy once, then rent from this wallet');
   }
@@ -2847,7 +2943,7 @@ window.addEventListener('message', async (event) => {
 
 async function prepareRentalCheckout(item, renterWallet) {
   const itemId = mappedRentalItemId(item);
-  const hours = inferRequestedHours(lastQuery, item);
+  const hours = clampRentalHours(selectedRentalHours);
   const res = await fetch('/api/solana-pay/start-rental', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -2970,6 +3066,7 @@ function renderSimilar(item) {
 
 function openSheet(item) {
   activeSheetItem = item;
+  selectedRentalHours = clampRentalHours(inferRequestedHours(lastQuery, item));
   sheetHeroGlow.style.setProperty('--h1', item.hue);
   sheetHeroGlow.style.setProperty('--h2', (item.hue + 40) % 360);
   sheetHeroPhoto.textContent = item.glyph;
@@ -2977,6 +3074,7 @@ function openSheet(item) {
   sheetMeta.textContent      = `${item.owner} · ${item.dist}`;
   sheetPrice.textContent     = `$${item.price}`;
   renderSimilar(item);
+  updateDurationUI();
   sheetContent.scrollTop = 0;
   updateCheckoutCTA();
   sheetBackdrop.classList.add('open');
@@ -3005,6 +3103,14 @@ sheetSimilar.addEventListener('click', (e) => {
   const id = card.dataset.id;
   const item = ITEMS.find(it => it.id === id);
   if (item) openSheet(item);
+});
+
+durationOptions?.addEventListener('click', (e) => {
+  const button = e.target.closest('.duration-option');
+  if (!button) return;
+  selectedRentalHours = clampRentalHours(Number(button.dataset.hours));
+  updateDurationUI();
+  updateCheckoutCTA();
 });
 
 sheetClose.addEventListener('click', closeSheet);
