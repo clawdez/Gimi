@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PrivyProvider, useLogin, usePrivy } from "@privy-io/react-auth";
-import { toSolanaWalletConnectors, useCreateWallet, useWallets as useSolanaWallets } from "@privy-io/react-auth/solana";
+import { useCreateWallet, useWallets as useSolanaWallets } from "@privy-io/react-auth/solana";
 import bs58 from "bs58";
 
 const privyAppId = process.env.NEXT_PUBLIC_PRIVY_APP_ID;
+const bridgeLoginMethods = ["email", "google"] as const;
 
 function postToParent(message: Record<string, unknown>) {
   if (window.opener && !window.opener.closed) {
@@ -51,7 +52,6 @@ function BridgeClient() {
   const [status, setStatus] = useState("Ready to connect");
   const [routeAction, setRouteAction] = useState<"connect" | "send-transaction">("connect");
   const hasTriedCreate = useRef(false);
-  const hasRequestedLogin = useRef(false);
   const { ready, authenticated } = usePrivy();
   const { wallets, ready: walletsReady } = useSolanaWallets();
   const { createWallet } = useCreateWallet();
@@ -108,7 +108,6 @@ function BridgeClient() {
   });
 
   const startPrivyFlow = useCallback(() => {
-    hasRequestedLogin.current = false;
     hasTriedCreate.current = false;
     setPending(true);
 
@@ -120,7 +119,7 @@ function BridgeClient() {
     if (!authenticated) {
       setStatus("Opening Privy...");
       login({
-        loginMethods: ["email", "google", "wallet"],
+        loginMethods: [...bridgeLoginMethods],
       });
       return;
     }
@@ -193,7 +192,7 @@ function BridgeClient() {
         if (!authenticated) {
           setStatus("Opening Privy...");
           login({
-            loginMethods: ["email", "google", "wallet"],
+            loginMethods: [...bridgeLoginMethods],
           });
           return;
         }
@@ -214,7 +213,7 @@ function BridgeClient() {
       if (!authenticated) {
         setStatus("Opening Privy...");
         login({
-          loginMethods: ["email", "google", "wallet"],
+          loginMethods: [...bridgeLoginMethods],
         });
         return;
       }
@@ -225,20 +224,6 @@ function BridgeClient() {
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
   }, [authenticated, fail, login, ready]);
-
-  useEffect(() => {
-    if (!pending || !ready || authenticated || hasRequestedLogin.current) return;
-    hasRequestedLogin.current = true;
-    setStatus("Opening Privy...");
-    login({
-      loginMethods: ["email", "google", "wallet"],
-    });
-  }, [authenticated, login, pending, ready]);
-
-  useEffect(() => {
-    if (!authenticated) return;
-    hasRequestedLogin.current = false;
-  }, [authenticated]);
 
   useEffect(() => {
     if (!pending || !ready || !authenticated || !walletsReady) return;
@@ -332,8 +317,8 @@ function BridgeClient() {
           {pending
             ? "Opening..."
             : routeAction === "send-transaction"
-              ? "Continue with Privy"
-              : "Continue with Privy"}
+              ? "Continue with email or Google"
+              : "Continue with email or Google"}
         </button>
       </div>
     </main>
@@ -391,21 +376,17 @@ export function PrivyBridge() {
     <PrivyProvider
       appId={privyAppId}
       config={{
-        loginMethods: ["email", "google", "wallet"],
+        loginMethods: [...bridgeLoginMethods],
         appearance: {
           theme: "light",
           accentColor: "#c7ff00",
           landingHeader: "Connect to Gimi",
-          loginMessage: "Use email, Google, or a Solana wallet for checkout.",
+          loginMessage: "Use email or Google to create a Solana checkout wallet.",
           showWalletLoginFirst: false,
           walletChainType: "solana-only",
-          walletList: ["detected_solana_wallets", "phantom", "solflare", "backpack"] as never,
         },
         embeddedWallets: {
           solana: { createOnLogin: "users-without-wallets" },
-        },
-        externalWallets: {
-          solana: { connectors: toSolanaWalletConnectors() },
         },
       }}
     >
