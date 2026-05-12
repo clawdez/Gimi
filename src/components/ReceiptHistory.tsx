@@ -123,7 +123,7 @@ export function ReceiptHistory() {
               Rental history that proves what happened.
             </h1>
             <p className="mt-4 max-w-md text-[14px] font-bold leading-6 text-[#53697d] sm:text-[15px]">
-              Settled returns and buyouts are pulled from Tably receipt storage, linked back to the item, and tied to the Solana devnet transaction.
+              Settled returns and buyouts are pulled from Gimi receipt storage, linked back to the item, and tied to the Solana devnet transaction.
             </p>
 
             <div className="mt-5 grid grid-cols-3 overflow-hidden rounded-[22px] border border-[#e8edf2] bg-white/78 text-center">

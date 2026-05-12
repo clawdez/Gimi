@@ -67,11 +67,11 @@ export async function POST(req: NextRequest) {
 
     if (!itemAccountInfo) return errorResponse("Item PDA account was not found", 409, { rentProof });
     if (!itemAccountInfo.owner.equals(RENTAL_SESSION_PROGRAM_ID)) {
-      return errorResponse("Item PDA is not owned by the Tably rental program", 400, { rentProof });
+      return errorResponse("Item PDA is not owned by the Gimi rental program", 400, { rentProof });
     }
     if (!sessionAccountInfo) return errorResponse("Rental session PDA account was not found", 409, { rentProof });
     if (!sessionAccountInfo.owner.equals(RENTAL_SESSION_PROGRAM_ID)) {
-      return errorResponse("Rental session PDA is not owned by the Tably rental program", 400, { rentProof });
+      return errorResponse("Rental session PDA is not owned by the Gimi rental program", 400, { rentProof });
     }
 
     const itemAccount = decodeRentalItemAccount(itemAccountInfo.data);

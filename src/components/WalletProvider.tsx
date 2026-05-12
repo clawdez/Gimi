@@ -35,7 +35,7 @@ export const WalletProviderWrapper: FC<{ children: ReactNode }> = ({ children })
   if (!mounted) {
     return (
       <div className="grid min-h-screen place-items-center bg-[#f7f3ea] text-sm font-bold text-[#607489]">
-        Loading Tably...
+        Loading Gimi...
       </div>
     );
   }

@@ -13,7 +13,7 @@ import {
 export async function GET(req: NextRequest) {
   const draftId = req.nextUrl.searchParams.get("draftId") ?? "draft_power_bank_18";
   return NextResponse.json({
-    label: "Tably RentProof",
+    label: "Gimi Rental",
     icon: "/globe.svg",
     title: "Start rental",
     description: `Approve RentProof rental request ${draftId}`,
@@ -79,7 +79,7 @@ export async function POST(req: NextRequest) {
     preflight,
     programStatus: "devnet_program_deployed_unsigned_transaction_serialized",
     transaction: serialized.transactionBase64,
-    message: `Start Tably rental for ${item.name}. This unsigned devnet transaction locks ${item.buyoutCap} demo USDC escrow.`,
+    message: `Start Gimi rental for ${item.name}. This unsigned devnet transaction locks ${item.buyoutCap} demo USDC escrow.`,
     transactionMetadata: {
       cluster: serialized.cluster,
       rpcUrl: serialized.rpcUrl,

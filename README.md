@@ -1,8 +1,8 @@
-# Tably
+# Gimi
 
 AI rental agent for school, community, and hackathon inventory.
 
-Tably is one product: an agentic rental marketplace with Solana settlement built in. It handles community inventory search, refundable escrow, temporary rental-token state, return-confirm burn, on-chain receipt events, and reputation-ready outcomes.
+Gimi is one product: an agentic rental marketplace with Solana settlement built in. It handles community inventory search, refundable escrow, temporary rental-token state, return-confirm burn, on-chain receipt events, and reputation-ready outcomes.
 
 The current demo opens at `/` and serves the Gimi one-page agent shell from `public/gimi.html`: a large central agent orb, a bottom chat input, nearby inventory, a product checkout drawer, and Privy wallet connection for email, Google, or Solana wallet users.
 
@@ -16,7 +16,7 @@ User asks for an item
 -> LI.FI quote routes Base USDC into Solana USDC when real wallet addresses are supplied
 -> Solana Pay endpoint returns an unsigned serialized devnet transaction
 -> Wallet signs and sends the prepared transaction from the chat UI
--> Tably Anchor program locks escrow and creates rental session state
+-> Gimi Anchor program locks escrow and creates rental session state
 -> Renter receives a program-owned rental token PDA
 -> Owner confirms physical return, or auto-buyout triggers after grace
 -> Rental token closes, escrow settles, receipt event is emitted
@@ -85,7 +85,7 @@ npm run e2e:devnet
 
 ## Supabase
 
-Tably uses Supabase for durable published listing and rental-session storage. Run the migrations in:
+Gimi uses Supabase for durable published listing and rental-session storage. Run the migrations in:
 
 ```text
 supabase/migrations/001_create_listings.sql
@@ -193,7 +193,7 @@ Response includes:
 
 ### `POST /api/listings/publish`
 
-Publishes a listing after the owner has signed and sent `initialize_item`. The server checks the devnet signature, verifies the item PDA is owned by the Tably program, decodes the on-chain `RentalItem`, checks pricing and hashes, then stores the listing.
+Publishes a listing after the owner has signed and sent `initialize_item`. The server checks the devnet signature, verifies the item PDA is owned by the Gimi program, decodes the on-chain `RentalItem`, checks pricing and hashes, then stores the listing.
 
 ### `GET /api/listings`
 
@@ -201,7 +201,7 @@ Returns published listings plus renter-ready inventory. The renter agent uses th
 
 ### `POST /api/solana-pay/start-rental`
 
-Returns a Solana Pay request payload, Tably PDA metadata, and an unsigned serialized devnet transaction for the renter wallet to sign.
+Returns a Solana Pay request payload, Gimi PDA metadata, and an unsigned serialized devnet transaction for the renter wallet to sign.
 Before returning a transaction, the route checks the item PDA, demo USDC mint,
 renter token account, and renter escrow balance. If the renter cannot pay the
 buyout-cap escrow, it returns `409` with `preflight.problems`.
@@ -362,7 +362,7 @@ Without valid wallet addresses, the endpoint returns a demo route so the chat UI
 
 ### `GET /api/elevenlabs/tools`
 
-Returns the ElevenLabs server-tool registration metadata for the Tably agent.
+Returns the ElevenLabs server-tool registration metadata for the Gimi agent.
 
 ### `POST /api/elevenlabs/tools`
 
@@ -377,7 +377,7 @@ Handles tool calls:
 
 ### `POST /api/rent`
 
-Starts the local demo rental state and returns the same Tably PDA metadata used by the agent UI.
+Starts the local demo rental state and returns the same Gimi PDA metadata used by the agent UI.
 
 ### `GET /idl/rental_session.json`
 

@@ -398,7 +398,7 @@ export async function preflightStartRental(input: {
   if (!itemCheck.exists) {
     problems.push("Item PDA does not exist. The owner must publish initialize_item before rental.");
   } else if (!itemCheck.owned) {
-    problems.push("Item PDA is not owned by the Tably rental program.");
+    problems.push("Item PDA is not owned by the Gimi rental program.");
   } else if (itemCheck.accountInfo) {
     try {
       const decoded = decodeRentalItemAccount(itemCheck.accountInfo.data);
@@ -461,9 +461,9 @@ export async function preflightSettleRental(input: {
   if (!mintCheck.exists) problems.push("Payment mint account does not exist on devnet.");
   if (mintCheck.exists && !mintCheck.owned) problems.push("Payment mint is not owned by the SPL Token program.");
   if (!itemCheck.exists) problems.push("Item PDA does not exist.");
-  if (itemCheck.exists && !itemCheck.owned) problems.push("Item PDA is not owned by the Tably rental program.");
+  if (itemCheck.exists && !itemCheck.owned) problems.push("Item PDA is not owned by the Gimi rental program.");
   if (!sessionCheck.exists) problems.push("Rental session PDA does not exist. Start rental before settlement.");
-  if (sessionCheck.exists && !sessionCheck.owned) problems.push("Rental session PDA is not owned by the Tably rental program.");
+  if (sessionCheck.exists && !sessionCheck.owned) problems.push("Rental session PDA is not owned by the Gimi rental program.");
 
   return {
     ok: problems.length === 0,
