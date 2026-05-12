@@ -761,6 +761,18 @@
     color: rgba(240, 242, 247, 0.72);
     background: rgba(240, 242, 247, 0.07);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    font: inherit;
+    letter-spacing: inherit;
+    text-transform: inherit;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: border-color .2s var(--ease), background .2s var(--ease), color .2s var(--ease);
+  }
+  .web-pill:hover,
+  .web-pill.is-connected {
+    border-color: rgba(240, 242, 247, 0.32);
+    background: rgba(240, 242, 247, 0.12);
+    color: var(--ink);
   }
   .top {
     grid-column: 1;
@@ -1346,7 +1358,7 @@
         <div class="web-links">
           <span>Community rentals</span>
           <span>Nearby inventory</span>
-          <span class="web-pill">Request item</span>
+          <button class="web-pill" id="navWallet" type="button">Connect wallet</button>
         </div>
       </header>
       <div class="island"></div>
@@ -1435,8 +1447,8 @@
           <div class="sheet-similar-row" id="sheetSimilar"></div>
         </div>
         <div class="sheet-cta">
-          <a class="sheet-cta-btn" id="sheetCTA" href="/privy-bridge?action=connect&returnTo=%2F">Connect wallet with Privy</a>
-          <div class="sheet-cta-sub" id="sheetCTASub">Owner typically replies in ~10 min</div>
+          <button class="sheet-cta-btn" id="sheetCTA" type="button">Connect wallet</button>
+          <div class="sheet-cta-sub" id="sheetCTASub">Choose email, Google, or Solana in Privy</div>
         </div>
       </div>
 
@@ -2252,12 +2264,14 @@ const sheetCTA       = document.getElementById('sheetCTA');
 const sheetCTASub    = document.getElementById('sheetCTASub');
 const sheetSimilar   = document.getElementById('sheetSimilar');
 const sheetContent   = document.querySelector('.sheet-content');
+const navWallet      = document.getElementById('navWallet');
 let connectedWallet = '';
 let connectedWalletSource = '';
 let pendingPrivyConnect = null;
 let pendingPrivySend = null;
 let activeSheetItem = null;
 let lastQuery = '';
+const WALLET_SESSION_KEY = 'gimi.walletSession';
 
 const ITEM_TO_RENTPROOF = {
   'golf-set': 'keyboard_15',
@@ -2288,6 +2302,39 @@ const ITEM_TO_RENTPROOF = {
 
 function shortWallet(address) {
   return address ? `${address.slice(0, 4)}…${address.slice(-4)}` : '';
+}
+
+function saveWalletSession(address, source = 'privy') {
+  if (!address) return;
+  connectedWallet = String(address);
+  connectedWalletSource = source;
+  try {
+    window.localStorage.setItem(
+      WALLET_SESSION_KEY,
+      JSON.stringify({ address: connectedWallet, source, savedAt: Date.now() })
+    );
+  } catch (_) {}
+  updateWalletUI();
+}
+
+function hydrateWalletSession() {
+  try {
+    const raw = window.localStorage.getItem(WALLET_SESSION_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.address) return;
+    connectedWallet = String(parsed.address);
+    connectedWalletSource = String(parsed.source || 'privy');
+  } catch (_) {}
+  updateWalletUI();
+}
+
+function updateWalletUI() {
+  if (navWallet) {
+    navWallet.textContent = connectedWallet ? shortWallet(connectedWallet) : 'Connect wallet';
+    navWallet.classList.toggle('is-connected', Boolean(connectedWallet));
+  }
+  if (sheetCTA) updateCheckoutCTA();
 }
 
 function currentReturnTo() {
@@ -2397,18 +2444,20 @@ function inferRequestedHours(query, item) {
 
 function updateCheckoutCTA() {
   if (connectedWallet) {
-    sheetCTA.textContent = `Request rental · ${shortWallet(connectedWallet)}`;
-    sheetCTA.removeAttribute('href');
+    sheetCTA.textContent = `Start rental · ${shortWallet(connectedWallet)}`;
   } else {
-    sheetCTA.textContent = 'Connect wallet with Privy';
-    sheetCTA.setAttribute('href', buildPrivyBridgeUrl('connect'));
+    sheetCTA.textContent = 'Connect wallet';
   }
   sheetCTA.style.background = '';
   if (activeSheetItem) {
     const hours = inferRequestedHours(lastQuery, activeSheetItem);
-    setSheetStatus(`Devnet rental checkout for ${hours} hour${hours === 1 ? '' : 's'}`);
+    setSheetStatus(
+      connectedWallet
+        ? `Ready for ${hours} hour${hours === 1 ? '' : 's'} devnet checkout`
+        : `Connect once to rent for ${hours} hour${hours === 1 ? '' : 's'}`
+    );
   } else {
-    setSheetStatus('Owner typically replies in ~10 min');
+    setSheetStatus(connectedWallet ? `Wallet connected · ${shortWallet(connectedWallet)}` : 'Choose email, Google, or Solana in Privy');
   }
 }
 
@@ -2603,13 +2652,18 @@ sheetSimilar.addEventListener('click', (e) => {
 
 sheetClose.addEventListener('click', closeSheet);
 sheetBackdrop.addEventListener('click', closeSheet);
+navWallet?.addEventListener('click', () => {
+  if (connectedWallet) return;
+  redirectToPrivyBridge('connect');
+});
 sheetCTA.addEventListener('click', async (event) => {
   try {
     if (!activeSheetItem) return;
     if (!connectedWallet) {
       event.preventDefault();
-      persistActiveSheetState();
-      window.location.href = buildPrivyBridgeUrl('connect');
+      sheetCTA.textContent = 'Opening Privy...';
+      setSheetStatus('Waiting for wallet login...', 'pending');
+      redirectToPrivyBridge('connect');
       return;
     }
 
@@ -2649,6 +2703,7 @@ document.addEventListener('keydown', (e) => {
 
 
 lastQuery = 'Camping gear for two';
+hydrateWalletSession();
 restoreActiveSheetState();
 setTimeout(() => { if (cur === 'idle') ask('Camping gear for two'); }, 1600);
 
@@ -2657,16 +2712,14 @@ setTimeout(() => { if (cur === 'idle') ask('Camping gear for two'); }, 1600);
   if (!result) return;
 
   if (result.type === 'gimi:privy-wallet-connected' && result.address) {
-    connectedWallet = String(result.address);
-    connectedWalletSource = 'privy';
-    updateCheckoutCTA();
+    saveWalletSession(String(result.address), 'privy');
     setSheetStatus(`Wallet connected · ${shortWallet(connectedWallet)}`, 'success');
     return;
   }
 
   if (result.type === 'gimi:privy-wallet-error') {
     const message = String(result.message || 'Wallet connection cancelled');
-    sheetCTA.textContent = 'Connect wallet with Privy';
+    sheetCTA.textContent = 'Connect wallet';
     setSheetStatus(message, 'error');
     return;
   }
@@ -2675,8 +2728,7 @@ setTimeout(() => { if (cur === 'idle') ask('Camping gear for two'); }, 1600);
     const pending = readPendingRentalStart();
     if (!pending) return;
 
-    connectedWallet = String(pending.renterWallet || connectedWallet || '');
-    connectedWalletSource = 'privy';
+    saveWalletSession(String(pending.renterWallet || connectedWallet || ''), 'privy');
 
     if (!activeSheetItem && pending.prototypeItemId) {
       const item = ITEMS.find((entry) => entry.id === pending.prototypeItemId);

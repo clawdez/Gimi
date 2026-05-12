@@ -20,6 +20,12 @@ function returnToApp(message: Record<string, unknown>) {
   const returnTo = params.get("returnTo") || "/gimi.html?v=soft1";
   try {
     window.localStorage.setItem("gimi.privyResult", JSON.stringify(message));
+    if (message.type === "gimi:privy-wallet-connected" && typeof message.address === "string") {
+      window.localStorage.setItem(
+        "gimi.walletSession",
+        JSON.stringify({ address: message.address, source: "privy", savedAt: Date.now() })
+      );
+    }
   } catch {}
   window.location.assign(returnTo);
 }
