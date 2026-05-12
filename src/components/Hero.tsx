@@ -9,7 +9,7 @@ export function Hero() {
         </h1>
         <div className="mx-auto mt-4 flex max-w-5xl flex-col items-center justify-between gap-2 border-y border-black py-3 text-center text-[11px] font-semibold uppercase tracking-[0.08em] sm:flex-row sm:text-left">
           <p>RentProof agentic rentals</p>
-          <p>Crossmint onboarding / LI.FI funding / Solana Pay escrow</p>
+          <p>Privy onboarding / LI.FI funding / Solana Pay escrow</p>
           <a href="#agent" className="underline underline-offset-4">Chat to rent</a>
         </div>
       </div>

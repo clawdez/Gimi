@@ -1,11 +1,13 @@
 "use client";
 
-import { useCrossmintAuth, useWallet as useCrossmintWallet } from "@crossmint/client-sdk-react-ui";
-import { SolanaWallet } from "@crossmint/wallets-sdk";
-import { useWallet as useSolanaWallet } from "@solana/wallet-adapter-react";
-import { useWalletModal } from "@solana/wallet-adapter-react-ui";
-import { Connection, Transaction } from "@solana/web3.js";
+import {
+  useSignTransaction as usePrivySolanaSignTransaction,
+  useWallets as usePrivySolanaWallets,
+  type ConnectedStandardSolanaWallet,
+} from "@privy-io/react-auth/solana";
+import { Connection } from "@solana/web3.js";
 import { type FormEvent, useMemo, useState } from "react";
+import { PrivyWalletButton } from "@/components/PrivyWalletButton";
 
 interface ListingAgentProps {
   onDone: () => void;
@@ -76,11 +78,9 @@ interface PreparedListingTransaction {
   };
 }
 
-type CrossmintWalletInstance = NonNullable<ReturnType<typeof useCrossmintWallet>["wallet"]>;
-type SolanaSendTransaction = ReturnType<typeof useSolanaWallet>["sendTransaction"];
+type PrivySolanaSignTransaction = ReturnType<typeof usePrivySolanaSignTransaction>["signTransaction"];
 
 const categories = ["Power", "Audio", "Video", "Workspace", "Adapters", "Tools", "Other"];
-const crossmintConfigured = Boolean(process.env.NEXT_PUBLIC_CROSSMINT_API_KEY);
 
 const initialForm: ListingForm = {
   name: "",
@@ -99,13 +99,9 @@ const initialForm: ListingForm = {
 };
 
 export function ListingAgent({ onDone }: ListingAgentProps) {
-  const { login, status: authStatus } = useCrossmintAuth();
-  const { wallet: crossmintWallet, status: crossmintWalletStatus } = useCrossmintWallet();
-  const solanaWallet = useSolanaWallet();
-  const { setVisible: setSolanaWalletVisible } = useWalletModal();
-  const crossmintSigner = crossmintWallet?.address ?? "";
-  const solanaSigner = solanaWallet.publicKey?.toBase58() ?? "";
-  const ownerWallet = solanaSigner || crossmintSigner;
+  const { wallets: privyWallets } = usePrivySolanaWallets();
+  const { signTransaction: signPrivyTransaction } = usePrivySolanaSignTransaction();
+  const ownerWallet = privyWallets[0]?.address ?? "";
   const [form, setForm] = useState<ListingForm>(initialForm);
   const [step, setStep] = useState<ListingStep>("collect");
   const [status, setStatus] = useState<ListingStatus>("idle");
@@ -135,7 +131,6 @@ export function ListingAgent({ onDone }: ListingAgentProps) {
     [form, ownerWallet]
   );
 
-  const isCrossmintBusy = authStatus === "in-progress" || crossmintWalletStatus === "in-progress";
   const canReview = Boolean(
     ownerWallet &&
       form.name.trim() &&
@@ -149,9 +144,7 @@ export function ListingAgent({ onDone }: ListingAgentProps) {
       form.buyoutCap >= form.minimumFee &&
       form.description.trim()
   );
-  const canSignPrepared = Boolean(
-    preparedTx && (preparedTx.metadata.requiredSigner === solanaSigner || preparedTx.metadata.requiredSigner === crossmintSigner)
-  );
+  const canSignPrepared = Boolean(preparedTx && privyWallets.some((wallet) => wallet.address === preparedTx.metadata.requiredSigner));
 
   function updateField<K extends keyof ListingForm>(key: K, value: ListingForm[K]) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -252,10 +245,8 @@ export function ListingAgent({ onDone }: ListingAgentProps) {
 
     try {
       const connection = new Connection(preparedTx.metadata.rpcUrl, "confirmed");
-      const txSignature =
-        preparedTx.metadata.requiredSigner === solanaSigner
-          ? await sendWithSolanaAdapter(preparedTx, connection, solanaWallet.sendTransaction)
-          : await sendWithCrossmintWallet(preparedTx, crossmintWallet);
+      const ownerSigner = privyWallets.find((wallet) => wallet.address === preparedTx.metadata.requiredSigner);
+      const txSignature = await signAndSendWithPrivy(preparedTx, connection, ownerSigner, signPrivyTransaction);
       await connection.confirmTransaction(
         {
           signature: txSignature,
@@ -318,17 +309,7 @@ export function ListingAgent({ onDone }: ListingAgentProps) {
             </div>
             <OwnerWalletControls
               connectedWallet={ownerWallet}
-              crossmintBusy={isCrossmintBusy}
-              onCrossmintLogin={() => {
-                setAgentLine(
-                  crossmintConfigured
-                    ? "Opening Crossmint owner wallet sign-in."
-                    : "Crossmint is not configured. Add NEXT_PUBLIC_CROSSMINT_API_KEY to enable email wallet login."
-                );
-                if (crossmintConfigured) login();
-              }}
-              onSolanaConnect={() => setSolanaWalletVisible(true)}
-              solanaBusy={solanaWallet.connecting}
+              onWalletReady={() => setAgentLine("Privy owner wallet connected. Fill the item details to prepare initialize_item.")}
             />
           </div>
 
@@ -436,40 +417,22 @@ export function ListingAgent({ onDone }: ListingAgentProps) {
 
 function OwnerWalletControls({
   connectedWallet,
-  crossmintBusy,
-  onCrossmintLogin,
-  onSolanaConnect,
-  solanaBusy,
+  onWalletReady,
 }: {
   connectedWallet: string;
-  crossmintBusy: boolean;
-  onCrossmintLogin: () => void;
-  onSolanaConnect: () => void;
-  solanaBusy: boolean;
+  onWalletReady: () => void;
 }) {
   if (connectedWallet) {
     return <div className="rounded-full bg-[#c8ff18] px-4 py-2 text-[12px] font-black text-[#061725]">Owner {shortKey(connectedWallet)}</div>;
   }
 
   return (
-    <div className="flex flex-wrap gap-2">
-      <button
-        type="button"
-        onClick={onCrossmintLogin}
-        disabled={crossmintBusy}
-        className="min-h-[38px] rounded-full bg-[#061725] px-4 text-[12px] font-black text-white transition hover:bg-[#c8ff18] hover:text-[#061725] disabled:opacity-60"
-      >
-        {crossmintBusy ? "Connecting..." : "Crossmint"}
-      </button>
-      <button
-        type="button"
-        onClick={onSolanaConnect}
-        disabled={solanaBusy}
-        className="min-h-[38px] rounded-full border border-[#dfe7ef] bg-white px-4 text-[12px] font-black text-[#061725] transition hover:border-[#6b4cff] disabled:opacity-60"
-      >
-        {solanaBusy ? "Connecting..." : "Solana wallet"}
-      </button>
-    </div>
+    <PrivyWalletButton
+      connectLabel="Connect Privy"
+      connectedLabel="Owner"
+      onAddress={onWalletReady}
+      className="min-h-[38px] rounded-full bg-[#061725] px-4 text-[12px] font-black text-white transition hover:bg-[#c8ff18] hover:text-[#061725] disabled:opacity-60"
+    />
   );
 }
 
@@ -602,21 +565,19 @@ function shortKey(value: unknown) {
   return `${value.slice(0, 4)}...${value.slice(-4)}`;
 }
 
-async function sendWithSolanaAdapter(
+async function signAndSendWithPrivy(
   preparedTx: PreparedListingTransaction,
   connection: Connection,
-  sendTransaction: SolanaSendTransaction
+  wallet: ConnectedStandardSolanaWallet | undefined,
+  signTransaction: PrivySolanaSignTransaction
 ) {
-  const transaction = Transaction.from(base64ToUint8Array(preparedTx.transactionBase64));
-  return sendTransaction(transaction, connection);
-}
-
-async function sendWithCrossmintWallet(preparedTx: PreparedListingTransaction, wallet: CrossmintWalletInstance | undefined) {
-  if (!wallet) throw new Error("Crossmint wallet is not loaded.");
-  const solanaWallet = SolanaWallet.from(wallet);
-  const result = await solanaWallet.sendTransaction({ serializedTransaction: preparedTx.transactionBase64 });
-  if (!result.hash) throw new Error("Crossmint did not return a transaction hash.");
-  return result.hash;
+  if (!wallet) throw new Error("Privy owner wallet is not loaded.");
+  const { signedTransaction } = await signTransaction({
+    transaction: base64ToUint8Array(preparedTx.transactionBase64),
+    wallet,
+    chain: preparedTx.metadata.cluster === "mainnet-beta" ? "solana:mainnet" : "solana:devnet",
+  });
+  return connection.sendRawTransaction(signedTransaction);
 }
 
 function base64ToUint8Array(value: string) {

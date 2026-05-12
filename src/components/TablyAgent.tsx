@@ -1,7 +1,12 @@
 "use client";
 
-import { useCrossmintAuth, useWallet } from "@crossmint/client-sdk-react-ui";
-import { SolanaWallet } from "@crossmint/wallets-sdk";
+import { useLogin, usePrivy } from "@privy-io/react-auth";
+import {
+  useCreateWallet,
+  useSignTransaction as usePrivySolanaSignTransaction,
+  useWallets as usePrivySolanaWallets,
+  type ConnectedStandardSolanaWallet,
+} from "@privy-io/react-auth/solana";
 import { useWallet as useSolanaWallet } from "@solana/wallet-adapter-react";
 import { useWalletModal } from "@solana/wallet-adapter-react-ui";
 import { Connection, Transaction } from "@solana/web3.js";
@@ -40,8 +45,8 @@ interface ActiveRental {
   startSignature: string;
 }
 
-type CrossmintWalletInstance = NonNullable<ReturnType<typeof useWallet>["wallet"]>;
 type SolanaSendTransaction = ReturnType<typeof useSolanaWallet>["sendTransaction"];
+type PrivySolanaSignTransaction = ReturnType<typeof usePrivySolanaSignTransaction>["signTransaction"];
 
 const categoryKeywords: Array<[string, string[]]> = [
   ["Weather", ["umbrella", "rain", "rainy", "雨傘", "下雨"]],
@@ -53,15 +58,15 @@ const categoryKeywords: Array<[string, string[]]> = [
   ["Power", ["power", "charger", "battery", "bank", "usb-c", "usbc", "充電", "行動電源", "電池"]],
 ];
 
-const crossmintConfigured = Boolean(process.env.NEXT_PUBLIC_CROSSMINT_API_KEY);
-
 export function TablyAgent() {
   const [inventory, setInventory] = useState<RentalItem[]>(COMMUNITY_ITEMS);
   const availableItems = inventory.filter((item) => item.status === "available");
   const defaultItem = availableItems[0] ?? inventory[0] ?? COMMUNITY_ITEMS[0];
-  const { wallet: crossmintWallet } = useWallet();
+  const { wallets: privyWallets } = usePrivySolanaWallets();
+  const { signTransaction: signPrivyTransaction } = usePrivySolanaSignTransaction();
   const solanaWallet = useSolanaWallet();
-  const crossmintSigner = crossmintWallet?.address ?? "";
+  const { setVisible: setSolanaWalletVisible } = useWalletModal();
+  const privySigner = privyWallets[0]?.address ?? "";
   const solanaSigner = solanaWallet.publicKey?.toBase58() ?? "";
   const inputRef = useRef<HTMLInputElement>(null);
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -144,7 +149,7 @@ export function TablyAgent() {
   }
 
   async function prepareRental() {
-    const renterWallet = solanaSigner || crossmintSigner || wallet;
+    const renterWallet = privySigner || solanaSigner || wallet;
     if (!renterWallet) {
       setAgentLine("Connect a wallet first, then Tably can prepare the rental transaction.");
       return;
@@ -180,7 +185,7 @@ export function TablyAgent() {
       setRentalActionStatus("ready");
       setTxPreview(`${metadata.cluster ?? "devnet"} / ${shortKey(metadata.requiredSigner)} / ${String(data.transaction ?? "").length} chars`);
       setAgentLine(
-        solanaSigner || crossmintSigner
+        privySigner || solanaSigner
           ? `Rental transaction prepared for ${selectedItem.name}. Sign with your wallet to send it.`
           : `Rental transaction prepared for ${selectedItem.name}. Connect a Solana wallet to sign and send.`
       );
@@ -247,9 +252,10 @@ export function TablyAgent() {
       return;
     }
     const canUseSolanaAdapter = solanaSigner === preparedTx.requiredSigner;
-    const canUseCrossmintWallet = Boolean(crossmintWallet && crossmintSigner === preparedTx.requiredSigner);
+    const privyWallet = privyWallets.find((candidate) => candidate.address === preparedTx.requiredSigner);
+    const canUsePrivyWallet = Boolean(privyWallet);
 
-    if (!canUseSolanaAdapter && !canUseCrossmintWallet) {
+    if (!canUsePrivyWallet && !canUseSolanaAdapter) {
       setAgentLine("Connected signer does not match this prepared transaction. Prepare again with the wallet you want to use.");
       return;
     }
@@ -259,9 +265,10 @@ export function TablyAgent() {
 
     try {
       const connection = new Connection(preparedTx.rpcUrl, "confirmed");
-      const signature = canUseSolanaAdapter
-        ? await sendWithSolanaAdapter(preparedTx, connection, solanaWallet.sendTransaction)
-        : await sendWithCrossmintWallet(preparedTx, crossmintWallet);
+      const signature =
+        canUsePrivyWallet && privyWallet
+          ? await signAndSendWithPrivy(preparedTx, connection, privyWallet, signPrivyTransaction)
+          : await sendWithSolanaAdapter(preparedTx, connection, solanaWallet.sendTransaction);
       await connection.confirmTransaction(
         {
           signature,
@@ -381,14 +388,6 @@ export function TablyAgent() {
     }, 420);
   }
 
-  function startCrossmint() {
-    setAgentLine(
-      crossmintConfigured
-        ? "Opening Crossmint wallet sign-in."
-        : "Crossmint is not configured. Add NEXT_PUBLIC_CROSSMINT_API_KEY to enable live wallet login."
-    );
-  }
-
   function handleWalletReady(address: string) {
     if (!address || address === wallet) return;
     setWallet(address);
@@ -398,43 +397,170 @@ export function TablyAgent() {
   return (
     <section
       id="agent"
-      className="grain-field relative h-[100svh] overflow-hidden bg-[#f7f3ea] px-4 pb-4 pt-20 text-[#061725] sm:px-8 sm:pb-6 sm:pt-24"
+      className="grain-field relative min-h-[100svh] overflow-x-hidden bg-[#f7f3ea] px-4 pb-10 pt-20 text-[#061725] sm:px-8 sm:pt-24"
     >
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_18%,rgba(200,255,24,0.34),transparent_22%),radial-gradient(circle_at_86%_12%,rgba(95,214,255,0.28),transparent_22%),radial-gradient(circle_at_14%_78%,rgba(151,110,255,0.2),transparent_26%),linear-gradient(135deg,#fffaf0_0%,#f7fbff_52%,#fbf3ff_100%)]" />
-      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.76),rgba(255,255,255,0.18)_45%,rgba(255,255,255,0.78)_100%)]" />
+      <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.72),rgba(255,255,255,0.18)_44%,rgba(255,255,255,0.86)_100%)]" />
 
-      <MovingInventoryRows items={availableItems} onSelectItem={focusQueryForItem} />
-
-      <div className="relative z-20 mx-auto flex h-full max-w-6xl items-center justify-center">
-        <AgentChatbox
+      <div className="relative z-20 mx-auto flex min-h-[calc(100svh-5rem)] max-w-7xl flex-col items-center justify-center pb-40 pt-4">
+        <RentalOrb
           agentLine={agentLine}
-          crossmintConfigured={crossmintConfigured}
           expectedFee={expectedFee}
           hasSearched={hasSearched}
-          input={input}
-          inputRef={inputRef}
           isSearching={isSearching}
-          onCrossmintStart={startCrossmint}
-          onInputChange={setInput}
-          onPrepareRental={() => void prepareRental()}
-          onPrepareSettlement={(kind) => void prepareSettlement(kind)}
-          onSignAndSendRental={() => void signAndSendRental()}
-          onSelectItem={selectItem}
-          onSubmit={handleSubmit}
-          onWalletReady={handleWalletReady}
-          recommendations={recommendations}
-          activeRental={activeRental}
-          preparedTxKind={preparedTx?.kind ?? null}
-          rentalActionStatus={rentalActionStatus}
           rentalHours={rentalHours}
           selectedItem={selectedItem}
-          canSignRental={canSignPreparedRental(preparedTx, solanaSigner, crossmintSigner)}
-          txSignature={txSignature}
-          txPreview={txPreview}
-          wallet={wallet}
         />
+
+        {hasSearched && (
+          <div className="mt-5 grid w-full max-w-5xl gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
+            <RecommendationRail items={recommendations} selectedItem={selectedItem} wallet={wallet} onSelectItem={selectItem} />
+            <SelectedRentalPanel
+              activeRental={activeRental}
+              canSignRental={canSignPreparedRental(preparedTx, privySigner, solanaSigner)}
+              expectedFee={expectedFee}
+              onPrepareRental={() => void prepareRental()}
+              onPrepareSettlement={(kind) => void prepareSettlement(kind)}
+              onRequestSolanaSigner={() => setSolanaWalletVisible(true)}
+              onRequestWalletConnect={() => inputRef.current?.focus()}
+              onSignAndSendRental={() => void signAndSendRental()}
+              preparedTxKind={preparedTx?.kind ?? null}
+              rentalActionStatus={rentalActionStatus}
+              rentalHours={rentalHours}
+              selectedItem={selectedItem}
+              txSignature={txSignature}
+              txPreview={txPreview}
+              wallet={wallet}
+            />
+          </div>
+        )}
+
+        <div className="fixed bottom-4 left-1/2 z-30 w-[calc(100%-2rem)] max-w-[680px] -translate-x-1/2">
+          <AgentChatbox
+            agentLine={agentLine}
+            expectedFee={expectedFee}
+            hasSearched={hasSearched}
+            input={input}
+            inputRef={inputRef}
+            isSearching={isSearching}
+            onInputChange={setInput}
+            onPrepareRental={() => void prepareRental()}
+            onPrepareSettlement={(kind) => void prepareSettlement(kind)}
+            onSignAndSendRental={() => void signAndSendRental()}
+            onSelectItem={selectItem}
+            onSubmit={handleSubmit}
+            onWalletReady={handleWalletReady}
+            recommendations={recommendations}
+            activeRental={activeRental}
+            preparedTxKind={preparedTx?.kind ?? null}
+            rentalActionStatus={rentalActionStatus}
+            rentalHours={rentalHours}
+            selectedItem={selectedItem}
+            canSignRental={canSignPreparedRental(preparedTx, privySigner, solanaSigner)}
+            txSignature={txSignature}
+            txPreview={txPreview}
+            wallet={wallet}
+          />
+        </div>
       </div>
+
+      <ProductPool items={availableItems} onSelectItem={focusQueryForItem} />
     </section>
+  );
+}
+
+function RentalOrb({
+  agentLine,
+  expectedFee,
+  hasSearched,
+  isSearching,
+  rentalHours,
+  selectedItem,
+}: {
+  agentLine: string;
+  expectedFee: number;
+  hasSearched: boolean;
+  isSearching: boolean;
+  rentalHours: number;
+  selectedItem: RentalItem;
+}) {
+  return (
+    <div className="relative grid h-[min(62vw,520px)] min-h-[340px] w-[min(86vw,620px)] place-items-center">
+      <div className="absolute inset-0 rounded-full bg-[radial-gradient(circle_at_42%_32%,rgba(255,255,255,0.98)_0%,rgba(232,247,255,0.9)_34%,rgba(200,255,24,0.42)_58%,rgba(107,76,255,0.18)_76%,rgba(255,120,103,0)_100%)] blur-[1px] shadow-[0_0_110px_rgba(151,110,255,0.24),0_0_160px_rgba(200,255,24,0.18)]" />
+      <div className="absolute inset-[7%] rounded-full bg-[radial-gradient(circle_at_35%_25%,rgba(255,255,255,0.86),rgba(255,255,255,0.34)_34%,rgba(255,255,255,0)_68%)]" />
+      <div className="relative z-10 flex max-w-[78%] flex-col items-center text-center">
+        <p className="text-[12px] font-black uppercase tracking-[0.18em] text-[#6b4cff]">{isSearching ? "Searching" : hasSearched ? "Best match" : "Tably agent"}</p>
+        <h1 className="mt-3 text-4xl font-black leading-[0.94] text-[#061725] sm:text-6xl">
+          {hasSearched ? selectedItem.name : "What do you need?"}
+        </h1>
+        <p className="mt-4 max-w-md text-sm font-bold leading-6 text-[#53697d] sm:text-base">{agentLine}</p>
+        {hasSearched && (
+          <div className="relative mt-6 h-36 w-44 sm:h-48 sm:w-60">
+            <Image src={selectedItem.imageUrl} alt={selectedItem.name} fill sizes="260px" className="object-contain drop-shadow-[0_24px_32px_rgba(6,23,37,0.18)]" />
+          </div>
+        )}
+        {hasSearched && (
+          <div className="mt-5 grid grid-cols-3 overflow-hidden rounded-[18px] border border-white/70 bg-white/58 text-center shadow-[0_18px_50px_rgba(6,23,37,0.1)] backdrop-blur-xl">
+            <div className="border-r border-white/70 px-4 py-3">
+              <p className="text-lg font-black">${expectedFee}</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#607489]">Fee</p>
+            </div>
+            <div className="border-r border-white/70 px-4 py-3">
+              <p className="text-lg font-black">{rentalHours}h</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#607489]">Duration</p>
+            </div>
+            <div className="px-4 py-3">
+              <p className="text-lg font-black">{selectedItem.ownerScore}%</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.12em] text-[#607489]">Trust</p>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function RecommendationRail({
+  items,
+  onSelectItem,
+  selectedItem,
+  wallet,
+}: {
+  items: RentalItem[];
+  onSelectItem: (item: RentalItem, hours?: number, note?: string) => void;
+  selectedItem: RentalItem;
+  wallet: string;
+}) {
+  return (
+    <div className="mt-5 grid w-full max-w-2xl grid-cols-3 gap-2 sm:gap-3">
+      {items.map((item) => (
+        <RecommendationCard
+          key={item.id}
+          item={item}
+          selected={item.id === selectedItem.id}
+          onClick={() => onSelectItem(item, item.expectedHours, `${item.name} selected. ${wallet ? "Ready to prepare rental." : "Connect wallet to prepare rental."}`)}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ProductPool({ items, onSelectItem }: { items: RentalItem[]; onSelectItem: (item: RentalItem) => void }) {
+  return (
+    <div className="relative z-10 mx-auto -mt-28 max-w-7xl pb-32 pt-6">
+      <div className="mb-4 flex items-end justify-between gap-4">
+        <div>
+          <p className="text-[12px] font-black uppercase tracking-[0.18em] text-[#6b4cff]">Community inventory</p>
+          <h2 className="mt-1 text-2xl font-black text-[#061725]">Product pool</h2>
+        </div>
+        <p className="hidden text-sm font-bold text-[#607489] sm:block">Click any item to ask Tably about it.</p>
+      </div>
+      <div className="grid grid-cols-2 gap-3 pb-3 sm:grid-cols-3 lg:grid-cols-6">
+        {items.slice(0, 12).map((item) => (
+          <ProductCard key={item.id} item={item} onClick={() => onSelectItem(item)} />
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -498,13 +624,11 @@ function ProductCard({ item, onClick }: { item: RentalItem; onClick: () => void 
 function AgentChatbox({
   activeRental,
   agentLine,
-  crossmintConfigured,
   expectedFee,
   hasSearched,
   input,
   inputRef,
   isSearching,
-  onCrossmintStart,
   onInputChange,
   onPrepareRental,
   onPrepareSettlement,
@@ -525,13 +649,11 @@ function AgentChatbox({
   activeRental: ActiveRental | null;
   agentLine: string;
   canSignRental: boolean;
-  crossmintConfigured: boolean;
   expectedFee: number;
   hasSearched: boolean;
   input: string;
   inputRef: React.RefObject<HTMLInputElement | null>;
   isSearching: boolean;
-  onCrossmintStart: () => void;
   onInputChange: (value: string) => void;
   onPrepareRental: () => void;
   onPrepareSettlement: (kind: Exclude<RentalTransactionKind, "start">) => void;
@@ -583,9 +705,7 @@ function AgentChatbox({
         <div className="relative ml-auto w-[148px] shrink-0 sm:w-[168px]">
           <WalletConnectButton
             chooserOpen={walletChooserOpen}
-            crossmintConfigured={crossmintConfigured}
             onChooserOpenChange={setWalletChooserOpen}
-            onCrossmintStart={onCrossmintStart}
             onWalletReady={onWalletReady}
             wallet={wallet}
           />
@@ -613,7 +733,7 @@ function AgentChatbox({
       {isSearching && <SearchingPanel />}
 
       {hasSearched && (
-        <div className="tably-results-enter pt-3">
+        <div className="tably-results-enter pt-3 lg:hidden">
           <div className="mb-3 flex items-center justify-between px-1">
             <p className="text-[12px] font-black text-[#061725]">Related rentals</p>
             <p className="text-[12px] font-black text-[#061725]">
@@ -839,30 +959,31 @@ function RecommendationCard({ item, selected, onClick }: { item: RentalItem; sel
 
 function WalletConnectButton({
   chooserOpen,
-  crossmintConfigured,
   onChooserOpenChange,
-  onCrossmintStart,
   onWalletReady,
   wallet: externalWallet,
 }: {
   chooserOpen: boolean;
-  crossmintConfigured: boolean;
   onChooserOpenChange: (open: boolean) => void;
-  onCrossmintStart: () => void;
   onWalletReady: (address: string) => void;
   wallet: string;
 }) {
-  const { login, status: authStatus } = useCrossmintAuth();
-  const { wallet: crossmintWallet, status: walletStatus } = useWallet();
+  const privyAppId = process.env.NEXT_PUBLIC_PRIVY_APP_ID;
+  const { authenticated, ready } = usePrivy();
+  const { login } = useLogin();
+  const { createWallet } = useCreateWallet();
+  const { wallets: privyWallets, ready: privyWalletsReady } = usePrivySolanaWallets();
   const { connected, connecting, publicKey } = useSolanaWallet();
   const { setVisible } = useWalletModal();
+  const [isPrivyConnecting, setIsPrivyConnecting] = useState(false);
+  const privyAddress = privyWallets[0]?.address ?? "";
   const solanaAddress = publicKey?.toBase58();
 
   useEffect(() => {
-    if (crossmintWallet?.address) {
-      onWalletReady(crossmintWallet.address);
+    if (privyAddress) {
+      onWalletReady(privyAddress);
     }
-  }, [crossmintWallet?.address, onWalletReady]);
+  }, [onWalletReady, privyAddress]);
 
   useEffect(() => {
     if (connected && solanaAddress) {
@@ -870,9 +991,27 @@ function WalletConnectButton({
     }
   }, [connected, onWalletReady, solanaAddress]);
 
-  const isBusy = authStatus === "in-progress" || walletStatus === "in-progress";
-  const connectedWallet = externalWallet || crossmintWallet?.address || solanaAddress || "";
+  const isBusy = isPrivyConnecting || !ready;
+  const connectedWallet = externalWallet || privyAddress || solanaAddress || "";
   const label = isBusy || connecting ? "Connecting..." : connectedWallet ? `Wallet ${shortKey(connectedWallet)}` : "Connect wallet";
+
+  async function connectPrivyWallet() {
+    if (!privyAppId || !ready) return;
+    setIsPrivyConnecting(true);
+    try {
+      if (!authenticated) {
+        login({ loginMethods: ["email", "google", "wallet"] });
+        return;
+      }
+      if (!privyAddress && privyWalletsReady) {
+        const { wallet } = await createWallet();
+        onWalletReady(wallet.address);
+      }
+    } finally {
+      setIsPrivyConnecting(false);
+      onChooserOpenChange(false);
+    }
+  }
 
   return (
     <>
@@ -894,15 +1033,12 @@ function WalletConnectButton({
         <div className="absolute left-1/2 top-[calc(100%+8px)] z-30 grid w-full max-w-[360px] -translate-x-1/2 gap-2 rounded-[24px] border border-[#e4eaf0] bg-white/96 p-2 shadow-[0_22px_60px_rgba(6,23,37,0.16)] backdrop-blur-xl">
           <button
             type="button"
-            onClick={() => {
-              onCrossmintStart();
-              if (crossmintConfigured) login();
-              onChooserOpenChange(false);
-            }}
+            onClick={() => void connectPrivyWallet()}
+            disabled={!privyAppId || !ready || isPrivyConnecting}
             className="rounded-[18px] bg-[#061725] px-4 py-3 text-left text-[13px] font-black text-white transition hover:bg-[#c8ff18] hover:text-[#061725]"
           >
-            Crossmint
-            <span className="mt-1 block text-[11px] font-bold opacity-70">Email or social wallet</span>
+            Privy
+            <span className="mt-1 block text-[11px] font-bold opacity-70">{privyAppId ? "Email, Google, or wallet" : "Add app id to enable"}</span>
           </button>
           <button
             type="button"
@@ -949,17 +1085,23 @@ async function sendWithSolanaAdapter(
   return sendTransaction(transaction, connection);
 }
 
-async function sendWithCrossmintWallet(preparedTx: PreparedRentalTransaction, wallet: CrossmintWalletInstance | undefined) {
-  if (!wallet) throw new Error("Crossmint wallet is not loaded.");
-  const solanaWallet = SolanaWallet.from(wallet);
-  const result = await solanaWallet.sendTransaction({ serializedTransaction: preparedTx.transactionBase64 });
-  if (!result.hash) throw new Error("Crossmint did not return a transaction hash.");
-  return result.hash;
+async function signAndSendWithPrivy(
+  preparedTx: PreparedRentalTransaction,
+  connection: Connection,
+  wallet: ConnectedStandardSolanaWallet,
+  signTransaction: PrivySolanaSignTransaction
+) {
+  const { signedTransaction } = await signTransaction({
+    transaction: base64ToUint8Array(preparedTx.transactionBase64),
+    wallet,
+    chain: preparedTx.cluster === "mainnet-beta" ? "solana:mainnet" : "solana:devnet",
+  });
+  return connection.sendRawTransaction(signedTransaction);
 }
 
-function canSignPreparedRental(preparedTx: PreparedRentalTransaction | null, solanaSigner: string, crossmintSigner: string) {
-  if (!preparedTx) return Boolean(solanaSigner || crossmintSigner);
-  return preparedTx.requiredSigner === solanaSigner || preparedTx.requiredSigner === crossmintSigner;
+function canSignPreparedRental(preparedTx: PreparedRentalTransaction | null, privySigner: string, solanaSigner: string) {
+  if (!preparedTx) return Boolean(privySigner || solanaSigner);
+  return preparedTx.requiredSigner === privySigner || preparedTx.requiredSigner === solanaSigner;
 }
 
 function base64ToUint8Array(value: string) {

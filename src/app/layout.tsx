@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { CrossmintProviderWrapper } from "@/components/CrossmintProviderWrapper";
 import { WalletProviderWrapper } from "@/components/WalletProvider";
 
 export const metadata: Metadata = {
@@ -12,9 +11,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className="h-full antialiased">
       <body className="min-h-full flex flex-col bg-white text-black">
-        <CrossmintProviderWrapper>
-          <WalletProviderWrapper>{children}</WalletProviderWrapper>
-        </CrossmintProviderWrapper>
+        <WalletProviderWrapper>{children}</WalletProviderWrapper>
       </body>
     </html>
   );

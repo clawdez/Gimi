@@ -494,7 +494,7 @@
   .sheet-content {
     flex: 1 1 auto;
     overflow-y: auto;
-    padding: 16px 28px 0;
+    padding: 20px 32px 0;
     text-align: center;
     scrollbar-width: none;
   }
@@ -502,8 +502,8 @@
 
   .sheet-hero {
     position: relative;
-    width: 220px; height: 220px;
-    margin: 18px auto 24px;
+    width: 188px; height: 188px;
+    margin: 10px auto 20px;
   }
   .sheet-hero-glow {
     position: absolute; inset: -24px;
@@ -519,13 +519,13 @@
   .sheet-hero-photo {
     position: absolute; inset: 30px;
     display: flex; align-items: center; justify-content: center;
-    font-size: 100px;
+    font-size: 86px;
     filter: drop-shadow(0 6px 16px rgba(0, 0, 0, 0.5));
     z-index: 2;
   }
 
   .sheet-name {
-    font-size: 24px; font-weight: 500;
+    font-size: 25px; font-weight: 600;
     letter-spacing: -0.02em;
     color: var(--ink);
     line-height: 1.2;
@@ -535,7 +535,7 @@
     font-family: 'Geist Mono', monospace;
     font-size: 10.5px; letter-spacing: 0.22em; text-transform: uppercase;
     color: var(--ink-3);
-    margin-bottom: 32px;
+    margin-bottom: 22px;
   }
 
   .sheet-price-row {
@@ -544,7 +544,7 @@
     margin-bottom: 6px;
   }
   .sheet-price {
-    font-size: 38px; font-weight: 500;
+    font-size: 34px; font-weight: 600;
     color: var(--ink);
     letter-spacing: -0.025em;
     line-height: 1;
@@ -570,7 +570,7 @@
 
   .sheet-cta {
     flex: 0 0 auto;
-    padding: 18px 24px 22px;
+    padding: 18px 28px 24px;
     background: linear-gradient(180deg,
       rgba(16, 18, 26, 0) 0%,
       rgba(16, 18, 26, 0.92) 30%,
@@ -578,7 +578,8 @@
   }
   .sheet-cta-btn {
     width: 100%;
-    padding: 16px;
+    min-height: 56px;
+    padding: 0 18px;
     border-radius: 100px;
     border: none;
     background: var(--ink);
@@ -587,6 +588,13 @@
     font-size: 15px; font-weight: 600;
     cursor: pointer;
     letter-spacing: -0.005em;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    text-decoration: none;
+    pointer-events: auto;
+    -webkit-tap-highlight-color: transparent;
     transition: transform .15s var(--ease), opacity .2s var(--ease);
   }
   .sheet-cta-btn:active { transform: scale(0.97); opacity: 0.9; }
@@ -602,7 +610,7 @@
   .sheet-divider {
     height: 1px;
     background: var(--hairline);
-    margin: 36px -28px 24px;
+    margin: 28px -32px 22px;
   }
   .sheet-similar-label {
     font-family: 'Geist Mono', monospace;
@@ -613,17 +621,17 @@
   }
   .sheet-similar-row {
     display: flex;
-    gap: 14px;
+    gap: 16px;
     overflow-x: auto;
-    margin: 0 -28px;
-    padding: 4px 28px 24px;
+    margin: 0 -32px;
+    padding: 4px 32px 22px;
     scrollbar-width: none;
   }
   .sheet-similar-row::-webkit-scrollbar { display: none; }
 
   .mini-card {
     flex: 0 0 auto;
-    width: 96px;
+    width: 104px;
     text-align: center;
     cursor: pointer;
     transition: opacity .2s var(--ease);
@@ -633,7 +641,7 @@
 
   .mini-photo-wrap {
     position: relative;
-    width: 78px; height: 78px;
+    width: 86px; height: 86px;
     margin: 0 auto 8px;
   }
   .mini-photo-glow {
@@ -651,7 +659,7 @@
   .mini-photo-glyph {
     position: absolute; inset: 8px;
     display: flex; align-items: center; justify-content: center;
-    font-size: 32px;
+    font-size: 35px;
     z-index: 2;
     filter: drop-shadow(0 2px 5px rgba(0, 0, 0, 0.4));
   }
@@ -753,6 +761,18 @@
     color: rgba(240, 242, 247, 0.72);
     background: rgba(240, 242, 247, 0.07);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    font: inherit;
+    letter-spacing: inherit;
+    text-transform: inherit;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: border-color .2s var(--ease), background .2s var(--ease), color .2s var(--ease);
+  }
+  .web-pill:hover,
+  .web-pill.is-connected {
+    border-color: rgba(240, 242, 247, 0.32);
+    background: rgba(240, 242, 247, 0.12);
+    color: var(--ink);
   }
   .top {
     grid-column: 1;
@@ -884,9 +904,9 @@
     right: clamp(18px, 4vw, 48px);
     top: clamp(74px, 8vw, 96px);
     bottom: clamp(18px, 4vw, 48px);
-    width: min(430px, calc(100vw - 36px));
+    width: min(520px, calc(100vw - 36px));
     height: auto;
-    border-radius: 32px;
+    border-radius: 30px;
     transform: translateX(calc(100% + 64px));
     box-shadow: -34px 0 100px rgba(0, 0, 0, 0.55);
   }
@@ -1338,7 +1358,7 @@
         <div class="web-links">
           <span>Community rentals</span>
           <span>Nearby inventory</span>
-          <span class="web-pill">Request item</span>
+          <button class="web-pill" id="navWallet" type="button">Connect wallet</button>
         </div>
       </header>
       <div class="island"></div>
@@ -1427,18 +1447,10 @@
           <div class="sheet-similar-row" id="sheetSimilar"></div>
         </div>
         <div class="sheet-cta">
-          <button class="sheet-cta-btn" id="sheetCTA">Request rental</button>
-          <div class="sheet-cta-sub">Owner typically replies in ~10 min</div>
+          <button class="sheet-cta-btn" id="sheetCTA" type="button">Connect wallet</button>
+          <div class="sheet-cta-sub" id="sheetCTASub">Choose email, Google, or Solana in Privy</div>
         </div>
       </div>
-
-      <iframe
-        class="privy-bridge"
-        id="privyBridge"
-        src="/privy-bridge"
-        title="Privy wallet login"
-        allow="clipboard-read; clipboard-write; publickey-credentials-get *"
-      ></iframe>
 
       <div class="home-indicator"></div>
     </div>
@@ -2020,6 +2032,7 @@ function clearTimers() { timers.forEach(clearTimeout); timers = []; }
 function later(ms, fn) { const id = setTimeout(fn, ms); timers.push(id); return id; }
 
 function ask(query) {
+  lastQuery = query;
   clearTimers();
   transcriptEl.innerHTML = '';
   replyEl.innerHTML = '';
@@ -2248,76 +2261,215 @@ const sheetName      = document.getElementById('sheetName');
 const sheetMeta      = document.getElementById('sheetMeta');
 const sheetPrice     = document.getElementById('sheetPrice');
 const sheetCTA       = document.getElementById('sheetCTA');
+const sheetCTASub    = document.getElementById('sheetCTASub');
 const sheetSimilar   = document.getElementById('sheetSimilar');
 const sheetContent   = document.querySelector('.sheet-content');
-const privyBridge    = document.getElementById('privyBridge');
+const navWallet      = document.getElementById('navWallet');
 let connectedWallet = '';
-let privyBridgeReady = false;
+let connectedWalletSource = '';
 let pendingPrivyConnect = null;
+let pendingPrivySend = null;
+let activeSheetItem = null;
+let lastQuery = '';
+const WALLET_SESSION_KEY = 'gimi.walletSession';
+
+const ITEM_TO_RENTPROOF = {
+  'golf-set': 'keyboard_15',
+  'tent-4p': 'power_bank_18',
+  'sleeping-bag': 'umbrella_02',
+  'cooler': 'power_bank_18',
+  'drone': 'camera_04',
+  'lens-50': 'camera_04',
+  'tripod': 'tripod_09',
+  'drill': 'router_06',
+  'sander': 'router_06',
+  'pressure': 'router_06',
+  'projector': 'monitor_22',
+  'speaker': 'mic_11',
+  'dj-controller': 'mic_11',
+  'guitar': 'mic_11',
+  'keyboard-88': 'keyboard_15',
+  'ebike': 'router_06',
+  'roof-rack': 'router_06',
+  'kayak': 'monitor_22',
+  'paddleboard': 'monitor_22',
+  'ski-set': 'monitor_22',
+  'snowboard': 'monitor_22',
+  'mixer': 'badge_printer_01',
+  'telescope': 'monitor_22',
+  'vr': 'monitor_22',
+};
 
 function shortWallet(address) {
   return address ? `${address.slice(0, 4)}…${address.slice(-4)}` : '';
 }
 
+function saveWalletSession(address, source = 'privy') {
+  if (!address) return;
+  connectedWallet = String(address);
+  connectedWalletSource = source;
+  try {
+    window.localStorage.setItem(
+      WALLET_SESSION_KEY,
+      JSON.stringify({ address: connectedWallet, source, savedAt: Date.now() })
+    );
+  } catch (_) {}
+  updateWalletUI();
+}
+
+function hydrateWalletSession() {
+  try {
+    const raw = window.localStorage.getItem(WALLET_SESSION_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.address) return;
+    connectedWallet = String(parsed.address);
+    connectedWalletSource = String(parsed.source || 'privy');
+  } catch (_) {}
+  updateWalletUI();
+}
+
+function updateWalletUI() {
+  if (navWallet) {
+    navWallet.textContent = connectedWallet ? shortWallet(connectedWallet) : 'Connect wallet';
+    navWallet.classList.toggle('is-connected', Boolean(connectedWallet));
+  }
+  if (sheetCTA) updateCheckoutCTA();
+}
+
+function currentReturnTo() {
+  return `${window.location.pathname}${window.location.search}`;
+}
+
+function persistActiveSheetState() {
+  try {
+    if (!activeSheetItem) {
+      window.localStorage.removeItem('gimi.activeSheetState');
+      return;
+    }
+    window.localStorage.setItem(
+      'gimi.activeSheetState',
+      JSON.stringify({ itemId: activeSheetItem.id, query: lastQuery, savedAt: Date.now() })
+    );
+  } catch (_) {}
+}
+
+function restoreActiveSheetState() {
+  try {
+    const raw = window.localStorage.getItem('gimi.activeSheetState');
+    if (!raw) return;
+    const parsed = JSON.parse(raw);
+    const item = ITEMS.find((entry) => entry.id === parsed.itemId);
+    if (!item) return;
+    if (parsed.query) lastQuery = parsed.query;
+    openSheet(item);
+  } catch (_) {}
+}
+
+function clearActiveSheetState() {
+  try {
+    window.localStorage.removeItem('gimi.activeSheetState');
+  } catch (_) {}
+}
+
+function buildPrivyBridgeUrl(action) {
+  return `/privy-bridge?action=${encodeURIComponent(action)}&returnTo=${encodeURIComponent(currentReturnTo())}`;
+}
+
+function redirectToPrivyBridge(action) {
+  persistActiveSheetState();
+  window.location.assign(buildPrivyBridgeUrl(action));
+}
+
+function stashPreparedRental(prepared) {
+  try {
+    window.localStorage.setItem(
+      'gimi.pendingRentalStart',
+      JSON.stringify({
+        draftId: prepared.draftId,
+        itemId: prepared.itemId,
+        hours: prepared.hours,
+        prototypeItemId: activeSheetItem?.id || '',
+        renterWallet: connectedWallet,
+        savedAt: Date.now(),
+      })
+    );
+  } catch (_) {}
+}
+
+function readPrivyResult() {
+  try {
+    const raw = window.localStorage.getItem('gimi.privyResult');
+    if (!raw) return null;
+    window.localStorage.removeItem('gimi.privyResult');
+    return JSON.parse(raw);
+  } catch (_) {
+    return null;
+  }
+}
+
+function readPendingRentalStart() {
+  try {
+    const raw = window.localStorage.getItem('gimi.pendingRentalStart');
+    return raw ? JSON.parse(raw) : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function clearPendingRentalStart() {
+  try {
+    window.localStorage.removeItem('gimi.pendingRentalStart');
+  } catch (_) {}
+}
+
+function setSheetStatus(message, tone = 'muted') {
+  sheetCTASub.textContent = message;
+  sheetCTASub.style.color =
+    tone === 'error' ? '#ff8f8f' :
+    tone === 'success' ? '#9bf0c3' :
+    tone === 'pending' ? '#f4e08f' :
+    '';
+}
+
+function mappedRentalItemId(item) {
+  return ITEM_TO_RENTPROOF[item?.id] || 'power_bank_18';
+}
+
+function inferRequestedHours(query, item) {
+  const match = String(query || '').toLowerCase().match(/(\d+(?:\.\d+)?)\s*(h|hr|hour|hours|小時|小时)/);
+  if (match) return Number(match[1]);
+  return item?.id === 'lens-50' || item?.id === 'drone' ? 4 : 3;
+}
+
 function updateCheckoutCTA() {
   if (connectedWallet) {
-    sheetCTA.textContent = `Request rental · ${shortWallet(connectedWallet)}`;
+    sheetCTA.textContent = `Start rental · ${shortWallet(connectedWallet)}`;
   } else {
-    sheetCTA.textContent = 'Connect wallet with Privy';
+    sheetCTA.textContent = 'Connect wallet';
   }
   sheetCTA.style.background = '';
-}
-
-function closePrivyBridge() {
-  privyBridge.classList.remove('open');
-}
-
-function sendPrivyConnectRequest() {
-  privyBridge.contentWindow?.postMessage({ type: 'gimi:connect-wallet' }, window.location.origin);
+  if (activeSheetItem) {
+    const hours = inferRequestedHours(lastQuery, activeSheetItem);
+    setSheetStatus(
+      connectedWallet
+        ? `Ready for ${hours} hour${hours === 1 ? '' : 's'} devnet checkout`
+        : `Connect once to rent for ${hours} hour${hours === 1 ? '' : 's'}`
+    );
+  } else {
+    setSheetStatus(connectedWallet ? `Wallet connected · ${shortWallet(connectedWallet)}` : 'Choose email, Google, or Solana in Privy');
+  }
 }
 
 function connectPrivyWallet() {
-  closePrivyBridge();
-  privyBridge.classList.add('open');
   sheetCTA.textContent = 'Opening Privy...';
-
-  return new Promise((resolve) => {
-    const timeout = window.setTimeout(() => {
-      pendingPrivyConnect = null;
-      closePrivyBridge();
-      sheetCTA.textContent = 'Privy did not respond';
-      window.setTimeout(updateCheckoutCTA, 1600);
-      resolve('');
-    }, 45000);
-
-    pendingPrivyConnect = (address) => {
-      window.clearTimeout(timeout);
-      pendingPrivyConnect = null;
-      closePrivyBridge();
-      if (address) {
-        connectedWallet = address;
-        updateCheckoutCTA();
-        resolve(address);
-      } else {
-        updateCheckoutCTA();
-        resolve('');
-      }
-    };
-
-    if (privyBridgeReady) {
-      sendPrivyConnectRequest();
-    } else {
-      privyBridge.addEventListener('load', sendPrivyConnectRequest, { once: true });
-    }
-  });
+  setSheetStatus('Waiting for wallet login...', 'pending');
+  redirectToPrivyBridge('connect');
+  return '';
 }
 
 window.addEventListener('message', (event) => {
   if (event.origin !== window.location.origin) return;
-  if (event.data?.type === 'gimi:privy-ready') {
-    privyBridgeReady = true;
-    return;
-  }
   if (event.data?.type === 'gimi:privy-wallet-connected') {
     pendingPrivyConnect?.(String(event.data.address || ''));
     return;
@@ -2325,11 +2477,14 @@ window.addEventListener('message', (event) => {
   if (event.data?.type === 'gimi:privy-wallet-error') {
     const message = String(event.data.message || 'Wallet connection cancelled');
     sheetCTA.textContent = message;
+    setSheetStatus(message, 'error');
     pendingPrivyConnect?.('');
+    pendingPrivySend?.({ error: message });
+    return;
   }
-});
-privyBridge.addEventListener('load', () => {
-  privyBridgeReady = true;
+  if (event.data?.type === 'gimi:privy-transaction-sent') {
+    pendingPrivySend?.({ signature: String(event.data.signature || '') });
+  }
 });
 
 function getSolanaWalletProviders() {
@@ -2383,32 +2538,52 @@ function walletAddressFromResult(provider, result) {
 }
 
 async function connectSolanaWallet() {
-  const privyWallet = await connectPrivyWallet();
-  if (privyWallet) return privyWallet;
+  return connectPrivyWallet();
+}
 
-  const wallet = getPreferredSolanaWallet();
-  if (!wallet) {
-    sheetCTA.textContent = 'Install Phantom, Solflare, or Backpack';
-    setTimeout(updateCheckoutCTA, 1600);
-    return '';
+async function prepareRentalCheckout(item, renterWallet) {
+  const itemId = mappedRentalItemId(item);
+  const hours = inferRequestedHours(lastQuery, item);
+  const res = await fetch('/api/solana-pay/start-rental', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ itemId, renterWallet, hours }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    const problems = Array.isArray(data?.problems) && data.problems.length
+      ? ` (${data.problems.join('; ')})`
+      : '';
+    throw new Error((data?.error || 'Could not prepare rental checkout') + problems);
   }
+  return {
+    draftId: data.draftId,
+    itemId,
+    hours,
+    transaction: data.transaction,
+    transactionMetadata: data.transactionMetadata || {},
+  };
+}
 
-  sheetCTA.textContent = `Connecting ${wallet.name}...`;
-  try {
-    const res = await wallet.provider.connect();
-    connectedWallet = walletAddressFromResult(wallet.provider, res);
-    if (!connectedWallet) {
-      sheetCTA.textContent = `${wallet.name} connected without address`;
-      setTimeout(updateCheckoutCTA, 1600);
-      return '';
-    }
-    updateCheckoutCTA();
-    return connectedWallet;
-  } catch (err) {
-    sheetCTA.textContent = 'Wallet connection cancelled';
-    setTimeout(updateCheckoutCTA, 1400);
-    return '';
+async function recordRentalStart(prepared, signature) {
+  let lastError = null;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const res = await fetch('/api/rentals/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        itemId: prepared.itemId,
+        rentalId: prepared.draftId,
+        renterWallet: connectedWallet,
+        startSignature: signature,
+      }),
+    });
+    const data = await res.json();
+    if (res.ok) return data;
+    lastError = new Error(data?.error || 'Rental status sync failed');
+    await new Promise((resolve) => setTimeout(resolve, 1200 * (attempt + 1)));
   }
+  throw lastError || new Error('Rental status sync failed');
 }
 
 /* tag-similarity: count shared tags, sort desc, drop the item itself */
@@ -2437,6 +2612,7 @@ function renderSimilar(item) {
 }
 
 function openSheet(item) {
+  activeSheetItem = item;
   sheetHeroGlow.style.setProperty('--h1', item.hue);
   sheetHeroGlow.style.setProperty('--h2', (item.hue + 40) % 360);
   sheetHeroPhoto.textContent = item.glyph;
@@ -2450,6 +2626,8 @@ function openSheet(item) {
   itemSheet.classList.add('open');
 }
 function closeSheet() {
+  activeSheetItem = null;
+  clearActiveSheetState();
   sheetBackdrop.classList.remove('open');
   itemSheet.classList.remove('open');
 }
@@ -2474,23 +2652,108 @@ sheetSimilar.addEventListener('click', (e) => {
 
 sheetClose.addEventListener('click', closeSheet);
 sheetBackdrop.addEventListener('click', closeSheet);
-sheetCTA.addEventListener('click', async () => {
-  if (!connectedWallet && !(await connectSolanaWallet())) return;
-  sheetCTA.textContent = 'Request sent ✓';
-  sheetCTA.style.background = '#6bd49b';
-  setTimeout(() => {
-    closeSheet();
-    setTimeout(() => {
-      updateCheckoutCTA();
-    }, 500);
-  }, 900);
+navWallet?.addEventListener('click', () => {
+  if (connectedWallet) return;
+  redirectToPrivyBridge('connect');
+});
+sheetCTA.addEventListener('click', async (event) => {
+  try {
+    if (!activeSheetItem) return;
+    if (!connectedWallet) {
+      event.preventDefault();
+      sheetCTA.textContent = 'Opening Privy...';
+      setSheetStatus('Waiting for wallet login...', 'pending');
+      redirectToPrivyBridge('connect');
+      return;
+    }
+
+    event.preventDefault();
+
+    sheetCTA.textContent = 'Preparing checkout...';
+    setSheetStatus('Building serialized Solana devnet transaction...', 'pending');
+    const prepared = await prepareRentalCheckout(activeSheetItem, connectedWallet);
+
+    if (connectedWalletSource !== 'privy') {
+      throw new Error('This demo checkout currently signs through Privy only');
+    }
+
+    sheetCTA.textContent = 'Opening wallet approval...';
+    setSheetStatus(
+      `Devnet tx ready · ${String(prepared.transaction || '').length} chars · signer ${shortWallet(connectedWallet)}`,
+      'pending'
+    );
+    stashPreparedRental(prepared);
+    try {
+      window.localStorage.setItem(
+        'gimi.pendingPrivyTransaction',
+        JSON.stringify({ transactionBase64: prepared.transaction, cluster: 'solana:devnet', createdAt: Date.now() })
+      );
+    } catch (_) {}
+    redirectToPrivyBridge('send-transaction');
+    return;
+  } catch (error) {
+    sheetCTA.textContent = 'Checkout failed';
+    setSheetStatus(error instanceof Error ? error.message : 'Checkout failed', 'error');
+    setTimeout(updateCheckoutCTA, 2200);
+  }
 });
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && itemSheet.classList.contains('open')) closeSheet();
 });
 
 
+lastQuery = 'Camping gear for two';
+hydrateWalletSession();
+restoreActiveSheetState();
 setTimeout(() => { if (cur === 'idle') ask('Camping gear for two'); }, 1600);
+
+(async function resumePrivyRedirectFlow() {
+  const result = readPrivyResult();
+  if (!result) return;
+
+  if (result.type === 'gimi:privy-wallet-connected' && result.address) {
+    saveWalletSession(String(result.address), 'privy');
+    setSheetStatus(`Wallet connected · ${shortWallet(connectedWallet)}`, 'success');
+    return;
+  }
+
+  if (result.type === 'gimi:privy-wallet-error') {
+    const message = String(result.message || 'Wallet connection cancelled');
+    sheetCTA.textContent = 'Connect wallet';
+    setSheetStatus(message, 'error');
+    return;
+  }
+
+  if (result.type === 'gimi:privy-transaction-sent' && result.signature) {
+    const pending = readPendingRentalStart();
+    if (!pending) return;
+
+    saveWalletSession(String(pending.renterWallet || connectedWallet || ''), 'privy');
+
+    if (!activeSheetItem && pending.prototypeItemId) {
+      const item = ITEMS.find((entry) => entry.id === pending.prototypeItemId);
+      if (item) openSheet(item);
+    }
+
+    const signature = String(result.signature);
+    sheetCTA.textContent = 'Syncing rental receipt...';
+    setSheetStatus(`Tx ${shortWallet(signature)} sent. Confirming rental session...`, 'pending');
+
+    try {
+      await recordRentalStart(pending, signature);
+      clearPendingRentalStart();
+      try {
+        window.localStorage.removeItem('gimi.pendingPrivyTransaction');
+      } catch (_) {}
+      sheetCTA.textContent = 'Rental started ✓';
+      sheetCTA.style.background = '#6bd49b';
+      setSheetStatus(`Devnet tx ${shortWallet(signature)} confirmed`, 'success');
+    } catch (error) {
+      sheetCTA.textContent = 'Checkout failed';
+      setSheetStatus(error instanceof Error ? error.message : 'Checkout failed', 'error');
+    }
+  }
+})();
 </script>
 </body>
 </html>
