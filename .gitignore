@@ -12,13 +12,17 @@
 
 # testing
 /coverage
+/playwright-report/
+/test-results/
 
 # next.js
 /.next/
 /out/
+/.turbo/
 
 # production
 /build
+/dist
 
 # Anchor / Solana
 /.anchor/
@@ -26,10 +30,20 @@
 /test-ledger/
 /.rentproof/
 /supabase/.temp/
+programs/**/target/
+*.keypair.json
+*-keypair.json
+devnet-keypair.json
+localnet-keypair.json
+id.json
 
 # misc
 .DS_Store
+Thumbs.db
 *.pem
+*.log
+*.swp
+*.swo
 
 # debug
 npm-debug.log*
@@ -39,6 +53,8 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
+!.env.sample
 
 # vercel
 .vercel
@@ -47,3 +63,14 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 .env*.local
+
+# local editor/project state
+.idea/
+.vscode/
+.claude/
+.codex/
+
+# local scratch/state
+/.cache/
+/.tmp/
+/tmp/

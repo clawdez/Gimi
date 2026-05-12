@@ -28,7 +28,7 @@ function appUrl(req: NextRequest) {
 export async function GET(req: NextRequest) {
   const url = `${appUrl(req)}/api/elevenlabs/tools`;
   return NextResponse.json({
-    name: "tably-rentproof-elevenlabs-tools",
+    name: "gimi-elevenlabs-tools",
     status: process.env.ELEVENLABS_API_KEY ? "api_key_configured" : "server_tools_ready_api_key_not_configured",
     registration: {
       type: "webhook",

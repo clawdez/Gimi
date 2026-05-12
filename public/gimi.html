@@ -447,7 +447,7 @@
     border: 1px solid var(--glass-edge);
     transform: translateY(110%);
     transition: transform .42s var(--ease-back);
-    z-index: 50;
+    z-index: 70;
     overflow: hidden;
     display: flex; flex-direction: column;
     box-shadow: 0 -30px 80px rgba(0, 0, 0, 0.4);
@@ -1448,11 +1448,17 @@
         </div>
         <div class="sheet-cta">
           <button class="sheet-cta-btn" id="sheetCTA" type="button">Connect wallet</button>
-          <div class="sheet-cta-sub" id="sheetCTASub">Choose email, Google, or Solana in Privy</div>
+          <div class="sheet-cta-sub" id="sheetCTASub">Use Privy once, then rent from this wallet</div>
         </div>
       </div>
 
       <div class="home-indicator"></div>
+      <iframe
+        class="privy-bridge"
+        id="privyBridge"
+        title="Gimi wallet login"
+        allow="clipboard-read; clipboard-write; publickey-credentials-get"
+      ></iframe>
     </div>
   </div>
 
@@ -2265,10 +2271,10 @@ const sheetCTASub    = document.getElementById('sheetCTASub');
 const sheetSimilar   = document.getElementById('sheetSimilar');
 const sheetContent   = document.querySelector('.sheet-content');
 const navWallet      = document.getElementById('navWallet');
+const privyBridge    = document.getElementById('privyBridge');
 let connectedWallet = '';
 let connectedWalletSource = '';
 let pendingPrivyConnect = null;
-let pendingPrivySend = null;
 let activeSheetItem = null;
 let lastQuery = '';
 const WALLET_SESSION_KEY = 'gimi.walletSession';
@@ -2372,13 +2378,34 @@ function clearActiveSheetState() {
   } catch (_) {}
 }
 
-function buildPrivyBridgeUrl(action) {
-  return `/privy-bridge?action=${encodeURIComponent(action)}&returnTo=${encodeURIComponent(currentReturnTo())}`;
+function buildPrivyBridgeUrl(action, mode = 'page') {
+  const params = new URLSearchParams({
+    action,
+    returnTo: currentReturnTo(),
+  });
+  if (mode === 'modal') params.set('mode', 'modal');
+  return `/privy-bridge?${params.toString()}`;
 }
 
 function redirectToPrivyBridge(action) {
   persistActiveSheetState();
   window.location.assign(buildPrivyBridgeUrl(action));
+}
+
+function closePrivyBridge() {
+  if (!privyBridge) return;
+  privyBridge.classList.remove('open');
+  privyBridge.removeAttribute('src');
+}
+
+function openPrivyBridge(action) {
+  if (!privyBridge) {
+    redirectToPrivyBridge(action);
+    return;
+  }
+  persistActiveSheetState();
+  privyBridge.src = buildPrivyBridgeUrl(action, 'modal');
+  privyBridge.classList.add('open');
 }
 
 function stashPreparedRental(prepared) {
@@ -2390,7 +2417,7 @@ function stashPreparedRental(prepared) {
         itemId: prepared.itemId,
         hours: prepared.hours,
         prototypeItemId: activeSheetItem?.id || '',
-        renterWallet: connectedWallet,
+        renterWallet: prepared.renterWallet || connectedWallet,
         savedAt: Date.now(),
       })
     );
@@ -2457,33 +2484,49 @@ function updateCheckoutCTA() {
         : `Connect once to rent for ${hours} hour${hours === 1 ? '' : 's'}`
     );
   } else {
-    setSheetStatus(connectedWallet ? `Wallet connected · ${shortWallet(connectedWallet)}` : 'Choose email, Google, or Solana in Privy');
+    setSheetStatus(connectedWallet ? `Wallet connected · ${shortWallet(connectedWallet)}` : 'Use Privy once, then rent from this wallet');
   }
 }
 
 function connectPrivyWallet() {
   sheetCTA.textContent = 'Opening Privy...';
   setSheetStatus('Waiting for wallet login...', 'pending');
-  redirectToPrivyBridge('connect');
+  openPrivyBridge('connect');
   return '';
 }
 
-window.addEventListener('message', (event) => {
-  if (event.origin !== window.location.origin) return;
+function isPrivyBridgeMessage(event) {
+  if (event.origin !== window.location.origin) return false;
+  if (privyBridge?.contentWindow && event.source !== privyBridge.contentWindow) return false;
+  return true;
+}
+
+window.addEventListener('message', async (event) => {
+  if (!isPrivyBridgeMessage(event)) return;
   if (event.data?.type === 'gimi:privy-wallet-connected') {
+    closePrivyBridge();
+    saveWalletSession(String(event.data.address || ''), 'privy');
+    setSheetStatus(`Wallet connected · ${shortWallet(connectedWallet)}`, 'success');
     pendingPrivyConnect?.(String(event.data.address || ''));
     return;
   }
   if (event.data?.type === 'gimi:privy-wallet-error') {
+    closePrivyBridge();
     const message = String(event.data.message || 'Wallet connection cancelled');
-    sheetCTA.textContent = message;
+    updateCheckoutCTA();
     setSheetStatus(message, 'error');
     pendingPrivyConnect?.('');
-    pendingPrivySend?.({ error: message });
     return;
   }
   if (event.data?.type === 'gimi:privy-transaction-sent') {
-    pendingPrivySend?.({ signature: String(event.data.signature || '') });
+    closePrivyBridge();
+    const signature = String(event.data.signature || '');
+    if (!signature) {
+      updateCheckoutCTA();
+      setSheetStatus('Wallet returned without a transaction signature', 'error');
+      return;
+    }
+    await completePrivyRentalSignature(signature);
   }
 });
 
@@ -2574,7 +2617,7 @@ async function recordRentalStart(prepared, signature) {
       body: JSON.stringify({
         itemId: prepared.itemId,
         rentalId: prepared.draftId,
-        renterWallet: connectedWallet,
+        renterWallet: prepared.renterWallet || connectedWallet,
         startSignature: signature,
       }),
     });
@@ -2584,6 +2627,39 @@ async function recordRentalStart(prepared, signature) {
     await new Promise((resolve) => setTimeout(resolve, 1200 * (attempt + 1)));
   }
   throw lastError || new Error('Rental status sync failed');
+}
+
+async function completePrivyRentalSignature(signature) {
+  const pending = readPendingRentalStart();
+  if (!pending) {
+    updateCheckoutCTA();
+    setSheetStatus(`Tx ${shortWallet(signature)} sent, but rental draft was missing`, 'error');
+    return;
+  }
+
+  saveWalletSession(String(pending.renterWallet || connectedWallet || ''), 'privy');
+
+  if (!activeSheetItem && pending.prototypeItemId) {
+    const item = ITEMS.find((entry) => entry.id === pending.prototypeItemId);
+    if (item) openSheet(item);
+  }
+
+  sheetCTA.textContent = 'Syncing rental receipt...';
+  setSheetStatus(`Tx ${shortWallet(signature)} sent. Confirming rental session...`, 'pending');
+
+  try {
+    await recordRentalStart(pending, signature);
+    clearPendingRentalStart();
+    try {
+      window.localStorage.removeItem('gimi.pendingPrivyTransaction');
+    } catch (_) {}
+    sheetCTA.textContent = 'Rental started ✓';
+    sheetCTA.style.background = '#6bd49b';
+    setSheetStatus(`Devnet tx ${shortWallet(signature)} confirmed`, 'success');
+  } catch (error) {
+    sheetCTA.textContent = 'Checkout failed';
+    setSheetStatus(error instanceof Error ? error.message : 'Checkout failed', 'error');
+  }
 }
 
 /* tag-similarity: count shared tags, sort desc, drop the item itself */
@@ -2654,7 +2730,7 @@ sheetClose.addEventListener('click', closeSheet);
 sheetBackdrop.addEventListener('click', closeSheet);
 navWallet?.addEventListener('click', () => {
   if (connectedWallet) return;
-  redirectToPrivyBridge('connect');
+  openPrivyBridge('connect');
 });
 sheetCTA.addEventListener('click', async (event) => {
   try {
@@ -2663,7 +2739,7 @@ sheetCTA.addEventListener('click', async (event) => {
       event.preventDefault();
       sheetCTA.textContent = 'Opening Privy...';
       setSheetStatus('Waiting for wallet login...', 'pending');
-      redirectToPrivyBridge('connect');
+      openPrivyBridge('connect');
       return;
     }
 
@@ -2689,7 +2765,7 @@ sheetCTA.addEventListener('click', async (event) => {
         JSON.stringify({ transactionBase64: prepared.transaction, cluster: 'solana:devnet', createdAt: Date.now() })
       );
     } catch (_) {}
-    redirectToPrivyBridge('send-transaction');
+    openPrivyBridge('send-transaction');
     return;
   } catch (error) {
     sheetCTA.textContent = 'Checkout failed';
@@ -2725,33 +2801,7 @@ setTimeout(() => { if (cur === 'idle') ask('Camping gear for two'); }, 1600);
   }
 
   if (result.type === 'gimi:privy-transaction-sent' && result.signature) {
-    const pending = readPendingRentalStart();
-    if (!pending) return;
-
-    saveWalletSession(String(pending.renterWallet || connectedWallet || ''), 'privy');
-
-    if (!activeSheetItem && pending.prototypeItemId) {
-      const item = ITEMS.find((entry) => entry.id === pending.prototypeItemId);
-      if (item) openSheet(item);
-    }
-
-    const signature = String(result.signature);
-    sheetCTA.textContent = 'Syncing rental receipt...';
-    setSheetStatus(`Tx ${shortWallet(signature)} sent. Confirming rental session...`, 'pending');
-
-    try {
-      await recordRentalStart(pending, signature);
-      clearPendingRentalStart();
-      try {
-        window.localStorage.removeItem('gimi.pendingPrivyTransaction');
-      } catch (_) {}
-      sheetCTA.textContent = 'Rental started ✓';
-      sheetCTA.style.background = '#6bd49b';
-      setSheetStatus(`Devnet tx ${shortWallet(signature)} confirmed`, 'success');
-    } catch (error) {
-      sheetCTA.textContent = 'Checkout failed';
-      setSheetStatus(error instanceof Error ? error.message : 'Checkout failed', 'error');
-    }
+    await completePrivyRentalSignature(String(result.signature));
   }
 })();
 </script>

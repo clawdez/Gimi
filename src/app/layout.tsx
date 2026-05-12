@@ -3,7 +3,7 @@ import "./globals.css";
 import { WalletProviderWrapper } from "@/components/WalletProvider";
 
 export const metadata: Metadata = {
-  title: "Tably — Agentic Rentals",
+  title: "Gimi — Agentic Rentals",
   description: "AI rental agent for communities with Solana escrow, receipts, and reputation.",
 };
 

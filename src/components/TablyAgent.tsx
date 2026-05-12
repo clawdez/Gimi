@@ -81,7 +81,7 @@ export function TablyAgent() {
   const [preparedTx, setPreparedTx] = useState<PreparedRentalTransaction | null>(null);
   const [activeRental, setActiveRental] = useState<ActiveRental | null>(null);
   const [txSignature, setTxSignature] = useState("");
-  const [agentLine, setAgentLine] = useState("Tell Tably what you need. Recommendations appear after you ask.");
+  const [agentLine, setAgentLine] = useState("Tell Gimi what you need. Recommendations appear after you ask.");
 
   const expectedFee = useMemo(
     () => Math.max(selectedItem.minimumFee, rentalHours * selectedItem.ratePerHour),
@@ -151,7 +151,7 @@ export function TablyAgent() {
   async function prepareRental() {
     const renterWallet = privySigner || solanaSigner || wallet;
     if (!renterWallet) {
-      setAgentLine("Connect a wallet first, then Tably can prepare the rental transaction.");
+      setAgentLine("Connect a wallet first, then Gimi can prepare the rental transaction.");
       return;
     }
 
@@ -489,7 +489,7 @@ function RentalOrb({
       <div className="absolute inset-0 rounded-full bg-[radial-gradient(circle_at_42%_32%,rgba(255,255,255,0.98)_0%,rgba(232,247,255,0.9)_34%,rgba(200,255,24,0.42)_58%,rgba(107,76,255,0.18)_76%,rgba(255,120,103,0)_100%)] blur-[1px] shadow-[0_0_110px_rgba(151,110,255,0.24),0_0_160px_rgba(200,255,24,0.18)]" />
       <div className="absolute inset-[7%] rounded-full bg-[radial-gradient(circle_at_35%_25%,rgba(255,255,255,0.86),rgba(255,255,255,0.34)_34%,rgba(255,255,255,0)_68%)]" />
       <div className="relative z-10 flex max-w-[78%] flex-col items-center text-center">
-        <p className="text-[12px] font-black uppercase tracking-[0.18em] text-[#6b4cff]">{isSearching ? "Searching" : hasSearched ? "Best match" : "Tably agent"}</p>
+        <p className="text-[12px] font-black uppercase tracking-[0.18em] text-[#6b4cff]">{isSearching ? "Searching" : hasSearched ? "Best match" : "Gimi agent"}</p>
         <h1 className="mt-3 text-4xl font-black leading-[0.94] text-[#061725] sm:text-6xl">
           {hasSearched ? selectedItem.name : "What do you need?"}
         </h1>
@@ -553,7 +553,7 @@ function ProductPool({ items, onSelectItem }: { items: RentalItem[]; onSelectIte
           <p className="text-[12px] font-black uppercase tracking-[0.18em] text-[#6b4cff]">Community inventory</p>
           <h2 className="mt-1 text-2xl font-black text-[#061725]">Product pool</h2>
         </div>
-        <p className="hidden text-sm font-bold text-[#607489] sm:block">Click any item to ask Tably about it.</p>
+        <p className="hidden text-sm font-bold text-[#607489] sm:block">Click any item to ask Gimi about it.</p>
       </div>
       <div className="grid grid-cols-2 gap-3 pb-3 sm:grid-cols-3 lg:grid-cols-6">
         {items.slice(0, 12).map((item) => (
@@ -682,7 +682,7 @@ function AgentChatbox({
         }}
         className="flex items-center gap-2 rounded-full border border-[#dfe5ee] bg-white/96 p-1.5 shadow-[0_16px_42px_rgba(6,23,37,0.09)]"
       >
-        <label className="sr-only" htmlFor="agent-command">Ask Tably</label>
+        <label className="sr-only" htmlFor="agent-command">Ask Gimi</label>
         <input
           id="agent-command"
           ref={inputRef}
@@ -694,7 +694,7 @@ function AgentChatbox({
         <button
           type="submit"
           className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-[#c8ff18] text-[24px] font-black leading-none text-[#061725] transition hover:scale-105 hover:bg-[#ff7867] sm:h-12 sm:w-12"
-          aria-label="Ask Tably"
+          aria-label="Ask Gimi"
         >
           &gt;
         </button>
