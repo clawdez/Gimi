@@ -4,7 +4,7 @@ AI rental agent for school, community, and hackathon inventory.
 
 Gimi is one product: an agentic rental marketplace with Solana settlement built in. It handles community inventory search, refundable escrow, temporary rental-token state, return-confirm burn, on-chain receipt events, and reputation-ready outcomes.
 
-The current demo opens at `/` and serves the Gimi one-page agent shell from `public/gimi.html`: a large central agent orb, a bottom chat input, nearby inventory, a product checkout drawer, and Privy wallet connection for email, Google, or Solana wallet users.
+The current demo opens at `/` and serves the Gimi one-page agent shell from `public/gimi.html`: a large central agent orb, a bottom chat input, nearby inventory, a product checkout drawer, and Privy wallet connection for email or Google users.
 
 ## Product Loop
 
@@ -29,7 +29,7 @@ The MVP is designed for physical-world rentals where the agent helps people borr
 - Gimi one-page agent shell at `/`, served from `public/gimi.html`.
 - Central orb plus bottom chat input for natural-language rental requests.
 - Clickable nearby inventory and product checkout drawer.
-- Privy wallet bridge at `/privy-bridge` for email, Google, embedded Solana wallet, or external Solana wallet login.
+- Privy wallet bridge at `/privy-bridge` for direct email or Google login into an embedded Solana checkout wallet.
 - Wallet session reuse: once Privy connects, the checkout drawer changes from `Connect wallet` to `Start rental` instead of asking the user to connect again.
 - Demo inventory, rental session state, return flow, receipt copy, and reputation-ready result.
 - Receipt/history page for recent settled rentals, item context, wallet parties, payout/refund split, and Solana explorer links.
@@ -54,7 +54,7 @@ The MVP is designed for physical-world rentals where the agent helps people borr
 | Virtuals | Agent perceives inventory, decides best item, and acts around physical-world handoff/return workflows |
 | MCP | `/api/mcp` exposes read/prepare rental tools for external agents |
 | Solana Pay | `/api/solana-pay/initialize-item`, `/api/solana-pay/start-rental`, `/api/solana-pay/confirm-return`, and `/api/solana-pay/auto-buyout` return Solana Pay-style request payloads plus program id, PDA accounts, required signer, and instruction args |
-| Privy | `@privy-io/react-auth` provides email, Google, embedded Solana wallet, and external Solana wallet onboarding through `NEXT_PUBLIC_PRIVY_APP_ID` |
+| Privy | `@privy-io/react-auth` provides email/Google onboarding and embedded Solana checkout wallets through `NEXT_PUBLIC_PRIVY_APP_ID` |
 
 ## Local Development
 
@@ -114,21 +114,20 @@ The static Gimi shell cannot call Privy hooks directly, so it uses a bridge rout
 
 ```text
 public/gimi.html
--> /privy-bridge?action=connect&returnTo=/
--> Privy modal opens after the user clicks Continue with Privy
--> bridge writes gimi.walletSession and gimi.privyResult to localStorage
--> user returns to /
--> checkout drawer rehydrates the wallet session
+-> hidden iframe opens /privy-bridge?action=connect&returnTo=/&mode=modal
+-> Privy modal opens immediately from the wallet CTA
+-> bridge posts the connected wallet to the shell
+-> shell writes gimi.walletSession and updates the checkout drawer
 ```
 
 For rental checkout, `public/gimi.html` stores the prepared base64 transaction in
-`gimi.pendingPrivyTransaction` and redirects to:
+`gimi.pendingPrivyTransaction` and opens the bridge iframe at:
 
 ```text
-/privy-bridge?action=send-transaction&returnTo=/
+/privy-bridge?action=send-transaction&returnTo=/&mode=modal
 ```
 
-The bridge signs and sends through the connected Privy Solana wallet, then returns
+The bridge signs and sends through the connected Privy Solana wallet, then posts
 the devnet signature to the shell so `/api/rentals/start` can persist the rental
 session and update listing status.
 
