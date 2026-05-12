@@ -4,13 +4,15 @@ AI rental agent for school, community, and hackathon inventory.
 
 Tably is one product: an agentic rental marketplace with Solana settlement built in. It handles community inventory search, refundable escrow, temporary rental-token state, return-confirm burn, on-chain receipt events, and reputation-ready outcomes.
 
+The current demo opens at `/` and serves the Gimi one-page agent shell from `public/gimi.html`: a large central agent orb, a bottom chat input, nearby inventory, a product checkout drawer, and Privy wallet connection for email, Google, or Solana wallet users.
+
 ## Product Loop
 
 ```text
 User asks for an item
 -> Agent searches community inventory
 -> Agent selects the best available item
--> Crossmint embedded wallet login creates/loads the renter wallet
+-> Privy login creates/loads the renter Solana wallet
 -> LI.FI quote routes Base USDC into Solana USDC when real wallet addresses are supplied
 -> Solana Pay endpoint returns an unsigned serialized devnet transaction
 -> Wallet signs and sends the prepared transaction from the chat UI
@@ -24,8 +26,11 @@ The MVP is designed for physical-world rentals where the agent helps people borr
 
 ## What Is Implemented
 
-- SKYLRK-inspired storefront page with clickable floating inventory.
-- Usable chat agent that can parse natural-language item requests.
+- Gimi one-page agent shell at `/`, served from `public/gimi.html`.
+- Central orb plus bottom chat input for natural-language rental requests.
+- Clickable nearby inventory and product checkout drawer.
+- Privy wallet bridge at `/privy-bridge` for email, Google, embedded Solana wallet, or external Solana wallet login.
+- Wallet session reuse: once Privy connects, the checkout drawer changes from `Connect wallet` to `Start rental` instead of asking the user to connect again.
 - Demo inventory, rental session state, return flow, receipt copy, and reputation-ready result.
 - Receipt/history page for recent settled rentals, item context, wallet parties, payout/refund split, and Solana explorer links.
 - Anchor `rental_session` program for SPL-token escrow and rental lifecycle.
@@ -33,11 +38,11 @@ The MVP is designed for physical-world rentals where the agent helps people borr
 - Owner listing flow that prepares an owner-signed `initialize_item` devnet transaction, verifies the confirmed item PDA, and publishes it into renter inventory.
 - Supabase-backed listing storage when `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are configured, with local file fallback for development.
 - Program-aware Solana Pay endpoints returning unsigned serialized wallet transactions for `initialize_item`, `start_rental`, `confirm_return`, and `auto_buyout`.
-- Wallet signing/sending from the chat UI through Crossmint Solana wallets or Solana wallet adapter wallets.
+- Wallet signing/sending through Privy Solana wallets, with Solana wallet adapter support retained in the React agent components.
 - LI.FI quote endpoint at `/api/lifi/quote` using live LI.FI REST quotes when real source/destination wallets are supplied, with demo fallback for local UI mode.
 - ElevenLabs server tools endpoint at `/api/elevenlabs/tools`.
 - MCP-style read/prepare endpoint at `/api/mcp`.
-- Crossmint React provider and wallet CTA for real embedded-wallet onboarding. The UI does not mint a fake renter wallet when Crossmint is not configured.
+- Privy React provider and bridge CTA for real wallet onboarding. The UI does not mint a fake renter wallet when Privy is not configured.
 
 ## Track Alignment
 
@@ -49,7 +54,7 @@ The MVP is designed for physical-world rentals where the agent helps people borr
 | Virtuals | Agent perceives inventory, decides best item, and acts around physical-world handoff/return workflows |
 | MCP | `/api/mcp` exposes read/prepare rental tools for external agents |
 | Solana Pay | `/api/solana-pay/initialize-item`, `/api/solana-pay/start-rental`, `/api/solana-pay/confirm-return`, and `/api/solana-pay/auto-buyout` return Solana Pay-style request payloads plus program id, PDA accounts, required signer, and instruction args |
-| Crossmint | `@crossmint/client-sdk-react-ui` provides real email/Google login and creates/loads a Solana renter wallet through `NEXT_PUBLIC_CROSSMINT_API_KEY` |
+| Privy | `@privy-io/react-auth` provides email, Google, embedded Solana wallet, and external Solana wallet onboarding through `NEXT_PUBLIC_PRIVY_APP_ID` |
 
 ## Local Development
 
@@ -59,6 +64,14 @@ npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000).
+
+For wallet login, create `.env.local`:
+
+```bash
+NEXT_PUBLIC_PRIVY_APP_ID=YOUR_PRIVY_APP_ID
+```
+
+The production Vercel project must also have `NEXT_PUBLIC_PRIVY_APP_ID` configured. Without it, the app still renders but wallet login is disabled.
 
 Useful checks:
 
@@ -94,6 +107,30 @@ If those env vars are missing, the app falls back to local file storage at
 `.rentproof/listings.json`, `.rentproof/rental-sessions.json`, and
 `.rentproof/rental-receipts.json` locally, and `/tmp/tably-*.json` files on Vercel.
 The Vercel fallback is ephemeral and should only be used for smoke tests.
+
+## Privy Wallet Flow
+
+The static Gimi shell cannot call Privy hooks directly, so it uses a bridge route:
+
+```text
+public/gimi.html
+-> /privy-bridge?action=connect&returnTo=/
+-> Privy modal opens after the user clicks Continue with Privy
+-> bridge writes gimi.walletSession and gimi.privyResult to localStorage
+-> user returns to /
+-> checkout drawer rehydrates the wallet session
+```
+
+For rental checkout, `public/gimi.html` stores the prepared base64 transaction in
+`gimi.pendingPrivyTransaction` and redirects to:
+
+```text
+/privy-bridge?action=send-transaction&returnTo=/
+```
+
+The bridge signs and sends through the connected Privy Solana wallet, then returns
+the devnet signature to the shell so `/api/rentals/start` can persist the rental
+session and update listing status.
 
 ## Anchor Program
 
@@ -352,7 +389,7 @@ This repo now has a deployed devnet Anchor settlement program, a product-ready d
 
 - Program id: `AVL316tYxrg8MhEeWtaxbwdShMWybzRAH1zNQWvX355K`.
 - Published listings, rental sessions, and rental receipts use Supabase when configured. Without Supabase env vars, the app falls back to ephemeral file storage.
-- Crossmint wallet login requires a client API key with Wallet API scopes in `NEXT_PUBLIC_CROSSMINT_API_KEY`.
+- Privy wallet login requires `NEXT_PUBLIC_PRIVY_APP_ID`.
 - LI.FI live quotes require valid source and destination wallet addresses; local demo mode falls back when those are missing.
 - ElevenLabs is server-tool ready, but the hosted ElevenLabs agent still needs to be configured with this endpoint and `ELEVENLABS_API_KEY`.
 - MCP and ElevenLabs tools never sign or move funds; they expose read/prepare tools only.
@@ -360,5 +397,6 @@ This repo now has a deployed devnet Anchor settlement program, a product-ready d
 ## Next Steps
 
 1. Run the Supabase migrations and add `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` to Vercel.
-2. Run the devnet E2E with funded owner/renter wallets; it now covers owner listing, start rental, return settlement, auto-buyout settlement, listing status sync, and receipt persistence.
-3. Register `/api/elevenlabs/tools` in the ElevenLabs agent console.
+2. Add `NEXT_PUBLIC_PRIVY_APP_ID` to Vercel production and local `.env.local`.
+3. Run the devnet E2E with funded owner/renter wallets; it now covers owner listing, start rental, return settlement, auto-buyout settlement, listing status sync, and receipt persistence.
+4. Register `/api/elevenlabs/tools` in the ElevenLabs agent console.
