@@ -37,6 +37,7 @@ export interface RentalSessionsRepository {
   storageKind: string;
   save(session: PersistedRentalSession): Promise<PersistedRentalSession>;
   getByRentalId(rentalId: string): Promise<PersistedRentalSession | undefined>;
+  listByWallet(wallet: string, filters?: { status?: RentalSessionStatus; limit?: number }): Promise<PersistedRentalSession[]>;
 }
 
 interface RentalSessionRow {
@@ -76,6 +77,19 @@ class FileRentalSessionsRepository implements RentalSessionsRepository {
   async getByRentalId(rentalId: string) {
     const sessions = await this.readAll();
     return sessions.find((session) => session.rentalId === rentalId);
+  }
+
+  async listByWallet(wallet: string, filters: { status?: RentalSessionStatus; limit?: number } = {}) {
+    const limit = normalizeLimit(filters.limit);
+    const sessions = await this.readAll();
+    return sessions
+      .filter((session) => {
+        if (session.ownerWallet !== wallet && session.renterWallet !== wallet) return false;
+        if (filters.status && session.status !== filters.status) return false;
+        return true;
+      })
+      .sort((a, b) => b.startTs - a.startTs)
+      .slice(0, limit);
   }
 
   async save(session: PersistedRentalSession) {
@@ -122,6 +136,24 @@ class SupabaseRentalSessionsRepository implements RentalSessionsRepository {
     return data ? rowToRentalSession(data) : undefined;
   }
 
+  async listByWallet(wallet: string, filters: { status?: RentalSessionStatus; limit?: number } = {}) {
+    const limit = normalizeLimit(filters.limit);
+    let query = this.client
+      .from("rental_sessions")
+      .select("*")
+      .or(`owner_wallet.eq.${wallet},renter_wallet.eq.${wallet}`)
+      .order("start_ts", { ascending: false })
+      .limit(limit);
+
+    if (filters.status) {
+      query = query.eq("status", filters.status);
+    }
+
+    const { data, error } = await query;
+    if (error) throw new Error(`Supabase rental session history failed: ${error.message}`);
+    return (data ?? []).map(rowToRentalSession);
+  }
+
   async save(session: PersistedRentalSession) {
     const { data, error } = await this.client
       .from("rental_sessions")
@@ -132,6 +164,11 @@ class SupabaseRentalSessionsRepository implements RentalSessionsRepository {
     if (error) throw new Error(`Supabase rental session save failed: ${error.message}`);
     return rowToRentalSession(data);
   }
+}
+
+function normalizeLimit(limit: number | undefined) {
+  if (typeof limit !== "number" || !Number.isFinite(limit)) return 20;
+  return Math.min(50, Math.max(1, Math.floor(limit)));
 }
 
 let repository: RentalSessionsRepository | undefined;

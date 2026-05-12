@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRentableItem } from "@/lib/rentableItems";
 import { getRentalReceiptsRepository, PersistedRentalReceipt } from "@/lib/rentalReceiptsRepository";
+import { getRentalSessionsRepository, PersistedRentalSession } from "@/lib/rentalSessionsRepository";
 import { USDC_DECIMALS } from "@/lib/rentproofProgram";
 
 const WALLET_PATTERN = /^[1-9A-HJ-NP-Za-km-z]{32,64}$/;
@@ -54,17 +55,27 @@ export async function GET(req: NextRequest) {
 
   try {
     const repository = getRentalReceiptsRepository();
+    const sessionsRepository = getRentalSessionsRepository();
+    const activeSessions = wallet
+      ? await sessionsRepository.listByWallet(wallet, { status: "active", limit })
+      : [];
     const receipts = await repository.listRecent({
       wallet: wallet || undefined,
       rentalId: rentalId || undefined,
       limit,
     });
     const records = await Promise.all(receipts.map(enrichReceipt));
+    const activeRentals = await Promise.all(activeSessions.map(enrichSession));
 
     return NextResponse.json({
+      activeRentals,
       receipts: records,
+      activeCount: activeRentals.length,
       count: records.length,
-      storage: repository.storageKind,
+      storage: {
+        sessions: sessionsRepository.storageKind,
+        receipts: repository.storageKind,
+      },
       filters: {
         wallet: wallet || null,
         rentalId: rentalId || null,
@@ -73,6 +84,47 @@ export async function GET(req: NextRequest) {
   } catch (error) {
     return errorResponse(error instanceof Error ? error.message : "Unable to load rental history", 500);
   }
+}
+
+async function enrichSession(session: PersistedRentalSession) {
+  const item = await getRentableItem(session.itemId);
+
+  return {
+    rentalId: session.rentalId,
+    itemId: session.itemId,
+    item: item
+      ? {
+          id: item.id,
+          name: item.name,
+          imageUrl: item.imageUrl,
+          category: item.category,
+          locationLabel: item.locationLabel,
+          ownerName: item.ownerName,
+          ownerScore: item.ownerScore,
+          ratePerHour: item.ratePerHour,
+          buyoutCap: item.buyoutCap,
+        }
+      : null,
+    status: session.status,
+    startSignature: session.startSignature,
+    explorerUrl: explorerUrl(session.startSignature),
+    startTs: session.startTs,
+    dueTs: session.dueTs,
+    ownerWallet: session.ownerWallet,
+    renterWallet: session.renterWallet,
+    ownerWalletShort: shortWallet(session.ownerWallet),
+    renterWalletShort: shortWallet(session.renterWallet),
+    paymentMint: session.paymentMint,
+    sessionPda: session.sessionPda,
+    rentalTokenPda: session.rentalTokenPda,
+    escrowTokenAccount: session.escrowTokenAccount,
+    amounts: {
+      escrow: normalizeUsdcAmount(session.escrowAmount),
+      expectedFeeAtStart: normalizeUsdcAmount(session.expectedFeeAtStart),
+    },
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt,
+  };
 }
 
 async function enrichReceipt(receipt: PersistedRentalReceipt) {

@@ -14,7 +14,7 @@ import { clusterApiUrl, Connection, PublicKey, Transaction } from "@solana/web3.
 import bs58 from "bs58";
 
 const privyAppId = process.env.NEXT_PUBLIC_PRIVY_APP_ID;
-const loginMethods = ["email", "google", "wallet"] as const;
+const loginMethods = ["email", "wallet"] as const;
 
 type WalletAction = "connect" | "send-transaction";
 type PendingTransaction = { transactionBase64: string; cluster: string; requiredSigner?: string };
@@ -144,7 +144,7 @@ export function GimiAppShell() {
           theme: "light",
           accentColor: "#c7ff00",
           landingHeader: "Connect to Gimi",
-          loginMessage: "Use email, Google, or an existing Solana wallet.",
+          loginMessage: "Use email or an existing Solana wallet.",
           showWalletLoginFirst: false,
           walletChainType: "solana-only",
           walletList: ["detected_solana_wallets", "phantom", "solflare", "backpack"] as never,

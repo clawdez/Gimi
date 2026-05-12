@@ -3,12 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "dev": "node scripts/run-next-clean.cjs dev",
+    "build": "node scripts/run-next-clean.cjs build",
     "anchor:build": "NO_DNA=1 anchor build",
     "devnet:setup": "node --experimental-strip-types scripts/setup-rentproof-devnet.mjs",
     "e2e:devnet": "node scripts/e2e-owner-listing-rental-devnet.mjs",
-    "start": "next start",
+    "start": "node scripts/run-next-clean.cjs start",
     "lint": "eslint",
     "test:anchor": "NO_DNA=1 anchor build && cargo test -p rental_session"
   },

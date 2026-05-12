@@ -371,6 +371,8 @@ pub struct StartRental<'info> {
     pub config: Account<'info, PlatformConfig>,
     #[account(
         mut,
+        seeds = [b"item", item.owner.as_ref(), item.item_id.as_ref()],
+        bump = item.bump,
         constraint = item.status == ITEM_STATUS_AVAILABLE @ RentProofError::ItemUnavailable,
         constraint = item.payment_mint == payment_mint.key() @ RentProofError::InvalidPaymentMint
     )]
@@ -423,6 +425,8 @@ pub struct SettleRental<'info> {
     pub config: Account<'info, PlatformConfig>,
     #[account(
         mut,
+        seeds = [b"item", item.owner.as_ref(), item.item_id.as_ref()],
+        bump = item.bump,
         constraint = item.owner == owner.key() @ RentProofError::InvalidOwner,
         constraint = item.payment_mint == payment_mint.key() @ RentProofError::InvalidPaymentMint,
         constraint = item.active_session == session.key() @ RentProofError::InvalidSession
