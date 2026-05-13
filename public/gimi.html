@@ -680,7 +680,7 @@
   }
   .profile-tabs {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 8px;
     margin: 0 0 20px;
     padding: 5px;
@@ -732,6 +732,72 @@
     border-color: rgba(107, 212, 155, 0.24);
     background: rgba(107, 212, 155, 0.09);
     color: #b9f5d1;
+  }
+  .listing-form {
+    display: grid;
+    gap: 12px;
+  }
+  .listing-field {
+    display: grid;
+    gap: 6px;
+  }
+  .listing-field label {
+    font-family: 'Geist Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .listing-field input,
+  .listing-field textarea,
+  .listing-field select {
+    width: 100%;
+    border: 1px solid rgba(240, 242, 247, 0.13);
+    border-radius: 16px;
+    background: rgba(0, 0, 0, 0.18);
+    color: var(--ink);
+    padding: 12px 13px;
+    font: 500 14px/1.25 'Inter', sans-serif;
+    outline: none;
+  }
+  .listing-field textarea {
+    min-height: 76px;
+    resize: vertical;
+  }
+  .listing-field input:focus,
+  .listing-field textarea:focus,
+  .listing-field select:focus {
+    border-color: rgba(206, 255, 0, 0.4);
+    box-shadow: 0 0 0 3px rgba(206, 255, 0, 0.08);
+  }
+  .listing-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .listing-submit {
+    margin-top: 4px;
+    border: 0;
+    border-radius: 999px;
+    padding: 15px 16px;
+    color: #071018;
+    background: var(--accent);
+    font: 800 14px/1 'Inter', sans-serif;
+    cursor: pointer;
+    transition: transform .2s var(--ease), opacity .2s var(--ease);
+  }
+  .listing-submit:hover {
+    transform: translateY(-1px);
+  }
+  .listing-submit:disabled {
+    opacity: 0.62;
+    cursor: progress;
+    transform: none;
+  }
+  .listing-helper {
+    color: var(--ink-3);
+    font-size: 11px;
+    line-height: 1.4;
   }
   .profile-section-label {
     margin: 22px 2px 12px;
@@ -1717,6 +1783,7 @@
           <div class="profile-tabs" role="tablist" aria-label="Rental profile">
             <button class="profile-tab is-active" type="button" role="tab" data-profile-tab="borrowing">Borrowing now</button>
             <button class="profile-tab" type="button" role="tab" data-profile-tab="lending">Lending now</button>
+            <button class="profile-tab" type="button" role="tab" data-profile-tab="listing">List item</button>
           </div>
           <div class="profile-pane is-active" id="borrowingPane">
             <div class="profile-section-label">Borrowing now</div>
@@ -1734,6 +1801,81 @@
             <div id="lendingRentalsPanel">
               <div class="empty-profile-card">Items you are lending will appear here after a renter starts checkout.</div>
             </div>
+          </div>
+          <div class="profile-pane" id="listingPane">
+            <div class="profile-section-label">List an item</div>
+            <div class="profile-status" id="listingStatus"></div>
+            <form class="listing-form" id="listingForm">
+              <div class="listing-field">
+                <label for="listingName">Item name</label>
+                <input id="listingName" name="name" value="Anker Power Bank" maxlength="100" required />
+              </div>
+              <div class="listing-grid">
+                <div class="listing-field">
+                  <label for="listingBrand">Brand</label>
+                  <input id="listingBrand" name="brand" value="Anker" maxlength="80" />
+                </div>
+                <div class="listing-field">
+                  <label for="listingModel">Model</label>
+                  <input id="listingModel" name="model" value="20K USB-C" maxlength="80" />
+                </div>
+              </div>
+              <div class="listing-grid">
+                <div class="listing-field">
+                  <label for="listingCategory">Category</label>
+                  <select id="listingCategory" name="category">
+                    <option>Power</option>
+                    <option>Camera</option>
+                    <option>Audio</option>
+                    <option>Tools</option>
+                    <option>Outdoor</option>
+                    <option>Event</option>
+                  </select>
+                </div>
+                <div class="listing-field">
+                  <label for="listingCondition">Condition</label>
+                  <input id="listingCondition" name="condition" type="number" min="1" max="10" step="1" value="9" required />
+                </div>
+              </div>
+              <div class="listing-field">
+                <label for="listingDescription">Description</label>
+                <textarea id="listingDescription" name="description" maxlength="1000" required>High-capacity USB-C power bank with cable.</textarea>
+              </div>
+              <div class="listing-field">
+                <label for="listingImageUrl">Photo URL</label>
+                <input id="listingImageUrl" name="imageUrl" type="url" value="https://images.unsplash.com/photo-1609091839311-d5365f9ff1c5?w=900&h=700&fit=crop" required />
+              </div>
+              <div class="listing-field">
+                <label for="listingPickup">Pickup</label>
+                <input id="listingPickup" name="locationLabel" value="Library desk" maxlength="140" required />
+              </div>
+              <div class="listing-field">
+                <label for="listingIncluded">Included</label>
+                <input id="listingIncluded" name="included" value="USB-C cable" maxlength="180" />
+              </div>
+              <div class="listing-grid">
+                <div class="listing-field">
+                  <label for="listingRate">Rate / hour</label>
+                  <input id="listingRate" name="ratePerHour" type="number" min="0.01" step="0.01" value="2" required />
+                </div>
+                <div class="listing-field">
+                  <label for="listingMinimum">Minimum fee</label>
+                  <input id="listingMinimum" name="minimumFee" type="number" min="0.01" step="0.01" value="3" required />
+                </div>
+              </div>
+              <div class="listing-grid">
+                <div class="listing-field">
+                  <label for="listingBuyout">Escrow cap</label>
+                  <input id="listingBuyout" name="buyoutCap" type="number" min="0.01" step="0.01" value="30" required />
+                </div>
+                <div class="listing-field">
+                  <label for="listingGrace">Grace seconds</label>
+                  <input id="listingGrace" name="autoBuyoutGraceSeconds" type="number" min="0" step="60" value="3600" required />
+                </div>
+              </div>
+              <button class="listing-submit" id="listingSubmit" type="submit">Initialize item on devnet</button>
+              <div class="listing-helper">Owner wallet signs initialize_item first. After confirmation, Gimi verifies the item PDA and publishes it into inventory.</div>
+            </form>
           </div>
         </div>
       </div>
@@ -2559,7 +2701,11 @@ const profileWallet  = document.getElementById('profileWallet');
 const profileTabs    = document.querySelectorAll('.profile-tab');
 const borrowingPane  = document.getElementById('borrowingPane');
 const lendingPane    = document.getElementById('lendingPane');
+const listingPane    = document.getElementById('listingPane');
 const lendingStatus  = document.getElementById('lendingStatus');
+const listingStatus  = document.getElementById('listingStatus');
+const listingForm    = document.getElementById('listingForm');
+const listingSubmit  = document.getElementById('listingSubmit');
 const activeRentalsPanel = document.getElementById('activeRentalsPanel');
 const rentalReceiptsPanel = document.getElementById('rentalReceiptsPanel');
 const lendingRentalsPanel = document.getElementById('lendingRentalsPanel');
@@ -2572,6 +2718,7 @@ let latestLendingRentals = [];
 const WALLET_SESSION_KEY = 'gimi.walletSession';
 const ACTIVE_RENTALS_CACHE_KEY = 'gimi.activeRentals';
 const PENDING_SETTLEMENT_KEY = 'gimi.pendingRentalSettlement';
+const PENDING_LISTING_KEY = 'gimi.pendingListingPublish';
 
 const ITEM_TO_RENTPROOF = {
   'golf-set': 'keyboard_15',
@@ -2641,7 +2788,7 @@ function updateWalletUI() {
 }
 
 function setProfileTab(tab) {
-  const nextTab = tab === 'lending' ? 'lending' : 'borrowing';
+  const nextTab = tab === 'lending' || tab === 'listing' ? tab : 'borrowing';
   profileTabs.forEach((button) => {
     const isActive = button.dataset.profileTab === nextTab;
     button.classList.toggle('is-active', isActive);
@@ -2649,14 +2796,23 @@ function setProfileTab(tab) {
   });
   borrowingPane?.classList.toggle('is-active', nextTab === 'borrowing');
   lendingPane?.classList.toggle('is-active', nextTab === 'lending');
+  listingPane?.classList.toggle('is-active', nextTab === 'listing');
+}
+
+function setProfileStatus(element, message = '', tone = 'pending') {
+  if (!element) return;
+  element.textContent = message;
+  element.classList.toggle('is-visible', Boolean(message));
+  element.classList.toggle('is-error', tone === 'error');
+  element.classList.toggle('is-success', tone === 'success');
 }
 
 function setLendingStatus(message = '', tone = 'pending') {
-  if (!lendingStatus) return;
-  lendingStatus.textContent = message;
-  lendingStatus.classList.toggle('is-visible', Boolean(message));
-  lendingStatus.classList.toggle('is-error', tone === 'error');
-  lendingStatus.classList.toggle('is-success', tone === 'success');
+  setProfileStatus(lendingStatus, message, tone);
+}
+
+function setListingStatus(message = '', tone = 'pending') {
+  setProfileStatus(listingStatus, message, tone);
 }
 
 function formatRentalTime(seconds) {
@@ -3035,6 +3191,47 @@ function clearPendingSettlement() {
   } catch (_) {}
 }
 
+function stashPreparedListing(prepared) {
+  try {
+    window.localStorage.setItem(
+      PENDING_LISTING_KEY,
+      JSON.stringify({
+        draftId: prepared.draftId,
+        listingPreview: prepared.listingPreview,
+        ownerWallet: prepared.ownerWallet,
+        savedAt: Date.now(),
+      })
+    );
+  } catch (_) {}
+}
+
+function readPendingListingPublish() {
+  try {
+    const raw = window.localStorage.getItem(PENDING_LISTING_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function clearPendingListingPublish() {
+  try {
+    window.localStorage.removeItem(PENDING_LISTING_KEY);
+  } catch (_) {}
+}
+
+function pendingWalletAction() {
+  if (readPendingSettlement()) return 'owner settlement';
+  if (readPendingListingPublish()) return 'item listing';
+  if (readPendingRentalStart()) return 'rental checkout';
+  return '';
+}
+
+function assertNoPendingWalletAction(nextAction) {
+  const pending = pendingWalletAction();
+  if (pending) throw new Error(`Finish the current ${pending} approval before starting ${nextAction}`);
+}
+
 function setSheetStatus(message, tone = 'muted') {
   sheetCTASub.textContent = message;
   sheetCTASub.style.color =
@@ -3134,12 +3331,27 @@ window.addEventListener('message', async (event) => {
   if (event.data?.type === 'gimi:privy-wallet-error') {
     closePrivyRequest();
     const message = String(event.data.message || 'Wallet connection cancelled');
+    if (readPendingListingPublish()) {
+      clearPendingListingPublish();
+      try { window.localStorage.removeItem('gimi.pendingPrivyTransaction'); } catch (_) {}
+      setProfileTab('listing');
+      setListingStatus(message, 'error');
+      if (listingSubmit) {
+        listingSubmit.disabled = false;
+        listingSubmit.textContent = 'Initialize item on devnet';
+      }
+      return;
+    }
     if (readPendingSettlement()) {
       clearPendingSettlement();
       try { window.localStorage.removeItem('gimi.pendingPrivyTransaction'); } catch (_) {}
       setLendingStatus(message, 'error');
       await refreshRentalProfile();
       return;
+    }
+    if (readPendingRentalStart()) {
+      clearPendingRentalStart();
+      try { window.localStorage.removeItem('gimi.pendingPrivyTransaction'); } catch (_) {}
     }
     updateCheckoutCTA();
     setSheetStatus(message, 'error');
@@ -3155,6 +3367,10 @@ window.addEventListener('message', async (event) => {
     }
     if (readPendingSettlement()) {
       await completePrivySettlementSignature(signature);
+      return;
+    }
+    if (readPendingListingPublish()) {
+      await completePrivyListingSignature(signature);
       return;
     }
     await completePrivyRentalSignature(signature);
@@ -3204,6 +3420,108 @@ async function recordRentalStart(prepared, signature) {
     await new Promise((resolve) => setTimeout(resolve, 1200 * (attempt + 1)));
   }
   throw lastError || new Error('Rental status sync failed');
+}
+
+function numberFromForm(formData, field) {
+  const value = Number(formData.get(field));
+  if (!Number.isFinite(value)) throw new Error(`${field} must be a number`);
+  return value;
+}
+
+function listingPayloadFromForm(form) {
+  const formData = new FormData(form);
+  const included = String(formData.get('included') || '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  return {
+    ownerWallet: connectedWallet,
+    name: String(formData.get('name') || '').trim(),
+    brand: String(formData.get('brand') || '').trim(),
+    model: String(formData.get('model') || '').trim(),
+    category: String(formData.get('category') || '').trim(),
+    condition: numberFromForm(formData, 'condition'),
+    description: String(formData.get('description') || '').trim(),
+    imageUrl: String(formData.get('imageUrl') || '').trim(),
+    locationLabel: String(formData.get('locationLabel') || '').trim(),
+    included,
+    ratePerHour: numberFromForm(formData, 'ratePerHour'),
+    minimumFee: numberFromForm(formData, 'minimumFee'),
+    buyoutCap: numberFromForm(formData, 'buyoutCap'),
+    autoBuyoutGraceSeconds: Math.round(numberFromForm(formData, 'autoBuyoutGraceSeconds')),
+  };
+}
+
+async function prepareListingPublish(form) {
+  const payload = listingPayloadFromForm(form);
+  const res = await fetch('/api/solana-pay/initialize-item', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || 'Could not prepare item initialization');
+  return {
+    ownerWallet: payload.ownerWallet,
+    draftId: data.draftId,
+    itemPda: data.itemPda,
+    transaction: data.transaction,
+    transactionMetadata: data.transactionMetadata || {},
+    listingPreview: data.listingPreview,
+  };
+}
+
+async function recordListingPublish(pending, signature) {
+  let lastError = null;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const res = await fetch('/api/listings/publish', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        draftId: pending.draftId,
+        initializeSignature: signature,
+        listingPreview: pending.listingPreview,
+      }),
+    });
+    const data = await res.json();
+    if (res.ok) return data;
+    lastError = new Error(data?.error || 'Listing publish sync failed');
+    await new Promise((resolve) => setTimeout(resolve, 1300 * (attempt + 1)));
+  }
+  throw lastError || new Error('Listing publish sync failed');
+}
+
+async function completePrivyListingSignature(signature) {
+  const pending = readPendingListingPublish();
+  if (!pending) return false;
+
+  setProfileTab('listing');
+  setListingStatus(`Tx ${shortWallet(signature)} sent. Verifying item PDA...`, 'pending');
+  if (listingSubmit) {
+    listingSubmit.disabled = true;
+    listingSubmit.textContent = 'Publishing listing...';
+  }
+  try {
+    const published = await recordListingPublish(pending, signature);
+    clearPendingListingPublish();
+    try { window.localStorage.removeItem('gimi.pendingPrivyTransaction'); } catch (_) {}
+    setListingStatus(`${published?.listing?.name || 'Item'} is live in inventory.`, 'success');
+    if (listingSubmit) {
+      listingSubmit.disabled = false;
+      listingSubmit.textContent = 'Initialize another item';
+    }
+    await refreshRentalProfile();
+    return true;
+  } catch (error) {
+    clearPendingListingPublish();
+    try { window.localStorage.removeItem('gimi.pendingPrivyTransaction'); } catch (_) {}
+    setListingStatus(error instanceof Error ? error.message : 'Listing publish failed', 'error');
+    if (listingSubmit) {
+      listingSubmit.disabled = false;
+      listingSubmit.textContent = 'Retry initialize item';
+    }
+    return true;
+  }
 }
 
 async function prepareOwnerSettlement(rental, kind) {
@@ -3259,9 +3577,7 @@ async function recordOwnerSettlement(prepared, signature) {
 }
 
 async function startOwnerSettlement(rental, kind, button) {
-  if (readPendingSettlement()) {
-    throw new Error('Finish the current wallet approval before starting another settlement');
-  }
+  assertNoPendingWalletAction('owner settlement');
   if (!connectedWallet) {
     requestPrivyAction('connect');
     return;
@@ -3503,9 +3819,7 @@ sheetCTA.addEventListener('click', async (event) => {
 
     event.preventDefault();
 
-    if (readPendingSettlement()) {
-      throw new Error('Finish the current owner settlement approval before starting another checkout');
-    }
+    assertNoPendingWalletAction('rental checkout');
 
     sheetCTA.textContent = 'Preparing checkout...';
     setSheetStatus('Building serialized Solana devnet transaction...', 'pending');
@@ -3540,6 +3854,54 @@ sheetCTA.addEventListener('click', async (event) => {
     sheetCTA.textContent = 'Checkout failed';
     setSheetStatus(error instanceof Error ? error.message : 'Checkout failed', 'error');
     setTimeout(updateCheckoutCTA, 2200);
+  }
+});
+listingForm?.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  let startedListingFlow = false;
+  try {
+    if (!connectedWallet) {
+      setListingStatus('Connect a wallet before listing an item.', 'pending');
+      requestPrivyAction('connect');
+      return;
+    }
+    assertNoPendingWalletAction('item listing');
+
+    listingSubmit.disabled = true;
+    listingSubmit.textContent = 'Preparing initialize_item...';
+    setListingStatus('Building owner-signed Solana devnet transaction...', 'pending');
+    const prepared = await prepareListingPublish(listingForm);
+
+    stashPreparedListing(prepared);
+    startedListingFlow = true;
+    try {
+      window.localStorage.setItem(
+        'gimi.pendingPrivyTransaction',
+        JSON.stringify({
+          transactionBase64: prepared.transaction,
+          cluster: prepared.transactionMetadata?.cluster || 'solana:devnet',
+          requiredSigner: prepared.transactionMetadata?.requiredSigner || connectedWallet,
+          action: 'owner-listing',
+          draftId: prepared.draftId,
+          itemPda: prepared.itemPda,
+          createdAt: Date.now(),
+        })
+      );
+    } catch (_) {}
+
+    listingSubmit.textContent = 'Opening wallet approval...';
+    setListingStatus(`Devnet initialize_item ready · signer ${shortWallet(connectedWallet)}`, 'pending');
+    requestPrivyAction('send-transaction');
+  } catch (error) {
+    if (startedListingFlow) {
+      clearPendingListingPublish();
+      try { window.localStorage.removeItem('gimi.pendingPrivyTransaction'); } catch (_) {}
+    }
+    setListingStatus(error instanceof Error ? error.message : 'Could not start listing', 'error');
+    if (listingSubmit) {
+      listingSubmit.disabled = false;
+      listingSubmit.textContent = 'Initialize item on devnet';
+    }
   }
 });
 lendingRentalsPanel?.addEventListener('click', async (event) => {
