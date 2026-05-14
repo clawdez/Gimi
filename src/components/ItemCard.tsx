@@ -65,7 +65,7 @@ function TrustBadge({ score }: { score: number }) {
         </svg>
         <span className={`text-xs font-medium ${color}`}>{score}</span>
       </div>
-      <span className="text-[10px] text-gray-600">Powered by Maiat</span>
+      <span className="text-[10px] text-gray-600">Trusted by Maiat</span>
     </div>
   );
 }
