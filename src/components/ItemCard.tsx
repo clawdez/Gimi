@@ -58,11 +58,14 @@ export function ItemCard({ item, onClick }: ItemCardProps) {
 function TrustBadge({ score }: { score: number }) {
   const color = score >= 90 ? "text-green-400" : score >= 70 ? "text-yellow-400" : "text-red-400";
   return (
-    <div className="flex items-center gap-1">
-      <svg className={`w-4 h-4 ${color}`} fill="currentColor" viewBox="0 0 20 20">
-        <path d="M10 1l2.39 4.84L17.3 6.7l-3.65 3.56.86 5.02L10 13.01l-4.51 2.37.86-5.02L2.7 6.8l4.91-.86L10 1z" />
-      </svg>
-      <span className={`text-xs font-medium ${color}`}>{score}</span>
+    <div className="flex flex-col items-end gap-0.5">
+      <div className="flex items-center gap-1">
+        <svg className={`w-4 h-4 ${color}`} fill="currentColor" viewBox="0 0 20 20">
+          <path d="M10 1l2.39 4.84L17.3 6.7l-3.65 3.56.86 5.02L10 13.01l-4.51 2.37.86-5.02L2.7 6.8l4.91-.86L10 1z" />
+        </svg>
+        <span className={`text-xs font-medium ${color}`}>{score}</span>
+      </div>
+      <span className="text-[10px] text-gray-600">Powered by Maiat</span>
     </div>
   );
 }

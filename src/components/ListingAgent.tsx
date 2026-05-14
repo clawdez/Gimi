@@ -48,7 +48,7 @@ function suggestPrice(state: AgentState): { daily: number; retail: number } {
 export function ListingAgent({ onDone }: ListingAgentProps) {
   const { connected } = useWallet();
   const [messages, setMessages] = useState<ChatMessage[]>([
-    { role: "agent", content: "Hey! I'm your RentChain listing agent. I'll help you list your item for rent in about 60 seconds. Let's get started." },
+    { role: "agent", content: "Hey! I'm your Gimi listing agent. I'll help you list your item for rent in about 60 seconds. Let's get started." },
     { role: "agent", content: STEPS[0].question, options: STEPS[0].options },
   ]);
   const [state, setState] = useState<AgentState>({

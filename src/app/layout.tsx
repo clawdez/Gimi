@@ -6,8 +6,8 @@ import { WalletProviderWrapper } from "@/components/WalletProvider";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "RentChain — Rent Anything, Trust Everyone",
-  description: "AI-agent-guided peer-to-peer rental marketplace. Tokenized on Solana.",
+  title: "Gimi — The Rental Shell for AI Agents",
+  description: "Equip your agent with peer-to-peer rental capabilities. Trust-scored by Maiat. Powered by Dojo.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -14,9 +14,10 @@ export function Navbar({ onList, onBrowse }: NavbarProps) {
         <div className="flex items-center justify-between h-16">
           <button onClick={onBrowse} className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-green-400 to-purple-500 flex items-center justify-center font-bold text-sm">
-              R
+              G
             </div>
-            <span className="text-xl font-bold gradient-text">RentChain</span>
+            <span className="text-xl font-bold gradient-text">Gimi</span>
+            <span className="text-xs text-gray-500 ml-1 self-end mb-0.5">Rental Shell</span>
           </button>
 
           <div className="flex items-center gap-4">

@@ -14,17 +14,17 @@ export function Hero({ onList }: HeroProps) {
       <div className="relative max-w-4xl mx-auto text-center">
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-green-500/10 border border-green-500/20 text-green-400 text-sm mb-6">
           <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse-green" />
-          Powered by Solana
+          A Dojo Shell &middot; Powered by Solana
         </div>
 
         <h1 className="text-5xl sm:text-7xl font-bold mb-6 leading-tight">
-          Rent <span className="gradient-text">Anything</span>,<br />
-          Trust <span className="gradient-text">Everyone</span>
+          The <span className="gradient-text">Rental Shell</span><br />
+          for AI <span className="gradient-text">Agents</span>
         </h1>
 
         <p className="text-xl text-gray-400 mb-10 max-w-2xl mx-auto">
-          List items for rent in 60 seconds with an AI agent. Every item tokenized on Solana.
-          Redbox-style pricing. On-chain trust scores.
+          Equip your agent with peer-to-peer rental capabilities. Trust-scored by Maiat.
+          Tokenized on Solana. Redbox-style pricing.
         </p>
 
         <div className="flex items-center justify-center gap-4">

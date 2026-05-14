@@ -79,7 +79,10 @@ export function ItemDetail({ item, onBack }: ItemDetailProps) {
               </div>
             </div>
             <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
-              <div className="text-sm text-gray-500 mb-1">Owner Trust</div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-sm text-gray-500">Owner Trust</span>
+                <span className="text-[10px] text-gray-600">Powered by Maiat</span>
+              </div>
               <div className="flex items-center gap-2">
                 <div className="flex-1 h-2 bg-gray-800 rounded-full overflow-hidden">
                   <div className="h-full trust-bar rounded-full" style={{ width: `${item.trustScore}%` }} />
