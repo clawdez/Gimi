@@ -60,6 +60,7 @@ export async function GET(req: NextRequest) {
     const intentsRepository = getRentalIntentsRepository();
     const activeSessions = wallet ? await sessionsRepository.listByWallet(wallet, { status: "active", limit }) : [];
     const paymentIntents = wallet ? await intentsRepository.listByRenterWallet(wallet, limit) : [];
+    const ownerPaymentIntents = wallet ? await intentsRepository.listByOwnerWallet(wallet, limit) : [];
     const receipts = await repository.listRecent({
       wallet: wallet || undefined,
       rentalId: rentalId || undefined,
@@ -72,13 +73,20 @@ export async function GET(req: NextRequest) {
         .filter((intent) => intent.paymentMethod === "card" && intent.sessionStatus !== "cancelled")
         .map(enrichIntent)
     );
+    const ownerCardReservations = await Promise.all(
+      ownerPaymentIntents
+        .filter((intent) => intent.paymentMethod === "card" && intent.sessionStatus !== "cancelled")
+        .map(enrichIntent)
+    );
 
     return NextResponse.json({
       activeRentals,
       cardReservations,
+      ownerCardReservations,
       receipts: records,
       activeCount: activeRentals.length,
       cardReservationCount: cardReservations.length,
+      ownerCardReservationCount: ownerCardReservations.length,
       count: records.length,
       storage: {
         intents: intentsRepository.storageKind,

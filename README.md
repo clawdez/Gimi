@@ -279,6 +279,23 @@ slot, and whether a card checkout URL is configured. For
 `paymentMethod: "solana_wallet"`, the intent is created first and the UI then
 prepares the existing Solana `start_rental` transaction with the same rental id.
 
+### `POST /api/rentals/intent/status`
+
+Updates a card-funded rental intent after payment. The current supported action
+is owner handoff activation:
+
+```bash
+curl -s -X POST http://localhost:3000/api/rentals/intent/status \
+  -H 'content-type: application/json' \
+  -d '{"intentId":"intent_...","ownerWallet":"OWNER_WALLET","action":"mark_handed_off"}'
+```
+
+The route requires the MoonPay/card payment to be confirmed and the provider
+escrow state to be `provider_authorized` or `provider_captured`. It then marks
+the card reservation `session_status=active` and keeps
+`receipt_status=pending_onchain` until the return-settlement flow issues the
+receipt.
+
 ### `POST /api/payments/moonpay/checkout`
 
 Creates or resolves a MoonPay Commerce checkout for an existing card rental
