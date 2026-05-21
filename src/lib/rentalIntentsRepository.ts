@@ -38,6 +38,8 @@ export interface PersistedRentalIntent {
   platformFee?: number;
   renterRefund?: number;
   settlementStatus?: RentalIntentSettlementStatus;
+  receiptSignature?: string;
+  receiptIssuedAt?: string;
   notes?: string;
   expiresAt: string;
   createdAt: string;
@@ -81,6 +83,8 @@ interface RentalIntentRow {
   platform_fee?: number | string;
   renter_refund?: number | string;
   settlement_status?: RentalIntentSettlementStatus | null;
+  receipt_signature?: string | null;
+  receipt_issued_at?: string | null;
   notes?: string | null;
   expires_at: string;
   created_at: string;
@@ -276,6 +280,8 @@ function rentalIntentToRow(intent: PersistedRentalIntent): RentalIntentRow {
     platform_fee: intent.platformFee ?? 0,
     renter_refund: intent.renterRefund ?? 0,
     settlement_status: intent.settlementStatus ?? "none",
+    receipt_signature: intent.receiptSignature ?? null,
+    receipt_issued_at: intent.receiptIssuedAt ?? null,
     notes: intent.notes ?? null,
     expires_at: intent.expiresAt,
     created_at: intent.createdAt,
@@ -312,6 +318,8 @@ function rowToRentalIntent(row: RentalIntentRow): PersistedRentalIntent {
     platformFee: Number(row.platform_fee ?? 0),
     renterRefund: Number(row.renter_refund ?? 0),
     settlementStatus: row.settlement_status ?? "none",
+    receiptSignature: row.receipt_signature ?? undefined,
+    receiptIssuedAt: row.receipt_issued_at ?? undefined,
     notes: row.notes ?? undefined,
     expiresAt: row.expires_at,
     createdAt: row.created_at,
