@@ -1849,6 +1849,10 @@
             <button class="profile-tab" type="button" role="tab" data-profile-tab="listing">List item</button>
           </div>
           <div class="profile-pane is-active" id="borrowingPane">
+            <div class="profile-section-label">Notifications</div>
+            <div id="notificationsPanel">
+              <div class="empty-profile-card">Important rental updates will appear here.</div>
+            </div>
             <div class="profile-section-label">Borrowing now</div>
             <div id="activeRentalsPanel">
               <div class="empty-profile-card">Connect your wallet to see active rentals.</div>
@@ -2783,6 +2787,7 @@ const activeRentalsPanel = document.getElementById('activeRentalsPanel');
 const rentalReceiptsPanel = document.getElementById('rentalReceiptsPanel');
 const lendingRentalsPanel = document.getElementById('lendingRentalsPanel');
 const ownerInventoryPanel = document.getElementById('ownerInventoryPanel');
+const notificationsPanel = document.getElementById('notificationsPanel');
 let connectedWallet = '';
 let connectedWalletSource = '';
 let activeSheetItem = null;
@@ -3196,6 +3201,36 @@ function renderReceipts(receipts) {
   `).join('');
 }
 
+function renderNotifications(notifications) {
+  if (!notificationsPanel) return;
+  if (!notifications.length) {
+    notificationsPanel.innerHTML = '<div class="empty-profile-card">Important rental updates will appear here.</div>';
+    return;
+  }
+  notificationsPanel.innerHTML = notifications.map((notification) => `
+    <div class="receipt-card">
+      <strong>${escapeHtml(notification.title || 'Update')}</strong>
+      ${escapeHtml(notification.body || '')}
+    </div>
+  `).join('');
+}
+
+async function refreshNotifications() {
+  if (!notificationsPanel) return;
+  if (!connectedWallet) {
+    renderNotifications([]);
+    return;
+  }
+  try {
+    const res = await fetch(`/api/notifications?wallet=${encodeURIComponent(connectedWallet)}&limit=8`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data?.error || 'Could not load notifications');
+    renderNotifications(data.notifications || []);
+  } catch (_) {
+    renderNotifications([]);
+  }
+}
+
 function renderOwnerInventory(listings) {
   if (!ownerInventoryPanel) return;
   latestOwnerInventory = listings || [];
@@ -3290,6 +3325,7 @@ async function refreshRentalProfile() {
     renderLendingRentals([], []);
     renderReceipts([]);
     renderOwnerInventory([]);
+    renderNotifications([]);
     return;
   }
   activeRentalsPanel.innerHTML = '<div class="empty-profile-card">Loading active rentals...</div>';
@@ -3311,12 +3347,14 @@ async function refreshRentalProfile() {
     renderActiveRentals(borrowingRentals, data.cardReservations || []);
     renderLendingRentals(lendingRentals, data.ownerCardReservations || []);
     renderReceipts(data.receipts || []);
+    await refreshNotifications();
     await refreshOwnerInventory();
   } catch (error) {
     const localRentals = activeLocalRentalsForWallet(connectedWallet);
     renderActiveRentals(localRentals, []);
     renderLendingRentals([], []);
     rentalReceiptsPanel.innerHTML = `<div class="empty-profile-card">${escapeHtml(error instanceof Error ? error.message : 'Could not load receipts')}</div>`;
+    await refreshNotifications();
     await refreshOwnerInventory();
   }
 }

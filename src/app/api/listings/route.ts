@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getRentableItems } from "@/lib/rentableItems";
 import { getListingsRepository } from "@/lib/listingsRepository";
 import { PersistedListingStatus } from "@/lib/listings";
+import { getNotificationsRepository, newNotification } from "@/lib/notificationsRepository";
 
 const WALLET_PATTERN = /^[1-9A-HJ-NP-Za-km-z]{32,64}$/;
 const OWNER_MUTABLE_STATUSES = new Set<PersistedListingStatus>(["available", "paused"]);
@@ -74,6 +75,17 @@ export async function PATCH(req: NextRequest) {
     }
 
     const updated = await getListingsRepository().updateStatusForOwner(id, ownerWallet, status as PersistedListingStatus);
+    await getNotificationsRepository().save(
+      newNotification({
+        wallet: ownerWallet,
+        kind: "listing_status",
+        title: updated.status === "paused" ? "Listing paused" : "Listing available",
+        body:
+          updated.status === "paused"
+            ? `${updated.name} is hidden from renter search.`
+            : `${updated.name} is available for renters again.`,
+      })
+    );
     return NextResponse.json({ listing: updated });
   } catch (error) {
     return errorResponse(error instanceof Error ? error.message : "Unable to update listing", 400);

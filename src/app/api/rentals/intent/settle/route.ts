@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRentalIntentsRepository } from "@/lib/rentalIntentsRepository";
+import { getNotificationsRepository, newNotification } from "@/lib/notificationsRepository";
 
 function errorResponse(message: string, status: number, extra?: Record<string, unknown>) {
   return NextResponse.json({ error: message, ...extra }, { status });
@@ -49,6 +50,24 @@ export async function POST(req: NextRequest) {
       notes: "Owner confirmed card-funded return. Provider refund/payout and Solana receipt issuance are pending.",
       updatedAt: now,
     });
+    if (updatedIntent.renterWallet) {
+      await getNotificationsRepository().save(
+        newNotification({
+          wallet: updatedIntent.renterWallet,
+          kind: "rental_returned",
+          title: "Return confirmed",
+          body: `${updatedIntent.itemName} return was recorded. Estimated refund: ${renterRefund} ${updatedIntent.currency}.`,
+        })
+      );
+    }
+    await getNotificationsRepository().save(
+      newNotification({
+        wallet: updatedIntent.ownerWallet,
+        kind: "rental_returned",
+        title: "Card rental settled",
+        body: `${updatedIntent.itemName} return ledger is recorded. Host payout: ${ownerPayout} ${updatedIntent.currency}.`,
+      })
+    );
 
     return NextResponse.json({
       intent: updatedIntent,
