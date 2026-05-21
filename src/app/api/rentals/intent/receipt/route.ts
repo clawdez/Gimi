@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Connection, PublicKey } from "@solana/web3.js";
 import { getRentalIntentsRepository } from "@/lib/rentalIntentsRepository";
 import { getRentalReceiptsRepository } from "@/lib/rentalReceiptsRepository";
+import { getNotificationsRepository, newNotification } from "@/lib/notificationsRepository";
 import { MEMO_PROGRAM_ID, SOLANA_RPC_URL, assertConfirmedSignature } from "@/lib/rentproofProgram";
 
 const SIGNATURE_PATTERN = /^[1-9A-HJ-NP-Za-km-z]{64,100}$/;
@@ -97,6 +98,26 @@ export async function POST(req: NextRequest) {
       notes: "Card-funded return has a Solana memo receipt. Provider payout/refund reconciliation remains on the payment provider rail.",
       updatedAt: now,
     });
+    const notification = {
+      kind: "receipt_issued" as const,
+      title: "Solana receipt issued",
+      body: `${updatedIntent.itemName} now has an on-chain receipt.`,
+      href: `https://explorer.solana.com/tx/${signature}?cluster=devnet`,
+    };
+    await getNotificationsRepository().save(
+      newNotification({
+        wallet: updatedIntent.ownerWallet,
+        ...notification,
+      })
+    );
+    if (updatedIntent.renterWallet) {
+      await getNotificationsRepository().save(
+        newNotification({
+          wallet: updatedIntent.renterWallet,
+          ...notification,
+        })
+      );
+    }
 
     return NextResponse.json({
       intent: updatedIntent,

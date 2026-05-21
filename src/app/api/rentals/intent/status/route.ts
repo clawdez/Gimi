@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRentalIntentsRepository } from "@/lib/rentalIntentsRepository";
+import { getNotificationsRepository, newNotification } from "@/lib/notificationsRepository";
 
 function errorResponse(message: string, status: number, extra?: Record<string, unknown>) {
   return NextResponse.json({ error: message, ...extra }, { status });
@@ -33,14 +34,25 @@ export async function POST(req: NextRequest) {
     }
     if (intent.sessionStatus === "cancelled") return errorResponse("Cancelled reservations cannot be activated", 409, { intent });
 
+    const now = new Date().toISOString();
     const updatedIntent = await repository.save({
       ...intent,
       sessionStatus: "active",
       receiptStatus: "pending_onchain",
-      activatedAt: new Date().toISOString(),
+      activatedAt: now,
       notes: "Owner marked physical handoff complete for card-funded rental.",
-      updatedAt: new Date().toISOString(),
+      updatedAt: now,
     });
+    if (updatedIntent.renterWallet) {
+      await getNotificationsRepository().save(
+        newNotification({
+          wallet: updatedIntent.renterWallet,
+          kind: "rental_handoff",
+          title: "Rental is ready",
+          body: `${updatedIntent.itemName} has been handed off. Return it to the owner pickup point when finished.`,
+        })
+      );
+    }
 
     return NextResponse.json({
       intent: updatedIntent,
