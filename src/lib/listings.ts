@@ -50,7 +50,7 @@ export interface ListingPreview extends ListingDraft {
   status: "available";
 }
 
-export type PersistedListingStatus = "available" | "rented" | "return_requested" | "buyout" | "disputed";
+export type PersistedListingStatus = "available" | "paused" | "rented" | "return_requested" | "buyout" | "disputed";
 
 export interface PersistedListing extends Omit<ListingPreview, "status"> {
   status: PersistedListingStatus;

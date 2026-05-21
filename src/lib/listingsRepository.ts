@@ -6,9 +6,11 @@ import { CanonicalItemMetadata, PersistedListing, PersistedListingStatus } from 
 export interface ListingsRepository {
   storageKind: string;
   listAvailable(): Promise<PersistedListing[]>;
+  listByOwner(ownerWallet: string, limit?: number): Promise<PersistedListing[]>;
   save(listing: PersistedListing): Promise<PersistedListing>;
   getById(id: string): Promise<PersistedListing | undefined>;
   updateStatus(id: string, status: PersistedListingStatus): Promise<PersistedListing>;
+  updateStatusForOwner(id: string, ownerWallet: string, status: PersistedListingStatus): Promise<PersistedListing>;
 }
 
 interface ListingRow {
@@ -54,6 +56,14 @@ class FileListingsRepository implements ListingsRepository {
     return listings.find((listing) => listing.id === id);
   }
 
+  async listByOwner(ownerWallet: string, limit = 20) {
+    const listings = await this.readAll();
+    return listings
+      .filter((listing) => listing.ownerWallet === ownerWallet)
+      .sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
+      .slice(0, normalizeLimit(limit));
+  }
+
   async save(listing: PersistedListing) {
     const listings = await this.readAll();
     const index = listings.findIndex((entry) => entry.id === listing.id || entry.itemPda === listing.itemPda);
@@ -75,6 +85,13 @@ class FileListingsRepository implements ListingsRepository {
     const next = [...listings.slice(0, index), listing, ...listings.slice(index + 1)];
     await this.writeAll(next);
     return listing;
+  }
+
+  async updateStatusForOwner(id: string, ownerWallet: string, status: PersistedListingStatus) {
+    const listing = await this.getById(id);
+    if (!listing) throw new Error("Listing not found");
+    if (listing.ownerWallet !== ownerWallet) throw new Error("Only the owner wallet can update this listing");
+    return this.updateStatus(id, status);
   }
 
   private async readAll() {
@@ -124,6 +141,18 @@ class SupabaseListingsRepository implements ListingsRepository {
     return data ? rowToListing(data) : undefined;
   }
 
+  async listByOwner(ownerWallet: string, limit = 20) {
+    const { data, error } = await this.client
+      .from("listings")
+      .select("*")
+      .eq("owner_wallet", ownerWallet)
+      .order("updated_at", { ascending: false })
+      .limit(normalizeLimit(limit));
+
+    if (error) throw new Error(`Supabase owner listings read failed: ${error.message}`);
+    return (data ?? []).map(rowToListing);
+  }
+
   async save(listing: PersistedListing) {
     const { data, error } = await this.client
       .from("listings")
@@ -144,6 +173,19 @@ class SupabaseListingsRepository implements ListingsRepository {
       .single();
 
     if (error) throw new Error(`Supabase listing status update failed: ${error.message}`);
+    return rowToListing(data);
+  }
+
+  async updateStatusForOwner(id: string, ownerWallet: string, status: PersistedListingStatus) {
+    const { data, error } = await this.client
+      .from("listings")
+      .update({ status, updated_at: new Date().toISOString() })
+      .eq("id", id)
+      .eq("owner_wallet", ownerWallet)
+      .select("*")
+      .single();
+
+    if (error) throw new Error(`Supabase owner listing status update failed: ${error.message}`);
     return rowToListing(data);
   }
 }
@@ -180,6 +222,11 @@ function supabaseConfig() {
 function defaultListingsFilePath() {
   if (process.env.VERCEL) return path.join("/tmp", "tably-listings.json");
   return path.join(process.cwd(), ".rentproof", "listings.json");
+}
+
+function normalizeLimit(limit: number | undefined) {
+  if (typeof limit !== "number" || !Number.isFinite(limit)) return 20;
+  return Math.min(100, Math.max(1, Math.floor(limit)));
 }
 
 function listingToRow(listing: PersistedListing): ListingRow {

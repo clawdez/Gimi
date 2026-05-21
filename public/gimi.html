@@ -1866,6 +1866,10 @@
             </div>
           </div>
           <div class="profile-pane" id="listingPane">
+            <div class="profile-section-label">Your inventory</div>
+            <div id="ownerInventoryPanel">
+              <div class="empty-profile-card">Connect your wallet to manage listed items.</div>
+            </div>
             <div class="profile-section-label">List an item</div>
             <div class="profile-status" id="listingStatus"></div>
             <form class="listing-form" id="listingForm">
@@ -2773,6 +2777,7 @@ const listingSubmit  = document.getElementById('listingSubmit');
 const activeRentalsPanel = document.getElementById('activeRentalsPanel');
 const rentalReceiptsPanel = document.getElementById('rentalReceiptsPanel');
 const lendingRentalsPanel = document.getElementById('lendingRentalsPanel');
+const ownerInventoryPanel = document.getElementById('ownerInventoryPanel');
 let connectedWallet = '';
 let connectedWalletSource = '';
 let activeSheetItem = null;
@@ -2781,6 +2786,7 @@ let selectedRentalHours = 3;
 let selectedPaymentMethod = 'card';
 let latestLendingRentals = [];
 let latestOwnerCardReservations = [];
+let latestOwnerInventory = [];
 const WALLET_SESSION_KEY = 'gimi.walletSession';
 const ACTIVE_RENTALS_CACHE_KEY = 'gimi.activeRentals';
 const PENDING_SETTLEMENT_KEY = 'gimi.pendingRentalSettlement';
@@ -3185,11 +3191,100 @@ function renderReceipts(receipts) {
   `).join('');
 }
 
+function renderOwnerInventory(listings) {
+  if (!ownerInventoryPanel) return;
+  latestOwnerInventory = listings || [];
+  if (!latestOwnerInventory.length) {
+    ownerInventoryPanel.innerHTML = '<div class="empty-profile-card">No owner listings yet. Initialize an item below to publish it into inventory.</div>';
+    return;
+  }
+  ownerInventoryPanel.innerHTML = latestOwnerInventory.map((listing) => {
+    const isAvailable = listing.status === 'available';
+    const canToggle = listing.status === 'available' || listing.status === 'paused';
+    const rate = Number(listing.ratePerHour || 0);
+    return `
+      <div class="active-rental-card owner-inventory-card" data-listing-id="${escapeHtml(listing.id || '')}">
+        <div class="active-rental-head">
+          <div class="active-rental-glyph">📦</div>
+          <div>
+            <div class="active-rental-name">${escapeHtml(listing.name || 'Listed item')}</div>
+            <div class="active-rental-sub">${escapeHtml(listing.status || 'available')} · ${escapeHtml(listing.id || '')}</div>
+          </div>
+        </div>
+        <div class="rental-detail-grid">
+          <div class="rental-detail"><span>Pickup</span><strong>${escapeHtml(listing.locationLabel || 'Owner pickup point')}</strong></div>
+          <div class="rental-detail"><span>Rate</span><strong>${escapeHtml(rate ? `$${rate}/h` : 'Pending')}</strong></div>
+          <div class="rental-detail"><span>Escrow cap</span><strong>${escapeHtml(listing.buyoutCap ? `$${listing.buyoutCap}` : 'Pending')}</strong></div>
+          <div class="rental-detail"><span>Item PDA</span><strong>${escapeHtml(shortWallet(listing.itemPda || ''))}</strong></div>
+        </div>
+        <div class="owner-action-row">
+          <button class="owner-settle-btn owner-inventory-toggle-btn" type="button" data-listing-id="${escapeHtml(listing.id || '')}" data-next-status="${isAvailable ? 'paused' : 'available'}" ${canToggle ? '' : 'disabled'}>
+            ${isAvailable ? 'Pause listing' : listing.status === 'paused' ? 'Make available' : 'Locked by rental'}
+          </button>
+        </div>
+        <div class="rental-return-note">Paused items stay in your inventory but disappear from renter search until you make them available again.</div>
+      </div>
+    `;
+  }).join('');
+}
+
+async function refreshOwnerInventory() {
+  if (!ownerInventoryPanel) return;
+  if (!connectedWallet) {
+    renderOwnerInventory([]);
+    return;
+  }
+  ownerInventoryPanel.innerHTML = '<div class="empty-profile-card">Loading your inventory...</div>';
+  try {
+    const res = await fetch(`/api/listings?ownerWallet=${encodeURIComponent(connectedWallet)}&limit=20`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data?.error || 'Could not load owner inventory');
+    renderOwnerInventory(data.listings || []);
+  } catch (error) {
+    ownerInventoryPanel.innerHTML = `<div class="empty-profile-card">${escapeHtml(error instanceof Error ? error.message : 'Could not load owner inventory')}</div>`;
+  }
+}
+
+async function updateOwnerListingStatus(listingId, nextStatus, button) {
+  if (!connectedWallet) {
+    requestPrivyAction('connect');
+    return;
+  }
+  const originalText = button?.textContent || '';
+  if (button) {
+    button.disabled = true;
+    button.textContent = nextStatus === 'paused' ? 'Pausing...' : 'Publishing...';
+  }
+  setListingStatus(nextStatus === 'paused' ? 'Pausing listing...' : 'Making listing available...', 'pending');
+  try {
+    const res = await fetch('/api/listings', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: listingId,
+        ownerWallet: connectedWallet,
+        status: nextStatus,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data?.error || 'Could not update listing');
+    setListingStatus(`${data.listing?.name || 'Listing'} is now ${data.listing?.status || nextStatus}.`, 'success');
+    await refreshOwnerInventory();
+  } catch (error) {
+    setListingStatus(error instanceof Error ? error.message : 'Could not update listing', 'error');
+    if (button) {
+      button.disabled = false;
+      button.textContent = originalText;
+    }
+  }
+}
+
 async function refreshRentalProfile() {
   if (!connectedWallet) {
     renderActiveRentals([], []);
     renderLendingRentals([], []);
     renderReceipts([]);
+    renderOwnerInventory([]);
     return;
   }
   activeRentalsPanel.innerHTML = '<div class="empty-profile-card">Loading active rentals...</div>';
@@ -3211,11 +3306,13 @@ async function refreshRentalProfile() {
     renderActiveRentals(borrowingRentals, data.cardReservations || []);
     renderLendingRentals(lendingRentals, data.ownerCardReservations || []);
     renderReceipts(data.receipts || []);
+    await refreshOwnerInventory();
   } catch (error) {
     const localRentals = activeLocalRentalsForWallet(connectedWallet);
     renderActiveRentals(localRentals, []);
     renderLendingRentals([], []);
     rentalReceiptsPanel.innerHTML = `<div class="empty-profile-card">${escapeHtml(error instanceof Error ? error.message : 'Could not load receipts')}</div>`;
+    await refreshOwnerInventory();
   }
 }
 
@@ -4367,6 +4464,17 @@ listingForm?.addEventListener('submit', async (event) => {
       listingSubmit.disabled = false;
       listingSubmit.textContent = 'Initialize item on devnet';
     }
+  }
+});
+ownerInventoryPanel?.addEventListener('click', async (event) => {
+  const button = event.target.closest('.owner-inventory-toggle-btn');
+  if (!button) return;
+  const listingId = button.dataset.listingId || '';
+  const nextStatus = button.dataset.nextStatus || '';
+  try {
+    await updateOwnerListingStatus(listingId, nextStatus, button);
+  } catch (error) {
+    setListingStatus(error instanceof Error ? error.message : 'Could not update listing', 'error');
   }
 });
 lendingRentalsPanel?.addEventListener('click', async (event) => {

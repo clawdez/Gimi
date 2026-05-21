@@ -260,6 +260,28 @@ Publishes a listing after the owner has signed and sent `initialize_item`. The s
 
 Returns published listings plus renter-ready inventory. The renter agent uses this endpoint first and falls back to seeded demo inventory when no published listing exists.
 
+Pass `ownerWallet` to load owner inventory for the profile management tab,
+including paused and rented listings:
+
+```bash
+curl -s "http://localhost:3000/api/listings?ownerWallet=OWNER_WALLET&limit=20"
+```
+
+### `PATCH /api/listings`
+
+Lets an owner pause or re-enable a listing that is not currently locked by a
+rental.
+
+```bash
+curl -s -X PATCH http://localhost:3000/api/listings \
+  -H 'content-type: application/json' \
+  -d '{"id":"item_...","ownerWallet":"OWNER_WALLET","status":"paused"}'
+```
+
+Supported owner-managed statuses are `available` and `paused`. Rented,
+return-requested, buyout, and disputed items must move through the rental
+settlement flows instead.
+
 ### `POST /api/solana-pay/start-rental`
 
 Returns a Solana Pay request payload, Gimi PDA metadata, and an unsigned serialized devnet transaction for the renter wallet to sign.
@@ -574,7 +596,7 @@ Serves the generated Anchor IDL.
 
 ## Current Boundary
 
-This repo now has a deployed devnet Anchor settlement program, a product-ready demo surface, owner listing prepare/sign/publish flow, rental start status sync, return/auto-buyout settlement sync, card-funded return ledger and Solana memo receipt issuance, durable receipt persistence, a renter/owner-visible receipt history surface, live LI.FI quote support, ElevenLabs server-tool endpoints, unsigned serialized Solana transaction generation, and wallet-side signing/sending for prepared transactions.
+This repo now has a deployed devnet Anchor settlement program, a product-ready demo surface, owner listing prepare/sign/publish flow, owner inventory pause/re-enable management, rental start status sync, return/auto-buyout settlement sync, card-funded return ledger and Solana memo receipt issuance, durable receipt persistence, a renter/owner-visible receipt history surface, live LI.FI quote support, ElevenLabs server-tool endpoints, unsigned serialized Solana transaction generation, and wallet-side signing/sending for prepared transactions.
 
 - Program id: `AVL316tYxrg8MhEeWtaxbwdShMWybzRAH1zNQWvX355K`.
 - Published listings, rental intents, rental sessions, and rental receipts use Supabase when configured. Without Supabase env vars, the app falls back to ephemeral file storage.

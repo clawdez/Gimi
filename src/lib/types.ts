@@ -10,7 +10,7 @@ export interface RentalItem {
   minimumFee: number; // USDC
   buyoutCap: number; // USDC refundable escrow / auto-buyout cap
   expectedHours: number;
-  status: "available" | "rented" | "return_requested" | "buyout" | "disputed";
+  status: "available" | "paused" | "rented" | "return_requested" | "buyout" | "disputed";
   owner: string; // wallet address
   ownerName: string;
   locationLabel: string;
