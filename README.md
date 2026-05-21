@@ -77,6 +77,17 @@ NEXT_PUBLIC_PRIVY_APP_ID=YOUR_PRIVY_APP_ID
 
 The production Vercel project must also have `NEXT_PUBLIC_PRIVY_APP_ID` configured. Without it, Gimi shows a setup screen instead of the rental shell.
 
+Use `.env.example` as the full production checklist. The app also exposes a
+secret-safe readiness endpoint:
+
+```bash
+curl -s http://localhost:3000/api/health/readiness
+```
+
+It returns which required/recommended keys are present without returning secret
+values. Required production keys are `NEXT_PUBLIC_PRIVY_APP_ID`, `SUPABASE_URL`,
+and `SUPABASE_SERVICE_ROLE_KEY`.
+
 Useful checks:
 
 ```bash
@@ -308,6 +319,18 @@ curl -s "http://localhost:3000/api/notifications?wallet=OWNER_OR_RENTER_WALLET&l
 Notifications are written when card handoff is marked active, card return
 economics are recorded, card Solana receipts are issued, and owner listing
 availability changes.
+
+### `GET /api/health/readiness`
+
+Returns production environment readiness without exposing secret values.
+
+```bash
+curl -s http://localhost:3000/api/health/readiness
+```
+
+The endpoint returns `200` when required keys are configured and `503` when a
+required key is missing. `productionReady` is stricter and also requires
+recommended integrations such as MoonPay webhook signing and ElevenLabs.
 
 ### `POST /api/solana-pay/start-rental`
 
@@ -623,7 +646,7 @@ Serves the generated Anchor IDL.
 
 ## Current Boundary
 
-This repo now has a deployed devnet Anchor settlement program, a product-ready demo surface, owner listing prepare/sign/publish flow, item photo upload pipeline, owner inventory pause/re-enable management, notification feed, rental start status sync, return/auto-buyout settlement sync, card-funded return ledger and Solana memo receipt issuance, durable receipt persistence, a renter/owner-visible receipt history surface, live LI.FI quote support, ElevenLabs server-tool endpoints, unsigned serialized Solana transaction generation, and wallet-side signing/sending for prepared transactions.
+This repo now has a deployed devnet Anchor settlement program, a product-ready demo surface, owner listing prepare/sign/publish flow, item photo upload pipeline, owner inventory pause/re-enable management, notification feed, production env readiness checks, rental start status sync, return/auto-buyout settlement sync, card-funded return ledger and Solana memo receipt issuance, durable receipt persistence, a renter/owner-visible receipt history surface, live LI.FI quote support, ElevenLabs server-tool endpoints, unsigned serialized Solana transaction generation, and wallet-side signing/sending for prepared transactions.
 
 - Program id: `AVL316tYxrg8MhEeWtaxbwdShMWybzRAH1zNQWvX355K`.
 - Published listings, rental intents, rental sessions, and rental receipts use Supabase when configured. Without Supabase env vars, the app falls back to ephemeral file storage.
