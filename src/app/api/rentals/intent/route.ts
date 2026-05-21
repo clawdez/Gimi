@@ -84,7 +84,7 @@ export async function POST(req: NextRequest) {
       rentAmount,
       depositAmount,
       platformFeeEstimate,
-      provider: isCard ? process.env.GIMI_CARD_PROVIDER ?? "provider_pending" : "solana",
+      provider: isCard ? "moonpay_commerce" : "solana",
       providerCheckoutUrl,
       rentalId: `draft_${item.id}_${crypto.randomUUID()}`,
       notes: isCard
@@ -105,7 +105,7 @@ export async function POST(req: NextRequest) {
         nextAction: isCard
           ? providerCheckoutUrl
             ? "redirect_or_embed_provider_checkout"
-            : "configure_card_provider_checkout_url"
+            : "create_moonpay_checkout"
           : "prepare_solana_start_rental_transaction",
       },
       proofModel: {

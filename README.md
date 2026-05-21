@@ -128,19 +128,26 @@ Rental intent
 
 Card users should not need crypto to reserve an item. The UI creates a
 `rental_intents` row with `payment_method: "card"`, rent, deposit, duration,
-and a provider slot. Configure one of these server env vars when a real card
-provider is ready:
+and a MoonPay provider slot. Configure MoonPay Commerce server env vars when a
+real card checkout is ready:
 
 ```bash
+MOONPAY_COMMERCE_API_URL=https://...
+MOONPAY_COMMERCE_API_KEY=...
+MOONPAY_COMMERCE_WEBHOOK_SECRET=...
+MOONPAY_COMMERCE_SUCCESS_URL=https://...
+MOONPAY_COMMERCE_CANCEL_URL=https://...
+MOONPAY_COMMERCE_WEBHOOK_URL=https://YOUR_DOMAIN/api/payments/moonpay/webhook
+
+# Optional hosted-link fallback when the API URL/key are not available:
 MOONPAY_COMMERCE_CHECKOUT_URL=https://...
-# or
-STRIPE_CHECKOUT_URL=https://...
 ```
 
-Without a provider checkout URL, the app still records the intent and shows a
-setup message instead of pretending to charge the user. A production card
-provider should send a webhook that marks the intent funded, starts or reserves
-the rental, and later writes the Solana receipt after return settlement.
+Without MoonPay API env vars or a hosted checkout URL, the app still records the
+intent and shows a setup message instead of pretending to charge the user. A
+MoonPay webhook marks the intent funded, sets escrow to provider-authorized or
+provider-captured, reserves the rental, and leaves the Solana receipt pending
+for return settlement.
 
 Solana wallet users keep the existing path: Privy opens in-page, the wallet
 signs the serialized devnet transaction, `start_rental` locks USDC into escrow,
@@ -271,9 +278,42 @@ For `paymentMethod: "card"`, the response includes the rent, deposit, provider
 slot, and whether a card checkout URL is configured. For
 `paymentMethod: "solana_wallet"`, the intent is created first and the UI then
 prepares the existing Solana `start_rental` transaction with the same rental id.
-Before returning a transaction, the route checks the item PDA, demo USDC mint,
-renter token account, and renter escrow balance. If the renter cannot pay the
-buyout-cap escrow, it returns `409` with `preflight.problems`.
+
+### `POST /api/payments/moonpay/checkout`
+
+Creates or resolves a MoonPay Commerce checkout for an existing card rental
+intent.
+
+```bash
+curl -s -X POST http://localhost:3000/api/payments/moonpay/checkout \
+  -H 'content-type: application/json' \
+  -d '{"intentId":"intent_..."}'
+```
+
+The route stores `provider_payment_id` on the intent and returns a checkout URL
+when MoonPay provides one. If only `MOONPAY_COMMERCE_CHECKOUT_URL` is configured,
+Gimi appends the rental intent id and amount as query parameters.
+
+### `POST /api/payments/moonpay/webhook`
+
+Receives MoonPay payment updates and syncs `rental_intents`:
+
+```text
+paid/completed/succeeded -> payment_status=confirmed, escrow_status=provider_captured, session_status=reserved
+authorized -> payment_status=confirmed, escrow_status=provider_authorized, session_status=reserved
+failed/canceled/expired -> payment_status=failed/expired, escrow_status=not_funded, session_status=cancelled
+```
+
+When `MOONPAY_COMMERCE_WEBHOOK_SECRET` is set, the webhook accepts either a
+Bearer secret, MoonPay's timestamped HMAC-SHA256 header
+(`Moonpay-Signature-V2` / `X-Moonpay-Signature-V2` with `t=...,s=...`), or an
+`X-Signature` HMAC header. The webhook never moves funds; it only syncs provider
+state into the rental intent ledger.
+
+For Solana wallet checkout, before returning a transaction, the route checks
+the item PDA, demo USDC mint, renter token account, and renter escrow balance.
+If the renter cannot pay the buyout-cap escrow, it returns `409` with
+`preflight.problems`.
 
 This endpoint prepares the funding transaction only. It locks the buyout cap
 into escrow and starts the metered session; it does not pay the host every hour.
@@ -478,6 +518,6 @@ This repo now has a deployed devnet Anchor settlement program, a product-ready d
 
 1. Run the Supabase migrations and add `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` to Vercel.
 2. Add `NEXT_PUBLIC_PRIVY_APP_ID` to Vercel production and local `.env.local`.
-3. Configure a real card provider checkout/webhook (`MOONPAY_COMMERCE_CHECKOUT_URL` or `STRIPE_CHECKOUT_URL`) before enabling non-crypto payments in production.
+3. Configure MoonPay Commerce checkout/webhook env vars before enabling non-crypto payments in production.
 4. Run the devnet E2E with funded owner/renter wallets; it now covers owner listing, start rental, return settlement, auto-buyout settlement, listing status sync, and receipt persistence.
 5. Register `/api/elevenlabs/tools` in the ElevenLabs agent console.
