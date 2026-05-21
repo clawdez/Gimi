@@ -2785,6 +2785,7 @@ const WALLET_SESSION_KEY = 'gimi.walletSession';
 const ACTIVE_RENTALS_CACHE_KEY = 'gimi.activeRentals';
 const PENDING_SETTLEMENT_KEY = 'gimi.pendingRentalSettlement';
 const PENDING_LISTING_KEY = 'gimi.pendingListingPublish';
+const PENDING_CARD_RECEIPT_KEY = 'gimi.pendingCardReceipt';
 
 const ITEM_TO_RENTPROOF = {
   'golf-set': 'keyboard_15',
@@ -3088,7 +3089,8 @@ function renderOwnerCardReservations(reservations) {
       (reservation.escrowStatus === 'provider_authorized' || reservation.escrowStatus === 'provider_captured');
     const isActive = reservation.sessionStatus === 'active';
     const isReturned = reservation.sessionStatus === 'returned';
-    const status = isReturned ? 'Returned · provider settlement pending' : isActive ? 'Card rental active' : funded ? 'Card funded · handoff pending' : 'Waiting for card payment';
+    const receiptIssued = reservation.receiptStatus === 'issued';
+    const status = receiptIssued ? 'Returned · Solana receipt issued' : isReturned ? 'Returned · receipt pending' : isActive ? 'Card rental active' : funded ? 'Card funded · handoff pending' : 'Waiting for card payment';
     return `
       <div class="active-rental-card" data-intent-id="${escapeHtml(reservation.id || '')}">
         <div class="active-rental-head">
@@ -3115,8 +3117,11 @@ function renderOwnerCardReservations(reservations) {
           <button class="owner-settle-btn is-secondary card-return-btn" type="button" data-intent-id="${escapeHtml(reservation.id || '')}" ${isActive ? '' : 'disabled'}>
             ${isReturned ? 'Return settled' : 'Confirm card return'}
           </button>
+          <button class="owner-settle-btn card-receipt-btn" type="button" data-intent-id="${escapeHtml(reservation.id || '')}" ${isReturned && !receiptIssued ? '' : 'disabled'}>
+            ${receiptIssued ? 'Receipt issued' : 'Issue Solana receipt'}
+          </button>
         </div>
-        <div class="rental-return-note">This is a card-funded reservation. Mark handed off after pickup; confirm return records provider refund and host payout amounts. Solana receipt issuance is next.</div>
+        <div class="rental-return-note">This is a card-funded reservation. Mark handed off after pickup, confirm return to record payout/refund amounts, then issue a Solana receipt from the owner wallet.</div>
       </div>
     `;
   }).join('');
@@ -3381,7 +3386,37 @@ function clearPendingListingPublish() {
   } catch (_) {}
 }
 
+function stashPreparedCardReceipt(prepared) {
+  try {
+    window.localStorage.setItem(
+      PENDING_CARD_RECEIPT_KEY,
+      JSON.stringify({
+        intentId: prepared.intentId,
+        rentalId: prepared.rentalId,
+        ownerWallet: prepared.ownerWallet,
+        savedAt: Date.now(),
+      })
+    );
+  } catch (_) {}
+}
+
+function readPendingCardReceipt() {
+  try {
+    const raw = window.localStorage.getItem(PENDING_CARD_RECEIPT_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function clearPendingCardReceipt() {
+  try {
+    window.localStorage.removeItem(PENDING_CARD_RECEIPT_KEY);
+  } catch (_) {}
+}
+
 function pendingWalletAction() {
+  if (readPendingCardReceipt()) return 'card receipt';
   if (readPendingSettlement()) return 'owner settlement';
   if (readPendingListingPublish()) return 'item listing';
   if (readPendingRentalStart()) return 'rental checkout';
@@ -3521,6 +3556,13 @@ window.addEventListener('message', async (event) => {
       await refreshRentalProfile();
       return;
     }
+    if (readPendingCardReceipt()) {
+      clearPendingCardReceipt();
+      try { window.localStorage.removeItem('gimi.pendingPrivyTransaction'); } catch (_) {}
+      setLendingStatus(message, 'error');
+      await refreshRentalProfile();
+      return;
+    }
     if (readPendingRentalStart()) {
       clearPendingRentalStart();
       try { window.localStorage.removeItem('gimi.pendingPrivyTransaction'); } catch (_) {}
@@ -3539,6 +3581,10 @@ window.addEventListener('message', async (event) => {
     }
     if (readPendingSettlement()) {
       await completePrivySettlementSignature(signature);
+      return;
+    }
+    if (readPendingCardReceipt()) {
+      await completePrivyCardReceiptSignature(signature);
       return;
     }
     if (readPendingListingPublish()) {
@@ -3963,6 +4009,114 @@ async function confirmCardReservationReturn(reservation, button) {
   }
 }
 
+async function prepareCardReceipt(reservation) {
+  const res = await fetch('/api/solana-pay/card-receipt', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      intentId: reservation.id,
+      ownerWallet: reservation.ownerWallet || connectedWallet,
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || 'Could not prepare card receipt transaction');
+  return {
+    intentId: reservation.id,
+    rentalId: data.rentalId || reservation.rentalId || reservation.id,
+    ownerWallet: reservation.ownerWallet || connectedWallet,
+    transaction: data.transaction,
+    transactionMetadata: data.transactionMetadata || {},
+  };
+}
+
+async function recordCardReceipt(prepared, signature) {
+  const res = await fetch('/api/rentals/intent/receipt', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      intentId: prepared.intentId,
+      ownerWallet: prepared.ownerWallet || connectedWallet,
+      receiptSignature: signature,
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || 'Could not sync card receipt');
+  return data;
+}
+
+async function issueCardReservationReceipt(reservation, button) {
+  assertNoPendingWalletAction('card receipt');
+  if (!connectedWallet) {
+    requestPrivyAction('connect');
+    return;
+  }
+  if (!reservation?.id) throw new Error('Card reservation is missing an intent id');
+  if (reservation.ownerWallet && reservation.ownerWallet !== connectedWallet) {
+    throw new Error(`Connect the owner wallet ${shortWallet(reservation.ownerWallet)} to issue this receipt`);
+  }
+  if (reservation.sessionStatus !== 'returned') {
+    throw new Error('Confirm card return before issuing a Solana receipt');
+  }
+
+  const originalText = button?.textContent || '';
+  if (button) {
+    button.disabled = true;
+    button.textContent = 'Preparing receipt...';
+  }
+  setLendingStatus('Preparing owner-signed Solana receipt...', 'pending');
+
+  try {
+    const prepared = await prepareCardReceipt(reservation);
+    stashPreparedCardReceipt(prepared);
+    try {
+      window.localStorage.setItem(
+        'gimi.pendingPrivyTransaction',
+        JSON.stringify({
+          transactionBase64: prepared.transaction,
+          cluster: prepared.transactionMetadata?.cluster || 'solana:devnet',
+          requiredSigner: prepared.transactionMetadata?.requiredSigner || prepared.ownerWallet || connectedWallet,
+          action: 'card-receipt',
+          intentId: prepared.intentId,
+          rentalId: prepared.rentalId,
+          createdAt: Date.now(),
+        })
+      );
+    } catch (_) {}
+    setLendingStatus(`Wallet approval required · signer ${shortWallet(prepared.ownerWallet || connectedWallet)}`, 'pending');
+    requestPrivyAction('send-transaction');
+  } catch (error) {
+    clearPendingCardReceipt();
+    try { window.localStorage.removeItem('gimi.pendingPrivyTransaction'); } catch (_) {}
+    setLendingStatus(error instanceof Error ? error.message : 'Could not prepare Solana receipt', 'error');
+    if (button) {
+      button.disabled = false;
+      button.textContent = originalText;
+    }
+  }
+}
+
+async function completePrivyCardReceiptSignature(signature) {
+  const pending = readPendingCardReceipt();
+  if (!pending) return false;
+
+  setProfileTab('lending');
+  setLendingStatus(`Tx ${shortWallet(signature)} sent. Syncing card receipt...`, 'pending');
+  try {
+    await recordCardReceipt(pending, signature);
+    clearPendingCardReceipt();
+    try { window.localStorage.removeItem('gimi.pendingPrivyTransaction'); } catch (_) {}
+    setLendingStatus('Solana receipt issued. It now appears in renter and owner history.', 'success');
+    await refreshRentalProfile();
+    return true;
+  } catch (error) {
+    clearPendingCardReceipt();
+    try { window.localStorage.removeItem('gimi.pendingPrivyTransaction'); } catch (_) {}
+    setLendingStatus(error instanceof Error ? error.message : 'Card receipt sync failed', 'error');
+    await refreshRentalProfile();
+    return true;
+  }
+}
+
 async function completePrivyRentalSignature(signature) {
   const pending = readPendingRentalStart();
   if (!pending) {
@@ -4216,6 +4370,17 @@ listingForm?.addEventListener('submit', async (event) => {
   }
 });
 lendingRentalsPanel?.addEventListener('click', async (event) => {
+  const receiptButton = event.target.closest('.card-receipt-btn');
+  if (receiptButton) {
+    const intentId = receiptButton.dataset.intentId || '';
+    const reservation = latestOwnerCardReservations.find((entry) => entry.id === intentId);
+    try {
+      await issueCardReservationReceipt(reservation, receiptButton);
+    } catch (error) {
+      setLendingStatus(error instanceof Error ? error.message : 'Card receipt issuance failed', 'error');
+    }
+    return;
+  }
   const returnButton = event.target.closest('.card-return-btn');
   if (returnButton) {
     const intentId = returnButton.dataset.intentId || '';

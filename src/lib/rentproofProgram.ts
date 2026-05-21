@@ -22,6 +22,7 @@ export const DEMO_OWNER_WALLET = new PublicKey("7Fmr5t2h2SZ55n4w3dkgWTjaXRafDnBL
 export const DEMO_RENTER_WALLET = new PublicKey("5pNLovuXAbyKM8UGDKZg9Qqe85Sqt1kMPNaippombvwC");
 export const DEMO_FEE_AUTHORITY = new PublicKey("AWesFzR3x97q5QWk6MBxLU8kRGZcuobtKuoABtMiHWH1");
 export const DEMO_USDC_MINT = new PublicKey("FGzrpZ3DnvoeQj2au9g4cMoawrvoyRdgn51yXDtHqQzp");
+export const MEMO_PROGRAM_ID = new PublicKey("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
 
 export const PLATFORM_FEE_BPS = 500;
 export const USDC_DECIMALS = 6;
@@ -696,6 +697,37 @@ export async function buildSettleRentalTransaction(input: {
     transactionBase64: transaction
       .serialize({ requireAllSignatures: false, verifySignatures: false })
       .toString("base64"),
+    blockhash,
+    lastValidBlockHeight,
+    cluster: SOLANA_CLUSTER,
+    rpcUrl: SOLANA_RPC_URL,
+  };
+}
+
+export async function buildMemoReceiptTransaction(input: {
+  ownerWallet: string | PublicKey;
+  receiptMemo: string;
+}) {
+  const owner = publicKeyFromInput(input.ownerWallet, "ownerWallet");
+  const connection = new Connection(SOLANA_RPC_URL, "confirmed");
+  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+  const instruction = new TransactionInstruction({
+    programId: MEMO_PROGRAM_ID,
+    keys: [{ pubkey: owner, isSigner: true, isWritable: false }],
+    data: Buffer.from(input.receiptMemo, "utf8"),
+  });
+  const transaction = new Transaction({
+    feePayer: owner,
+    recentBlockhash: blockhash,
+  }).add(instruction);
+
+  return {
+    transactionBase64: transaction
+      .serialize({ requireAllSignatures: false, verifySignatures: false })
+      .toString("base64"),
+    requiredSigner: owner.toBase58(),
+    feePayer: owner.toBase58(),
+    memoProgram: MEMO_PROGRAM_ID.toBase58(),
     blockhash,
     lastValidBlockHeight,
     cluster: SOLANA_CLUSTER,

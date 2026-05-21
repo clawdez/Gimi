@@ -37,6 +37,17 @@ function normalizeUsdcAmount(rawAmount: string) {
   };
 }
 
+function normalizeReceiptAmount(rawAmount: string, paymentMint: string) {
+  const amount = normalizeUsdcAmount(rawAmount);
+  if (paymentMint === "USD_CARD") {
+    return {
+      ...amount,
+      symbol: "USD",
+    };
+  }
+  return amount;
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const wallet = searchParams.get("wallet")?.trim() ?? "";
@@ -132,6 +143,9 @@ async function enrichIntent(intent: PersistedRentalIntent) {
     escrowStatus: intent.escrowStatus,
     sessionStatus: intent.sessionStatus,
     receiptStatus: intent.receiptStatus,
+    receiptSignature: intent.receiptSignature,
+    receiptExplorerUrl: intent.receiptSignature ? explorerUrl(intent.receiptSignature) : undefined,
+    receiptIssuedAt: intent.receiptIssuedAt,
     settlementStatus: intent.settlementStatus,
     provider: intent.provider,
     providerPaymentId: intent.providerPaymentId,
@@ -226,10 +240,10 @@ async function enrichReceipt(receipt: PersistedRentalReceipt) {
     ownerPayout: receipt.ownerPayout,
     renterRefund: receipt.renterRefund,
     amounts: {
-      grossFee: normalizeUsdcAmount(receipt.grossFee),
-      platformFee: normalizeUsdcAmount(receipt.platformFee),
-      ownerPayout: normalizeUsdcAmount(receipt.ownerPayout),
-      renterRefund: normalizeUsdcAmount(receipt.renterRefund),
+      grossFee: normalizeReceiptAmount(receipt.grossFee, receipt.paymentMint),
+      platformFee: normalizeReceiptAmount(receipt.platformFee, receipt.paymentMint),
+      ownerPayout: normalizeReceiptAmount(receipt.ownerPayout, receipt.paymentMint),
+      renterRefund: normalizeReceiptAmount(receipt.renterRefund, receipt.paymentMint),
     },
     ownerWallet: receipt.ownerWallet,
     renterWallet: receipt.renterWallet,

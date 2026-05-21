@@ -316,6 +316,38 @@ receipt_status=pending_onchain
 final_fee / owner_payout / platform_fee / renter_refund
 ```
 
+### `POST /api/solana-pay/card-receipt`
+
+Builds the owner-signed Solana memo transaction for a returned card-funded
+rental. This is the non-crypto payment path's receipt rail: MoonPay/card handles
+authorization and provider settlement, while Solana records the finalized rental
+outcome.
+
+```bash
+curl -s -X POST http://localhost:3000/api/solana-pay/card-receipt \
+  -H 'content-type: application/json' \
+  -d '{"intentId":"intent_...","ownerWallet":"OWNER_WALLET"}'
+```
+
+The route requires `payment_status=confirmed`, `session_status=returned`, and a
+matching owner wallet. It returns `transaction` plus `transactionMetadata` for
+Privy wallet signing.
+
+### `POST /api/rentals/intent/receipt`
+
+Syncs a signed card receipt transaction back into Gimi after the owner wallet
+sends it on devnet.
+
+```bash
+curl -s -X POST http://localhost:3000/api/rentals/intent/receipt \
+  -H 'content-type: application/json' \
+  -d '{"intentId":"intent_...","ownerWallet":"OWNER_WALLET","receiptSignature":"CONFIRMED_DEVNET_SIGNATURE"}'
+```
+
+The server verifies the devnet signature, checks that it includes the owner
+wallet and Solana Memo program, writes a durable `rental_receipts` row with
+`payment_mint=USD_CARD`, and marks the intent `receipt_status=issued`.
+
 ### `POST /api/payments/moonpay/checkout`
 
 Creates or resolves a MoonPay Commerce checkout for an existing card rental
@@ -542,7 +574,7 @@ Serves the generated Anchor IDL.
 
 ## Current Boundary
 
-This repo now has a deployed devnet Anchor settlement program, a product-ready demo surface, owner listing prepare/sign/publish flow, rental start status sync, return/auto-buyout settlement sync, durable receipt persistence, a renter/owner-visible receipt history surface, live LI.FI quote support, ElevenLabs server-tool endpoints, unsigned serialized Solana transaction generation, and wallet-side signing/sending for prepared transactions.
+This repo now has a deployed devnet Anchor settlement program, a product-ready demo surface, owner listing prepare/sign/publish flow, rental start status sync, return/auto-buyout settlement sync, card-funded return ledger and Solana memo receipt issuance, durable receipt persistence, a renter/owner-visible receipt history surface, live LI.FI quote support, ElevenLabs server-tool endpoints, unsigned serialized Solana transaction generation, and wallet-side signing/sending for prepared transactions.
 
 - Program id: `AVL316tYxrg8MhEeWtaxbwdShMWybzRAH1zNQWvX355K`.
 - Published listings, rental intents, rental sessions, and rental receipts use Supabase when configured. Without Supabase env vars, the app falls back to ephemeral file storage.
@@ -556,5 +588,5 @@ This repo now has a deployed devnet Anchor settlement program, a product-ready d
 1. Run the Supabase migrations and add `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` to Vercel.
 2. Add `NEXT_PUBLIC_PRIVY_APP_ID` to Vercel production and local `.env.local`.
 3. Configure MoonPay Commerce checkout/webhook env vars before enabling non-crypto payments in production.
-4. Run the devnet E2E with funded owner/renter wallets; it now covers owner listing, start rental, return settlement, auto-buyout settlement, listing status sync, and receipt persistence.
+4. Run the devnet E2E with funded owner/renter wallets; it now covers owner listing, start rental, return settlement, auto-buyout settlement, listing status sync, card memo receipt issuance, and receipt persistence.
 5. Register `/api/elevenlabs/tools` in the ElevenLabs agent console.
