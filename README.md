@@ -435,6 +435,24 @@ The route stores `provider_payment_id` on the intent and returns a checkout URL
 when MoonPay provides one. If only `MOONPAY_COMMERCE_CHECKOUT_URL` is configured,
 Gimi appends the rental intent id and amount as query parameters.
 
+### MoonPay checkout smoke
+
+Use this before a demo or production handoff to confirm the target app can create
+a card checkout. It creates a rental intent and checkout link, but does not
+complete payment.
+
+```bash
+SMOKE_BASE_URL=https://YOUR_VERCEL_URL npm run smoke:moonpay
+```
+
+For local testing, run the app with either real MoonPay Commerce credentials or
+`MOONPAY_COMMERCE_CHECKOUT_URL` as a hosted-link stub:
+
+```bash
+MOONPAY_COMMERCE_CHECKOUT_URL=https://commerce.moonpay.example/checkout npm run dev
+npm run smoke:moonpay
+```
+
 ### `POST /api/payments/moonpay/webhook`
 
 Receives MoonPay payment updates and syncs `rental_intents`:
@@ -646,7 +664,7 @@ Serves the generated Anchor IDL.
 
 ## Current Boundary
 
-This repo now has a deployed devnet Anchor settlement program, a product-ready demo surface, owner listing prepare/sign/publish flow, item photo upload pipeline, owner inventory pause/re-enable management, notification feed, production env readiness checks, rental start status sync, return/auto-buyout settlement sync, card-funded return ledger and Solana memo receipt issuance, durable receipt persistence, a renter/owner-visible receipt history surface, live LI.FI quote support, ElevenLabs server-tool endpoints, unsigned serialized Solana transaction generation, and wallet-side signing/sending for prepared transactions.
+This repo now has a deployed devnet Anchor settlement program, a product-ready demo surface, owner listing prepare/sign/publish flow, item photo upload pipeline, owner inventory pause/re-enable management, notification feed, production env readiness checks, MoonPay checkout smoke tooling, rental start status sync, return/auto-buyout settlement sync, card-funded return ledger and Solana memo receipt issuance, durable receipt persistence, a renter/owner-visible receipt history surface, live LI.FI quote support, ElevenLabs server-tool endpoints, unsigned serialized Solana transaction generation, and wallet-side signing/sending for prepared transactions.
 
 - Program id: `AVL316tYxrg8MhEeWtaxbwdShMWybzRAH1zNQWvX355K`.
 - Published listings, rental intents, rental sessions, and rental receipts use Supabase when configured. Without Supabase env vars, the app falls back to ephemeral file storage.
