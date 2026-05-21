@@ -1913,6 +1913,10 @@
                 <input id="listingImageUrl" name="imageUrl" type="url" value="https://images.unsplash.com/photo-1609091839311-d5365f9ff1c5?w=900&h=700&fit=crop" required />
               </div>
               <div class="listing-field">
+                <label for="listingPhotoFile">Upload photo</label>
+                <input id="listingPhotoFile" name="photoFile" type="file" accept="image/png,image/jpeg,image/webp,image/gif" />
+              </div>
+              <div class="listing-field">
                 <label for="listingPickup">Pickup</label>
                 <input id="listingPickup" name="locationLabel" value="Library desk" maxlength="140" required />
               </div>
@@ -2774,6 +2778,7 @@ const lendingStatus  = document.getElementById('lendingStatus');
 const listingStatus  = document.getElementById('listingStatus');
 const listingForm    = document.getElementById('listingForm');
 const listingSubmit  = document.getElementById('listingSubmit');
+const listingPhotoFile = document.getElementById('listingPhotoFile');
 const activeRentalsPanel = document.getElementById('activeRentalsPanel');
 const rentalReceiptsPanel = document.getElementById('rentalReceiptsPanel');
 const lendingRentalsPanel = document.getElementById('lendingRentalsPanel');
@@ -3811,6 +3816,20 @@ function listingPayloadFromForm(form) {
   };
 }
 
+async function uploadListingPhoto(file) {
+  if (!connectedWallet) throw new Error('Connect a wallet before uploading a photo');
+  const formData = new FormData();
+  formData.append('ownerWallet', connectedWallet);
+  formData.append('photo', file);
+  const res = await fetch('/api/uploads/item-photo', {
+    method: 'POST',
+    body: formData,
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || 'Could not upload photo');
+  return data.photo;
+}
+
 async function prepareListingPublish(form) {
   const payload = listingPayloadFromForm(form);
   const res = await fetch('/api/solana-pay/initialize-item', {
@@ -4353,6 +4372,20 @@ profileClose.addEventListener('click', closeProfileSheet);
 sheetBackdrop.addEventListener('click', closeOpenSheets);
 profileTabs.forEach((button) => {
   button.addEventListener('click', () => setProfileTab(button.dataset.profileTab));
+});
+listingPhotoFile?.addEventListener('change', async () => {
+  const file = listingPhotoFile.files?.[0];
+  if (!file) return;
+  try {
+    setListingStatus('Uploading item photo...', 'pending');
+    const photo = await uploadListingPhoto(file);
+    const imageUrlInput = document.getElementById('listingImageUrl');
+    if (imageUrlInput) imageUrlInput.value = photo.imageUrl;
+    setListingStatus('Photo uploaded. The image URL is ready for item initialization.', 'success');
+  } catch (error) {
+    setListingStatus(error instanceof Error ? error.message : 'Photo upload failed', 'error');
+    listingPhotoFile.value = '';
+  }
 });
 navWallet?.addEventListener('click', () => {
   if (connectedWallet) {

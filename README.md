@@ -282,6 +282,21 @@ Supported owner-managed statuses are `available` and `paused`. Rented,
 return-requested, buyout, and disputed items must move through the rental
 settlement flows instead.
 
+### `POST /api/uploads/item-photo`
+
+Uploads an owner item photo and returns an `imageUrl` that can be used in the
+listing initialization form.
+
+```bash
+curl -s -X POST http://localhost:3000/api/uploads/item-photo \
+  -F ownerWallet=OWNER_WALLET \
+  -F photo=@/path/to/item-photo.png
+```
+
+Local development stores files under `.rentproof/item-photos`; Vercel preview
+uses `/tmp`, so production should replace this adapter with durable object
+storage such as Supabase Storage.
+
 ### `POST /api/solana-pay/start-rental`
 
 Returns a Solana Pay request payload, Gimi PDA metadata, and an unsigned serialized devnet transaction for the renter wallet to sign.
@@ -596,7 +611,7 @@ Serves the generated Anchor IDL.
 
 ## Current Boundary
 
-This repo now has a deployed devnet Anchor settlement program, a product-ready demo surface, owner listing prepare/sign/publish flow, owner inventory pause/re-enable management, rental start status sync, return/auto-buyout settlement sync, card-funded return ledger and Solana memo receipt issuance, durable receipt persistence, a renter/owner-visible receipt history surface, live LI.FI quote support, ElevenLabs server-tool endpoints, unsigned serialized Solana transaction generation, and wallet-side signing/sending for prepared transactions.
+This repo now has a deployed devnet Anchor settlement program, a product-ready demo surface, owner listing prepare/sign/publish flow, item photo upload pipeline, owner inventory pause/re-enable management, rental start status sync, return/auto-buyout settlement sync, card-funded return ledger and Solana memo receipt issuance, durable receipt persistence, a renter/owner-visible receipt history surface, live LI.FI quote support, ElevenLabs server-tool endpoints, unsigned serialized Solana transaction generation, and wallet-side signing/sending for prepared transactions.
 
 - Program id: `AVL316tYxrg8MhEeWtaxbwdShMWybzRAH1zNQWvX355K`.
 - Published listings, rental intents, rental sessions, and rental receipts use Supabase when configured. Without Supabase env vars, the app falls back to ephemeral file storage.
