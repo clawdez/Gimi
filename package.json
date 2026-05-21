@@ -10,7 +10,8 @@
     "e2e:devnet": "node scripts/e2e-owner-listing-rental-devnet.mjs",
     "start": "node scripts/run-next-clean.cjs start",
     "lint": "eslint",
-    "test:anchor": "NO_DNA=1 anchor build && cargo test -p rental_session"
+    "test:anchor": "NO_DNA=1 anchor build && cargo test -p rental_session",
+    "smoke:moonpay": "node scripts/smoke-moonpay-commerce.mjs"
   },
   "dependencies": {
     "@privy-io/react-auth": "^3.24.0",
