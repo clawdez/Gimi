@@ -37,6 +37,7 @@ export async function POST(req: NextRequest) {
       ...intent,
       sessionStatus: "active",
       receiptStatus: "pending_onchain",
+      activatedAt: new Date().toISOString(),
       notes: "Owner marked physical handoff complete for card-funded rental.",
       updatedAt: new Date().toISOString(),
     });
