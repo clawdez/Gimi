@@ -296,6 +296,26 @@ the card reservation `session_status=active` and keeps
 `receipt_status=pending_onchain` until the return-settlement flow issues the
 receipt.
 
+### `POST /api/rentals/intent/settle`
+
+Records return settlement economics for an active card-funded rental intent.
+
+```bash
+curl -s -X POST http://localhost:3000/api/rentals/intent/settle \
+  -H 'content-type: application/json' \
+  -d '{"intentId":"intent_...","ownerWallet":"OWNER_WALLET","action":"confirm_card_return"}'
+```
+
+This route does not call MoonPay payout/refund APIs yet. It records the ledger
+state Gimi needs for the provider settlement and later Solana receipt:
+
+```text
+session_status=returned
+settlement_status=pending_provider
+receipt_status=pending_onchain
+final_fee / owner_payout / platform_fee / renter_refund
+```
+
 ### `POST /api/payments/moonpay/checkout`
 
 Creates or resolves a MoonPay Commerce checkout for an existing card rental

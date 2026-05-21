@@ -6,8 +6,9 @@ import { createClient, SupabaseClient } from "@supabase/supabase-js";
 export type RentalIntentPaymentMethod = "card" | "solana_wallet";
 export type RentalIntentPaymentStatus = "created" | "requires_action" | "confirmed" | "failed" | "expired";
 export type RentalIntentEscrowStatus = "not_funded" | "provider_authorized" | "provider_captured" | "onchain_locked";
-export type RentalIntentSessionStatus = "intent" | "reserved" | "active" | "cancelled";
+export type RentalIntentSessionStatus = "intent" | "reserved" | "active" | "returned" | "cancelled";
 export type RentalIntentReceiptStatus = "none" | "pending_onchain" | "issued";
+export type RentalIntentSettlementStatus = "none" | "pending_provider" | "settled" | "failed";
 
 export interface PersistedRentalIntent {
   id: string;
@@ -30,6 +31,13 @@ export interface PersistedRentalIntent {
   providerCheckoutUrl?: string;
   providerPaymentId?: string;
   rentalId?: string;
+  activatedAt?: string;
+  returnedAt?: string;
+  finalFee?: number;
+  ownerPayout?: number;
+  platformFee?: number;
+  renterRefund?: number;
+  settlementStatus?: RentalIntentSettlementStatus;
   notes?: string;
   expiresAt: string;
   createdAt: string;
@@ -66,6 +74,13 @@ interface RentalIntentRow {
   provider_checkout_url?: string | null;
   provider_payment_id?: string | null;
   rental_id?: string | null;
+  activated_at?: string | null;
+  returned_at?: string | null;
+  final_fee?: number | string;
+  owner_payout?: number | string;
+  platform_fee?: number | string;
+  renter_refund?: number | string;
+  settlement_status?: RentalIntentSettlementStatus | null;
   notes?: string | null;
   expires_at: string;
   created_at: string;
@@ -254,6 +269,13 @@ function rentalIntentToRow(intent: PersistedRentalIntent): RentalIntentRow {
     provider_checkout_url: intent.providerCheckoutUrl ?? null,
     provider_payment_id: intent.providerPaymentId ?? null,
     rental_id: intent.rentalId ?? null,
+    activated_at: intent.activatedAt ?? null,
+    returned_at: intent.returnedAt ?? null,
+    final_fee: intent.finalFee ?? 0,
+    owner_payout: intent.ownerPayout ?? 0,
+    platform_fee: intent.platformFee ?? 0,
+    renter_refund: intent.renterRefund ?? 0,
+    settlement_status: intent.settlementStatus ?? "none",
     notes: intent.notes ?? null,
     expires_at: intent.expiresAt,
     created_at: intent.createdAt,
@@ -283,6 +305,13 @@ function rowToRentalIntent(row: RentalIntentRow): PersistedRentalIntent {
     providerCheckoutUrl: row.provider_checkout_url ?? undefined,
     providerPaymentId: row.provider_payment_id ?? undefined,
     rentalId: row.rental_id ?? undefined,
+    activatedAt: row.activated_at ?? undefined,
+    returnedAt: row.returned_at ?? undefined,
+    finalFee: Number(row.final_fee ?? 0),
+    ownerPayout: Number(row.owner_payout ?? 0),
+    platformFee: Number(row.platform_fee ?? 0),
+    renterRefund: Number(row.renter_refund ?? 0),
+    settlementStatus: row.settlement_status ?? "none",
     notes: row.notes ?? undefined,
     expiresAt: row.expires_at,
     createdAt: row.created_at,
