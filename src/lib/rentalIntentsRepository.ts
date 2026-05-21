@@ -40,6 +40,7 @@ export interface RentalIntentsRepository {
   storageKind: string;
   save(intent: PersistedRentalIntent): Promise<PersistedRentalIntent>;
   getById(id: string): Promise<PersistedRentalIntent | undefined>;
+  getByProviderPaymentId(providerPaymentId: string): Promise<PersistedRentalIntent | undefined>;
   listByRenterWallet(wallet: string, limit?: number): Promise<PersistedRentalIntent[]>;
 }
 
@@ -78,6 +79,11 @@ class FileRentalIntentsRepository implements RentalIntentsRepository {
   async getById(id: string) {
     const intents = await this.readAll();
     return intents.find((intent) => intent.id === id);
+  }
+
+  async getByProviderPaymentId(providerPaymentId: string) {
+    const intents = await this.readAll();
+    return intents.find((intent) => intent.providerPaymentId === providerPaymentId);
   }
 
   async listByRenterWallet(wallet: string, limit = 20) {
@@ -124,6 +130,17 @@ class SupabaseRentalIntentsRepository implements RentalIntentsRepository {
   async getById(id: string) {
     const { data, error } = await this.client.from("rental_intents").select("*").eq("id", id).maybeSingle();
     if (error) throw new Error(`Supabase rental intent lookup failed: ${error.message}`);
+    return data ? rowToRentalIntent(data) : undefined;
+  }
+
+  async getByProviderPaymentId(providerPaymentId: string) {
+    const { data, error } = await this.client
+      .from("rental_intents")
+      .select("*")
+      .eq("provider_payment_id", providerPaymentId)
+      .maybeSingle();
+
+    if (error) throw new Error(`Supabase rental intent provider lookup failed: ${error.message}`);
     return data ? rowToRentalIntent(data) : undefined;
   }
 

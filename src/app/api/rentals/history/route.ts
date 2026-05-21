@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRentableItem } from "@/lib/rentableItems";
+import { getRentalIntentsRepository, PersistedRentalIntent } from "@/lib/rentalIntentsRepository";
 import { getRentalReceiptsRepository, PersistedRentalReceipt } from "@/lib/rentalReceiptsRepository";
 import { getRentalSessionsRepository, PersistedRentalSession } from "@/lib/rentalSessionsRepository";
 import { USDC_DECIMALS } from "@/lib/rentproofProgram";
@@ -56,7 +57,9 @@ export async function GET(req: NextRequest) {
   try {
     const repository = getRentalReceiptsRepository();
     const sessionsRepository = getRentalSessionsRepository();
+    const intentsRepository = getRentalIntentsRepository();
     const activeSessions = wallet ? await sessionsRepository.listByWallet(wallet, { status: "active", limit }) : [];
+    const paymentIntents = wallet ? await intentsRepository.listByRenterWallet(wallet, limit) : [];
     const receipts = await repository.listRecent({
       wallet: wallet || undefined,
       rentalId: rentalId || undefined,
@@ -64,13 +67,21 @@ export async function GET(req: NextRequest) {
     });
     const records = await Promise.all(receipts.map(enrichReceipt));
     const activeRentals = await Promise.all(activeSessions.map(enrichSession));
+    const cardReservations = await Promise.all(
+      paymentIntents
+        .filter((intent) => intent.paymentMethod === "card" && intent.sessionStatus !== "cancelled")
+        .map(enrichIntent)
+    );
 
     return NextResponse.json({
       activeRentals,
+      cardReservations,
       receipts: records,
       activeCount: activeRentals.length,
+      cardReservationCount: cardReservations.length,
       count: records.length,
       storage: {
+        intents: intentsRepository.storageKind,
         sessions: sessionsRepository.storageKind,
         receipts: repository.storageKind,
       },
@@ -82,6 +93,54 @@ export async function GET(req: NextRequest) {
   } catch (error) {
     return errorResponse(error instanceof Error ? error.message : "Unable to load rental history", 500);
   }
+}
+
+async function enrichIntent(intent: PersistedRentalIntent) {
+  const item = await getRentableItem(intent.itemId);
+
+  return {
+    id: intent.id,
+    rentalId: intent.rentalId,
+    itemId: intent.itemId,
+    item: item
+      ? {
+          id: item.id,
+          name: item.name,
+          imageUrl: item.imageUrl,
+          category: item.category,
+          locationLabel: item.locationLabel,
+          ownerName: item.ownerName,
+          ownerScore: item.ownerScore,
+          ratePerHour: item.ratePerHour,
+          minimumFee: item.minimumFee,
+          buyoutCap: item.buyoutCap,
+        }
+      : {
+          id: intent.itemId,
+          name: intent.itemName,
+        },
+    paymentMethod: intent.paymentMethod,
+    paymentStatus: intent.paymentStatus,
+    escrowStatus: intent.escrowStatus,
+    sessionStatus: intent.sessionStatus,
+    receiptStatus: intent.receiptStatus,
+    provider: intent.provider,
+    providerPaymentId: intent.providerPaymentId,
+    providerCheckoutUrl: intent.providerCheckoutUrl,
+    durationHours: intent.durationHours,
+    renterWallet: intent.renterWallet,
+    ownerWallet: intent.ownerWallet,
+    ownerWalletShort: shortWallet(intent.ownerWallet),
+    amounts: {
+      rent: { uiAmount: String(intent.rentAmount), symbol: intent.currency },
+      deposit: { uiAmount: String(intent.depositAmount), symbol: intent.currency },
+      platformFeeEstimate: { uiAmount: String(intent.platformFeeEstimate), symbol: intent.currency },
+      total: { uiAmount: String(intent.rentAmount + intent.depositAmount + intent.platformFeeEstimate), symbol: intent.currency },
+    },
+    expiresAt: intent.expiresAt,
+    createdAt: intent.createdAt,
+    updatedAt: intent.updatedAt,
+  };
 }
 
 async function enrichSession(session: PersistedRentalSession) {

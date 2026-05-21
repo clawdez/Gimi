@@ -2990,13 +2990,52 @@ function activeLocalRentalsForWallet(wallet, settledRentalIds = new Set()) {
   return freshRentals.filter((rental) => rental.renterWallet === wallet);
 }
 
-function renderActiveRentals(rentals) {
+function renderCardReservations(reservations) {
+  return reservations.map((reservation) => {
+    const item = reservation.item || {};
+    const glyph = glyphForItemId(reservation.itemId);
+    const pickup = item.locationLabel || 'Owner pickup point';
+    const status = reservation.paymentStatus === 'confirmed'
+      ? 'Card funded · reserved'
+      : reservation.paymentStatus === 'requires_action'
+        ? 'Waiting for card checkout'
+        : `Card ${reservation.paymentStatus || 'intent'}`;
+    const escrow = reservation.escrowStatus === 'provider_captured'
+      ? 'Captured by provider'
+      : reservation.escrowStatus === 'provider_authorized'
+        ? 'Authorized by provider'
+        : 'Not funded yet';
+    const total = reservation.amounts?.total
+      ? `${reservation.amounts.total.uiAmount} ${reservation.amounts.total.symbol || 'USD'}`
+      : 'Pending';
+    return `
+      <div class="active-rental-card">
+        <div class="active-rental-head">
+          <div class="active-rental-glyph">${escapeHtml(glyph)}</div>
+          <div>
+            <div class="active-rental-name">${escapeHtml(item.name || reservation.itemName || 'Rental item')}</div>
+            <div class="active-rental-sub">${escapeHtml(status)} · ${escapeHtml(reservation.id || 'intent')}</div>
+          </div>
+        </div>
+        <div class="rental-detail-grid">
+          <div class="rental-detail"><span>Pickup</span><strong>${escapeHtml(pickup)}</strong></div>
+          <div class="rental-detail"><span>Payment</span><strong>${escapeHtml(escrow)}</strong></div>
+          <div class="rental-detail"><span>Duration</span><strong>${escapeHtml(formatDuration(reservation.durationHours || selectedRentalHours))}</strong></div>
+          <div class="rental-detail"><span>Total hold</span><strong>${escapeHtml(total)}</strong></div>
+        </div>
+        <div class="rental-escrow-note">Card-funded rentals reserve the item through MoonPay Commerce. After return settlement, Gimi writes the rental receipt on Solana.</div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderActiveRentals(rentals, cardReservations = []) {
   if (!activeRentalsPanel) return;
-  if (!rentals.length) {
+  if (!rentals.length && !cardReservations.length) {
     activeRentalsPanel.innerHTML = '<div class="empty-profile-card">No active rentals yet. Ask Gimi for something nearby and start checkout.</div>';
     return;
   }
-  activeRentalsPanel.innerHTML = rentals.map((rental) => {
+  const rentalCards = rentals.map((rental) => {
     const item = rental.item || {};
     const glyph = rental.glyph || glyphForItemId(rental.itemId);
     const pickup = item.locationLabel || rental.pickupLocation || 'Owner pickup point';
@@ -3026,6 +3065,7 @@ function renderActiveRentals(rentals) {
       </div>
     `;
   }).join('');
+  activeRentalsPanel.innerHTML = `${rentalCards}${renderCardReservations(cardReservations)}`;
 }
 
 function renderLendingRentals(rentals) {
@@ -3086,7 +3126,7 @@ function renderReceipts(receipts) {
 
 async function refreshRentalProfile() {
   if (!connectedWallet) {
-    renderActiveRentals([]);
+    renderActiveRentals([], []);
     renderLendingRentals([]);
     renderReceipts([]);
     return;
@@ -3107,12 +3147,12 @@ async function refreshRentalProfile() {
       ...localRentals.filter((rental) => !remoteIds.has(rental.rentalId)),
     ];
     const lendingRentals = remoteActiveRentals.filter((rental) => rental.ownerWallet === connectedWallet);
-    renderActiveRentals(borrowingRentals);
+    renderActiveRentals(borrowingRentals, data.cardReservations || []);
     renderLendingRentals(lendingRentals);
     renderReceipts(data.receipts || []);
   } catch (error) {
     const localRentals = activeLocalRentalsForWallet(connectedWallet);
-    renderActiveRentals(localRentals);
+    renderActiveRentals(localRentals, []);
     renderLendingRentals([]);
     rentalReceiptsPanel.innerHTML = `<div class="empty-profile-card">${escapeHtml(error instanceof Error ? error.message : 'Could not load receipts')}</div>`;
   }
@@ -3501,14 +3541,23 @@ async function startCardRentalIntent(item) {
   setSheetStatus('Creating rental intent for card payment...', 'pending');
   const data = await createRentalIntent(item, 'card', connectedWallet || '');
   const intent = data.intent || {};
-  if (data.paymentRouter?.checkoutUrl) {
+  const checkoutRes = await fetch('/api/payments/moonpay/checkout', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ intentId: intent.id }),
+  });
+  const checkout = await checkoutRes.json();
+  if (!checkoutRes.ok) throw new Error(checkout?.error || 'Could not create MoonPay checkout');
+  if (checkout.checkoutUrl) {
     sheetCTA.textContent = 'Open secure checkout';
-    setSheetStatus(`Intent ${shortWallet(intent.id || '')} ready · card provider checkout opens next`, 'success');
-    window.location.href = data.paymentRouter.checkoutUrl;
+    setSheetStatus(`MoonPay checkout ready · ${shortWallet(checkout.providerPaymentId || intent.id || '')}`, 'success');
+    if (connectedWallet) await refreshRentalProfile();
+    window.location.href = checkout.checkoutUrl;
     return;
   }
-  sheetCTA.textContent = 'Card provider needed';
-  setSheetStatus('Rental intent saved. Configure MoonPay/Stripe checkout URL to accept card payments.', 'pending');
+  sheetCTA.textContent = 'MoonPay setup needed';
+  setSheetStatus('Rental intent saved. Configure MoonPay Commerce checkout before accepting card payments.', 'pending');
+  if (connectedWallet) await refreshRentalProfile();
 }
 
 async function recordRentalStart(prepared, signature) {
