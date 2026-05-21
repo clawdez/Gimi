@@ -12,12 +12,12 @@ The current demo opens at `/` and renders the Gimi one-page agent shell from `pu
 User asks for an item
 -> Agent searches community inventory
 -> Agent selects the best available item
--> Privy login creates/loads the renter Solana wallet
--> LI.FI quote routes Base USDC into Solana USDC when real wallet addresses are supplied
--> Solana Pay endpoint returns an unsigned serialized devnet transaction
--> Wallet signs and sends the prepared transaction from the chat UI
--> Gimi Anchor program locks buyout-cap escrow and creates rental session state
--> Renter receives a program-owned rental token PDA
+-> Gimi creates a rental intent with duration, rent, deposit, and proof model
+-> Renter chooses Card or Solana wallet at checkout
+-> Card path authorizes rent plus deposit with a payment provider and keeps Solana as the receipt rail
+-> Solana path asks Privy to sign/send the prepared start_rental transaction
+-> Gimi Anchor program locks buyout-cap USDC escrow and creates rental session state for wallet checkout
+-> Renter receives a program-owned rental token PDA on the Solana path
 -> Rent accrues hourly inside escrow
 -> Owner confirms physical return, or auto-buyout triggers after grace
 -> Rental token closes, accrued rent splits to host/platform, renter refund settles, receipt event is emitted
@@ -30,6 +30,7 @@ The MVP is designed for physical-world rentals where the agent helps people borr
 - Gimi one-page agent shell at `/`, rendered by `src/app/page.tsx` with `public/gimi.html` as the visual shell.
 - Central orb plus bottom chat input for natural-language rental requests.
 - Clickable nearby inventory and product checkout drawer.
+- Payment-router checkout with one user-facing action, Card and Solana wallet options, and a shared rental intent record before funding.
 - Same-page Privy controller for direct email, Google, or Solana wallet login. The controller signs a Solana sign-in message before the shell stores the wallet session.
 - Wallet session reuse: once Privy connects, the checkout drawer changes from `Connect wallet` to `Start rental` instead of asking the user to connect again.
 - Demo inventory, rental session state, return flow, receipt copy, and reputation-ready result.
@@ -39,6 +40,7 @@ The MVP is designed for physical-world rentals where the agent helps people borr
 - Public generated IDL at `/idl/rental_session.json`.
 - Owner listing flow that prepares an owner-signed `initialize_item` devnet transaction, verifies the confirmed item PDA, and publishes it into renter inventory.
 - Supabase-backed listing storage when `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are configured, with local file fallback for development.
+- Supabase-backed rental intent storage when configured, with local file fallback for development.
 - Program-aware Solana Pay endpoints returning unsigned serialized wallet transactions for `initialize_item`, `start_rental`, `confirm_return`, and `auto_buyout`.
 - Wallet signing/sending through Privy Solana wallets from the active Gimi shell.
 - LI.FI quote endpoint at `/api/lifi/quote` using live LI.FI REST quotes when real source/destination wallets are supplied, with demo fallback for local UI mode.
@@ -93,6 +95,7 @@ Gimi uses Supabase for durable published listing and rental-session storage. Run
 supabase/migrations/001_create_listings.sql
 supabase/migrations/002_create_rental_sessions.sql
 supabase/migrations/003_create_rental_receipts.sql
+supabase/migrations/004_create_rental_intents.sql
 ```
 
 Then configure these server-side environment variables:
@@ -106,9 +109,42 @@ SUPABASE_SERVICE_ROLE_KEY=YOUR_SERVICE_ROLE_KEY
 `NEXT_PUBLIC_`.
 
 If those env vars are missing, the app falls back to local file storage at
-`.rentproof/listings.json`, `.rentproof/rental-sessions.json`, and
-`.rentproof/rental-receipts.json` locally, and `/tmp/tably-*.json` files on Vercel.
+`.rentproof/listings.json`, `.rentproof/rental-sessions.json`,
+`.rentproof/rental-receipts.json`, and `.rentproof/rental-intents.json`
+locally, and `/tmp/*` JSON files on Vercel.
 The Vercel fallback is ephemeral and should only be used for smoke tests.
+
+## Payment Router
+
+Gimi separates payment rails from proof rails:
+
+```text
+Rental intent
+-> Card checkout or Solana wallet checkout
+-> Rental session
+-> Return confirmation / settlement
+-> Solana receipt / reputation record
+```
+
+Card users should not need crypto to reserve an item. The UI creates a
+`rental_intents` row with `payment_method: "card"`, rent, deposit, duration,
+and a provider slot. Configure one of these server env vars when a real card
+provider is ready:
+
+```bash
+MOONPAY_COMMERCE_CHECKOUT_URL=https://...
+# or
+STRIPE_CHECKOUT_URL=https://...
+```
+
+Without a provider checkout URL, the app still records the intent and shows a
+setup message instead of pretending to charge the user. A production card
+provider should send a webhook that marks the intent funded, starts or reserves
+the rental, and later writes the Solana receipt after return settlement.
+
+Solana wallet users keep the existing path: Privy opens in-page, the wallet
+signs the serialized devnet transaction, `start_rental` locks USDC into escrow,
+and `/api/rentals/start` persists the active session.
 
 ## Privy Wallet Flow
 
@@ -220,6 +256,21 @@ Returns published listings plus renter-ready inventory. The renter agent uses th
 ### `POST /api/solana-pay/start-rental`
 
 Returns a Solana Pay request payload, Gimi PDA metadata, and an unsigned serialized devnet transaction for the renter wallet to sign.
+
+### `POST /api/rentals/intent`
+
+Creates the shared checkout intent used by Card and Solana wallet rentals.
+
+```bash
+curl -s -X POST http://localhost:3000/api/rentals/intent \
+  -H 'content-type: application/json' \
+  -d '{"itemId":"power_bank_18","hours":3,"paymentMethod":"card"}'
+```
+
+For `paymentMethod: "card"`, the response includes the rent, deposit, provider
+slot, and whether a card checkout URL is configured. For
+`paymentMethod: "solana_wallet"`, the intent is created first and the UI then
+prepares the existing Solana `start_rental` transaction with the same rental id.
 Before returning a transaction, the route checks the item PDA, demo USDC mint,
 renter token account, and renter escrow balance. If the renter cannot pay the
 buyout-cap escrow, it returns `409` with `preflight.problems`.
@@ -417,7 +468,7 @@ Serves the generated Anchor IDL.
 This repo now has a deployed devnet Anchor settlement program, a product-ready demo surface, owner listing prepare/sign/publish flow, rental start status sync, return/auto-buyout settlement sync, durable receipt persistence, a renter/owner-visible receipt history surface, live LI.FI quote support, ElevenLabs server-tool endpoints, unsigned serialized Solana transaction generation, and wallet-side signing/sending for prepared transactions.
 
 - Program id: `AVL316tYxrg8MhEeWtaxbwdShMWybzRAH1zNQWvX355K`.
-- Published listings, rental sessions, and rental receipts use Supabase when configured. Without Supabase env vars, the app falls back to ephemeral file storage.
+- Published listings, rental intents, rental sessions, and rental receipts use Supabase when configured. Without Supabase env vars, the app falls back to ephemeral file storage.
 - Privy wallet login requires `NEXT_PUBLIC_PRIVY_APP_ID`.
 - LI.FI live quotes require valid source and destination wallet addresses; local demo mode falls back when those are missing.
 - ElevenLabs is server-tool ready, but the hosted ElevenLabs agent still needs to be configured with this endpoint and `ELEVENLABS_API_KEY`.
@@ -427,5 +478,6 @@ This repo now has a deployed devnet Anchor settlement program, a product-ready d
 
 1. Run the Supabase migrations and add `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` to Vercel.
 2. Add `NEXT_PUBLIC_PRIVY_APP_ID` to Vercel production and local `.env.local`.
-3. Run the devnet E2E with funded owner/renter wallets; it now covers owner listing, start rental, return settlement, auto-buyout settlement, listing status sync, and receipt persistence.
-4. Register `/api/elevenlabs/tools` in the ElevenLabs agent console.
+3. Configure a real card provider checkout/webhook (`MOONPAY_COMMERCE_CHECKOUT_URL` or `STRIPE_CHECKOUT_URL`) before enabling non-crypto payments in production.
+4. Run the devnet E2E with funded owner/renter wallets; it now covers owner listing, start rental, return settlement, auto-buyout settlement, listing status sync, and receipt persistence.
+5. Register `/api/elevenlabs/tools` in the ElevenLabs agent console.
