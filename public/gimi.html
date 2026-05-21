@@ -2780,6 +2780,7 @@ let lastQuery = '';
 let selectedRentalHours = 3;
 let selectedPaymentMethod = 'card';
 let latestLendingRentals = [];
+let latestOwnerCardReservations = [];
 const WALLET_SESSION_KEY = 'gimi.walletSession';
 const ACTIVE_RENTALS_CACHE_KEY = 'gimi.activeRentals';
 const PENDING_SETTLEMENT_KEY = 'gimi.pendingRentalSettlement';
@@ -2995,8 +2996,10 @@ function renderCardReservations(reservations) {
     const item = reservation.item || {};
     const glyph = glyphForItemId(reservation.itemId);
     const pickup = item.locationLabel || 'Owner pickup point';
-    const status = reservation.paymentStatus === 'confirmed'
-      ? 'Card funded · reserved'
+    const status = reservation.sessionStatus === 'active'
+      ? 'Card funded · active'
+      : reservation.paymentStatus === 'confirmed'
+        ? 'Card funded · reserved'
       : reservation.paymentStatus === 'requires_action'
         ? 'Waiting for card checkout'
         : `Card ${reservation.paymentStatus || 'intent'}`;
@@ -3068,14 +3071,54 @@ function renderActiveRentals(rentals, cardReservations = []) {
   activeRentalsPanel.innerHTML = `${rentalCards}${renderCardReservations(cardReservations)}`;
 }
 
-function renderLendingRentals(rentals) {
+function renderOwnerCardReservations(reservations) {
+  return reservations.map((reservation) => {
+    const item = reservation.item || {};
+    const glyph = glyphForItemId(reservation.itemId);
+    const renter = reservation.renterWallet ? shortWallet(reservation.renterWallet) : 'Card renter';
+    const pickup = item.locationLabel || 'Owner pickup point';
+    const total = reservation.amounts?.total
+      ? `${reservation.amounts.total.uiAmount} ${reservation.amounts.total.symbol || 'USD'}`
+      : 'Pending';
+    const funded = reservation.paymentStatus === 'confirmed' &&
+      (reservation.escrowStatus === 'provider_authorized' || reservation.escrowStatus === 'provider_captured');
+    const isActive = reservation.sessionStatus === 'active';
+    const status = isActive ? 'Card rental active' : funded ? 'Card funded · handoff pending' : 'Waiting for card payment';
+    return `
+      <div class="active-rental-card" data-intent-id="${escapeHtml(reservation.id || '')}">
+        <div class="active-rental-head">
+          <div class="active-rental-glyph">${escapeHtml(glyph)}</div>
+          <div>
+            <div class="active-rental-name">${escapeHtml(item.name || reservation.itemName || 'Rental item')}</div>
+            <div class="active-rental-sub">${escapeHtml(status)} · ${escapeHtml(reservation.id || 'intent')}</div>
+          </div>
+        </div>
+        <div class="rental-detail-grid">
+          <div class="rental-detail"><span>Renter</span><strong>${escapeHtml(renter)}</strong></div>
+          <div class="rental-detail"><span>Pickup</span><strong>${escapeHtml(pickup)}</strong></div>
+          <div class="rental-detail"><span>Payment</span><strong>${escapeHtml(reservation.escrowStatus || 'pending')}</strong></div>
+          <div class="rental-detail"><span>Total hold</span><strong>${escapeHtml(total)}</strong></div>
+        </div>
+        <div class="owner-action-row">
+          <button class="owner-settle-btn card-handoff-btn" type="button" data-intent-id="${escapeHtml(reservation.id || '')}" ${funded && !isActive ? '' : 'disabled'}>
+            ${isActive ? 'Handoff complete' : 'Mark handed off'}
+          </button>
+        </div>
+        <div class="rental-return-note">This is a card-funded reservation. Mark handed off after the renter physically picks up the item; return settlement and receipt issuance happen in the next flow.</div>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderLendingRentals(rentals, cardReservations = []) {
   if (!lendingRentalsPanel) return;
   latestLendingRentals = rentals;
-  if (!rentals.length) {
+  latestOwnerCardReservations = cardReservations;
+  if (!rentals.length && !cardReservations.length) {
     lendingRentalsPanel.innerHTML = '<div class="empty-profile-card">No active lending sessions yet. When someone rents your item, it appears here for return settlement.</div>';
     return;
   }
-  lendingRentalsPanel.innerHTML = rentals.map((rental) => {
+  const onchainCards = rentals.map((rental) => {
     const item = rental.item || {};
     const glyph = rental.glyph || glyphForItemId(rental.itemId);
     const renter = rental.renterWalletShort || shortWallet(rental.renterWallet) || 'Renter';
@@ -3108,6 +3151,7 @@ function renderLendingRentals(rentals) {
       </div>
     `;
   }).join('');
+  lendingRentalsPanel.innerHTML = `${onchainCards}${renderOwnerCardReservations(cardReservations)}`;
 }
 
 function renderReceipts(receipts) {
@@ -3127,7 +3171,7 @@ function renderReceipts(receipts) {
 async function refreshRentalProfile() {
   if (!connectedWallet) {
     renderActiveRentals([], []);
-    renderLendingRentals([]);
+    renderLendingRentals([], []);
     renderReceipts([]);
     return;
   }
@@ -3148,12 +3192,12 @@ async function refreshRentalProfile() {
     ];
     const lendingRentals = remoteActiveRentals.filter((rental) => rental.ownerWallet === connectedWallet);
     renderActiveRentals(borrowingRentals, data.cardReservations || []);
-    renderLendingRentals(lendingRentals);
+    renderLendingRentals(lendingRentals, data.ownerCardReservations || []);
     renderReceipts(data.receipts || []);
   } catch (error) {
     const localRentals = activeLocalRentalsForWallet(connectedWallet);
     renderActiveRentals(localRentals, []);
-    renderLendingRentals([]);
+    renderLendingRentals([], []);
     rentalReceiptsPanel.innerHTML = `<div class="empty-profile-card">${escapeHtml(error instanceof Error ? error.message : 'Could not load receipts')}</div>`;
   }
 }
@@ -3826,6 +3870,46 @@ async function completePrivySettlementSignature(signature) {
   }
 }
 
+async function markCardReservationHandedOff(reservation, button) {
+  if (!connectedWallet) {
+    requestPrivyAction('connect');
+    return;
+  }
+  if (!reservation?.id) throw new Error('Card reservation is missing an intent id');
+  if (reservation.ownerWallet && reservation.ownerWallet !== connectedWallet) {
+    throw new Error(`Connect the owner wallet ${shortWallet(reservation.ownerWallet)} to activate this reservation`);
+  }
+
+  const originalText = button?.textContent || '';
+  if (button) {
+    button.disabled = true;
+    button.textContent = 'Activating...';
+  }
+  setLendingStatus('Marking card-funded rental as handed off...', 'pending');
+
+  try {
+    const res = await fetch('/api/rentals/intent/status', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        intentId: reservation.id,
+        ownerWallet: connectedWallet,
+        action: 'mark_handed_off',
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data?.error || 'Could not activate card reservation');
+    setLendingStatus('Card-funded rental is active. Return settlement is the next step.', 'success');
+    await refreshRentalProfile();
+  } catch (error) {
+    setLendingStatus(error instanceof Error ? error.message : 'Could not activate card reservation', 'error');
+    if (button) {
+      button.disabled = false;
+      button.textContent = originalText;
+    }
+  }
+}
+
 async function completePrivyRentalSignature(signature) {
   const pending = readPendingRentalStart();
   if (!pending) {
@@ -4079,6 +4163,17 @@ listingForm?.addEventListener('submit', async (event) => {
   }
 });
 lendingRentalsPanel?.addEventListener('click', async (event) => {
+  const handoffButton = event.target.closest('.card-handoff-btn');
+  if (handoffButton) {
+    const intentId = handoffButton.dataset.intentId || '';
+    const reservation = latestOwnerCardReservations.find((entry) => entry.id === intentId);
+    try {
+      await markCardReservationHandedOff(reservation, handoffButton);
+    } catch (error) {
+      setLendingStatus(error instanceof Error ? error.message : 'Card handoff failed', 'error');
+    }
+    return;
+  }
   const button = event.target.closest('.owner-settle-btn');
   if (!button) return;
   const rentalId = button.dataset.rentalId || '';

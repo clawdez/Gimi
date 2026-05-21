@@ -42,6 +42,7 @@ export interface RentalIntentsRepository {
   getById(id: string): Promise<PersistedRentalIntent | undefined>;
   getByProviderPaymentId(providerPaymentId: string): Promise<PersistedRentalIntent | undefined>;
   listByRenterWallet(wallet: string, limit?: number): Promise<PersistedRentalIntent[]>;
+  listByOwnerWallet(wallet: string, limit?: number): Promise<PersistedRentalIntent[]>;
 }
 
 interface RentalIntentRow {
@@ -90,6 +91,14 @@ class FileRentalIntentsRepository implements RentalIntentsRepository {
     const intents = await this.readAll();
     return intents
       .filter((intent) => intent.renterWallet === wallet)
+      .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+      .slice(0, normalizeLimit(limit));
+  }
+
+  async listByOwnerWallet(wallet: string, limit = 20) {
+    const intents = await this.readAll();
+    return intents
+      .filter((intent) => intent.ownerWallet === wallet)
       .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
       .slice(0, normalizeLimit(limit));
   }
@@ -153,6 +162,18 @@ class SupabaseRentalIntentsRepository implements RentalIntentsRepository {
       .limit(normalizeLimit(limit));
 
     if (error) throw new Error(`Supabase rental intent history failed: ${error.message}`);
+    return (data ?? []).map(rowToRentalIntent);
+  }
+
+  async listByOwnerWallet(wallet: string, limit = 20) {
+    const { data, error } = await this.client
+      .from("rental_intents")
+      .select("*")
+      .eq("owner_wallet", wallet)
+      .order("created_at", { ascending: false })
+      .limit(normalizeLimit(limit));
+
+    if (error) throw new Error(`Supabase owner rental intent history failed: ${error.message}`);
     return (data ?? []).map(rowToRentalIntent);
   }
 
