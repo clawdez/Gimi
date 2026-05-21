@@ -595,6 +595,53 @@
     background: rgba(205, 255, 0, 0.16);
     color: var(--ink);
   }
+  .payment-router {
+    margin: 16px 0 4px;
+    text-align: left;
+  }
+  .payment-router-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+    font-family: 'Geist Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .payment-options {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .payment-option {
+    min-height: 56px;
+    border: 1px solid rgba(240, 242, 247, 0.12);
+    border-radius: 16px;
+    background: rgba(240, 242, 247, 0.07);
+    color: var(--ink-2);
+    font-family: inherit;
+    cursor: pointer;
+    text-align: left;
+    padding: 10px 12px;
+    transition: border-color .18s var(--ease), background .18s var(--ease), color .18s var(--ease);
+  }
+  .payment-option strong {
+    display: block;
+    font-size: 13px;
+    color: var(--ink);
+    margin-bottom: 2px;
+  }
+  .payment-option span {
+    display: block;
+    font-size: 10px;
+    color: var(--ink-3);
+  }
+  .payment-option.is-selected {
+    border-color: rgba(205, 255, 0, 0.78);
+    background: rgba(205, 255, 0, 0.14);
+  }
 
   .sheet-cta {
     flex: 0 0 auto;
@@ -1761,6 +1808,22 @@
               <button class="duration-option" type="button" data-hours="24">1d</button>
             </div>
           </div>
+          <div class="payment-router">
+            <div class="payment-router-head">
+              <span>Payment</span>
+              <span>Receipt on Solana</span>
+            </div>
+            <div class="payment-options" id="paymentOptions" aria-label="Payment method">
+              <button class="payment-option is-selected" type="button" data-payment-method="card">
+                <strong>Card</strong>
+                <span>Apple Pay / provider</span>
+              </button>
+              <button class="payment-option" type="button" data-payment-method="solana_wallet">
+                <strong>Solana wallet</strong>
+                <span>USDC escrow</span>
+              </button>
+            </div>
+          </div>
 
           <div class="sheet-divider"></div>
           <div class="sheet-similar-label">Often paired with</div>
@@ -2693,6 +2756,7 @@ const sheetCTASub    = document.getElementById('sheetCTASub');
 const sheetSimilar   = document.getElementById('sheetSimilar');
 const durationOptions = document.getElementById('durationOptions');
 const rentalLengthTotal = document.getElementById('rentalLengthTotal');
+const paymentOptions = document.getElementById('paymentOptions');
 const sheetContent   = document.querySelector('.sheet-content');
 const navWallet      = document.getElementById('navWallet');
 const profileSheet   = document.getElementById('profileSheet');
@@ -2714,6 +2778,7 @@ let connectedWalletSource = '';
 let activeSheetItem = null;
 let lastQuery = '';
 let selectedRentalHours = 3;
+let selectedPaymentMethod = 'card';
 let latestLendingRentals = [];
 const WALLET_SESSION_KEY = 'gimi.walletSession';
 const ACTIVE_RENTALS_CACHE_KEY = 'gimi.activeRentals';
@@ -3283,23 +3348,34 @@ function updateDurationUI() {
   }
 }
 
+function updatePaymentUI() {
+  paymentOptions?.querySelectorAll('.payment-option').forEach((button) => {
+    button.classList.toggle('is-selected', button.dataset.paymentMethod === selectedPaymentMethod);
+  });
+}
+
 function updateCheckoutCTA() {
-  if (connectedWallet) {
-    sheetCTA.textContent = `Start rental · ${shortWallet(connectedWallet)}`;
+  if (selectedPaymentMethod === 'card') {
+    sheetCTA.textContent = 'Pay and reserve';
+  } else if (connectedWallet) {
+    sheetCTA.textContent = `Pay with wallet · ${shortWallet(connectedWallet)}`;
   } else {
-    sheetCTA.textContent = 'Connect wallet';
+    sheetCTA.textContent = 'Connect Solana wallet';
   }
   sheetCTA.style.background = '';
   if (activeSheetItem) {
     const hours = clampRentalHours(selectedRentalHours);
+    const cardCopy = 'Pay by card now; Gimi writes the receipt on Solana after return.';
+    const walletCopy = connectedWallet
+      ? `Ready for ${formatDuration(hours)} Solana USDC escrow`
+      : `Connect wallet to rent for ${formatDuration(hours)} with USDC`;
     setSheetStatus(
-      connectedWallet
-        ? `Ready for ${formatDuration(hours)} devnet checkout`
-        : `Connect once to rent for ${formatDuration(hours)}`
+      selectedPaymentMethod === 'card' ? cardCopy : walletCopy
     );
     updateDurationUI();
+    updatePaymentUI();
   } else {
-    setSheetStatus(connectedWallet ? `Wallet connected · ${shortWallet(connectedWallet)}` : 'Use Privy once, then rent from this wallet');
+    setSheetStatus(connectedWallet ? `Wallet connected · ${shortWallet(connectedWallet)}` : 'Choose card or Solana wallet at checkout');
   }
 }
 
@@ -3377,13 +3453,13 @@ window.addEventListener('message', async (event) => {
   }
 });
 
-async function prepareRentalCheckout(item, renterWallet) {
+async function prepareRentalCheckout(item, renterWallet, draftId) {
   const itemId = mappedRentalItemId(item);
   const hours = clampRentalHours(selectedRentalHours);
   const res = await fetch('/api/solana-pay/start-rental', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ itemId, renterWallet, hours }),
+    body: JSON.stringify({ itemId, renterWallet, hours, draftId }),
   });
   const data = await res.json();
   if (!res.ok) {
@@ -3396,9 +3472,43 @@ async function prepareRentalCheckout(item, renterWallet) {
     draftId: data.draftId,
     itemId,
     hours,
+    intentId: undefined,
     transaction: data.transaction,
     transactionMetadata: data.transactionMetadata || {},
   };
+}
+
+async function createRentalIntent(item, paymentMethod, renterWallet) {
+  const itemId = mappedRentalItemId(item);
+  const hours = clampRentalHours(selectedRentalHours);
+  const res = await fetch('/api/rentals/intent', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      itemId,
+      hours,
+      paymentMethod,
+      renterWallet: renterWallet || undefined,
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error || 'Could not create rental intent');
+  return data;
+}
+
+async function startCardRentalIntent(item) {
+  sheetCTA.textContent = 'Preparing card checkout...';
+  setSheetStatus('Creating rental intent for card payment...', 'pending');
+  const data = await createRentalIntent(item, 'card', connectedWallet || '');
+  const intent = data.intent || {};
+  if (data.paymentRouter?.checkoutUrl) {
+    sheetCTA.textContent = 'Open secure checkout';
+    setSheetStatus(`Intent ${shortWallet(intent.id || '')} ready · card provider checkout opens next`, 'success');
+    window.location.href = data.paymentRouter.checkoutUrl;
+    return;
+  }
+  sheetCTA.textContent = 'Card provider needed';
+  setSheetStatus('Rental intent saved. Configure MoonPay/Stripe checkout URL to accept card payments.', 'pending');
 }
 
 async function recordRentalStart(prepared, signature) {
@@ -3410,6 +3520,7 @@ async function recordRentalStart(prepared, signature) {
       body: JSON.stringify({
         itemId: prepared.itemId,
         rentalId: prepared.draftId,
+        intentId: prepared.intentId,
         renterWallet: prepared.renterWallet || connectedWallet,
         startSignature: signature,
       }),
@@ -3747,6 +3858,7 @@ function renderSimilar(item) {
 function openSheet(item) {
   activeSheetItem = item;
   selectedRentalHours = clampRentalHours(inferRequestedHours(lastQuery, item));
+  selectedPaymentMethod = 'card';
   sheetHeroGlow.style.setProperty('--h1', item.hue);
   sheetHeroGlow.style.setProperty('--h2', (item.hue + 40) % 360);
   sheetHeroPhoto.textContent = item.glyph;
@@ -3792,6 +3904,12 @@ durationOptions?.addEventListener('click', (e) => {
   updateDurationUI();
   updateCheckoutCTA();
 });
+paymentOptions?.addEventListener('click', (e) => {
+  const button = e.target.closest('.payment-option');
+  if (!button) return;
+  selectedPaymentMethod = button.dataset.paymentMethod || 'card';
+  updateCheckoutCTA();
+});
 
 sheetClose.addEventListener('click', closeSheet);
 profileClose.addEventListener('click', closeProfileSheet);
@@ -3809,21 +3927,28 @@ navWallet?.addEventListener('click', () => {
 sheetCTA.addEventListener('click', async (event) => {
   try {
     if (!activeSheetItem) return;
+    event.preventDefault();
+
+    if (selectedPaymentMethod === 'card') {
+      await startCardRentalIntent(activeSheetItem);
+      setTimeout(updateCheckoutCTA, 2400);
+      return;
+    }
+
     if (!connectedWallet) {
-      event.preventDefault();
       sheetCTA.textContent = 'Opening Privy...';
       setSheetStatus('Waiting for wallet login...', 'pending');
       requestPrivyAction('connect');
       return;
     }
 
-    event.preventDefault();
-
     assertNoPendingWalletAction('rental checkout');
 
+    const intentData = await createRentalIntent(activeSheetItem, 'solana_wallet', connectedWallet);
     sheetCTA.textContent = 'Preparing checkout...';
     setSheetStatus('Building serialized Solana devnet transaction...', 'pending');
-    const prepared = await prepareRentalCheckout(activeSheetItem, connectedWallet);
+    const prepared = await prepareRentalCheckout(activeSheetItem, connectedWallet, intentData?.intent?.rentalId);
+    prepared.intentId = intentData?.intent?.id;
 
     if (connectedWalletSource !== 'privy') {
       throw new Error('This demo checkout currently signs through Privy only');

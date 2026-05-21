@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Connection, PublicKey } from "@solana/web3.js";
 import { getRentableItem } from "@/lib/rentableItems";
 import { getListingsRepository } from "@/lib/listingsRepository";
+import { getRentalIntentsRepository } from "@/lib/rentalIntentsRepository";
 import { getRentalSessionsRepository } from "@/lib/rentalSessionsRepository";
 import {
   RENTAL_ITEM_STATUS_RENTED,
@@ -32,6 +33,7 @@ export async function POST(req: NextRequest) {
   const itemId = typeof body.itemId === "string" ? body.itemId : "";
   const rentalId = typeof body.rentalId === "string" ? body.rentalId : typeof body.draftId === "string" ? body.draftId : "";
   const renterWallet = typeof body.renterWallet === "string" ? body.renterWallet : "";
+  const intentId = typeof body.intentId === "string" ? body.intentId.trim() : "";
   const startSignature =
     typeof body.startSignature === "string"
       ? body.startSignature.trim()
@@ -123,10 +125,12 @@ export async function POST(req: NextRequest) {
 
     const listing = await getListingsRepository().getById(itemId);
     const updatedListing = listing ? await getListingsRepository().updateStatus(itemId, "rented") : undefined;
+    const intent = intentId ? await syncRentalIntent(intentId, session.rentalId) : undefined;
 
     return NextResponse.json({
       rentalSession: session,
       session,
+      intent,
       listing: updatedListing,
       rentProof,
       explorerUrl: `https://explorer.solana.com/tx/${startSignature}?cluster=devnet`,
@@ -134,4 +138,20 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     return errorResponse(error instanceof Error ? error.message : "Unable to record rental start", 400);
   }
+}
+
+async function syncRentalIntent(intentId: string, rentalId: string) {
+  const repository = getRentalIntentsRepository();
+  const intent = await repository.getById(intentId);
+  if (!intent) return undefined;
+
+  return repository.save({
+    ...intent,
+    rentalId,
+    paymentStatus: "confirmed",
+    escrowStatus: "onchain_locked",
+    sessionStatus: "active",
+    receiptStatus: "pending_onchain",
+    updatedAt: new Date().toISOString(),
+  });
 }
