@@ -1,8 +1,8 @@
 # Gimi
 
-AI rental agent for school, community, and hackathon inventory.
+Gimi is an AI rental agent for community inventory: chat-to-rent discovery, Card or Solana checkout, escrow-backed returns, and on-chain receipts.
 
-Gimi is one product: an agentic rental marketplace with Solana settlement built in. It handles community inventory search, buyout-cap escrow, hourly rent accrual inside escrow, temporary rental-token state, return-confirm burn, on-chain receipt events, and reputation-ready outcomes.
+The product is built for schools, coworking spaces, apartment communities, and hackathon venues where people need to borrow real items from nearby owners. Gimi handles inventory search, rental intent creation, refundable deposit/funding, hourly rent accrual inside escrow, owner return confirmation, card-funded receipt issuance, and reputation-ready history.
 
 The current demo opens at `/` and renders the Gimi one-page agent shell from `public/gimi.html` inside a Next controller shell: a large central agent orb, a bottom chat input, nearby inventory, a product checkout drawer, and same-page Privy wallet connection for email, Google, or Solana wallet users.
 
