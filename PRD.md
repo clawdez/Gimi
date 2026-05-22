@@ -1,8 +1,8 @@
-# Tably / RentProof — Agentic Community Rental MVP
+# Gimi — Agentic Community Rental MVP
 
-> Current direction: Tably is a consumer AI rental agent for school, community, and hackathon items. RentProof is the settlement layer: refundable escrow, temporary rental token, return-confirm burn, receipt, and reputation.
+> Current direction: Gimi is a consumer AI rental agent for school, community, and hackathon items. The settlement layer supports refundable escrow, temporary rental session/token state, owner return confirmation, card-funded receipt issuance, and reputation-ready history.
 >
-> The current implementation keeps all sponsor-facing surfaces in scope: Crossmint onboarding, LI.FI funding, Solana Pay transaction request, Solana escrow/token/receipt path, ElevenLabs voice/chat workflow, Virtuals physical-world agent framing, and MCP read/prepare tools.
+> The current implementation keeps all sponsor-facing surfaces in scope: Privy onboarding, Card or Solana checkout, LI.FI funding quotes, Solana Pay-style transaction preparation, Solana escrow/token/receipt path, ElevenLabs voice/chat workflow, Virtuals physical-world agent framing, and MCP read/prepare tools.
 
 ---
 
