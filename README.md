@@ -1,6 +1,6 @@
 # Gimi
 
-Gimi is an AI rental agent for community inventory: chat-to-rent discovery, Card or Solana checkout, escrow-backed returns, and on-chain receipts.
+Gimi is an AI rental agent for community inventory: chat-to-rent discovery, Card, Solana, or Base MCP checkout preparation, escrow-backed returns, and on-chain receipts.
 
 The product is built for schools, coworking spaces, apartment communities, and hackathon venues where people need to borrow real items from nearby owners. Gimi handles inventory search, rental intent creation, refundable deposit/funding, hourly rent accrual inside escrow, owner return confirmation, card-funded receipt issuance, and reputation-ready history.
 
@@ -46,6 +46,7 @@ The MVP is designed for physical-world rentals where the agent helps people borr
 - LI.FI quote endpoint at `/api/lifi/quote` using live LI.FI REST quotes when real source/destination wallets are supplied, with demo fallback for local UI mode.
 - ElevenLabs server tools endpoint at `/api/elevenlabs/tools`.
 - MCP-style read/prepare endpoint at `/api/mcp`.
+- Base MCP plugin endpoints at `/api/base-plugin/gimi` for agent-callable inventory search, quote, and Base USDC deposit-call preparation.
 - Privy React provider and bridge CTA for real wallet onboarding. The UI does not mint a fake renter wallet when Privy is not configured.
 
 ## Track Alignment
@@ -57,6 +58,7 @@ The MVP is designed for physical-world rentals where the agent helps people borr
 | ElevenLabs | `/api/elevenlabs/tools` exposes server tools for inventory search, terms drafting, LI.FI funding quotes, and unsigned Solana rental transactions |
 | Virtuals | Agent perceives inventory, decides best item, and acts around physical-world handoff/return workflows |
 | MCP | `/api/mcp` exposes read/prepare rental tools for external agents |
+| Base MCP | `/api/base-plugin/gimi` exposes Base agent endpoints for inventory, quote, and user-approved USDC deposit calldata |
 | Solana Pay | `/api/solana-pay/initialize-item`, `/api/solana-pay/start-rental`, `/api/solana-pay/confirm-return`, and `/api/solana-pay/auto-buyout` return Solana Pay-style request payloads plus program id, PDA accounts, required signer, and instruction args |
 | Privy | `@privy-io/react-auth` provides email/Google onboarding and embedded Solana checkout wallets through `NEXT_PUBLIC_PRIVY_APP_ID` |
 
@@ -87,6 +89,9 @@ curl -s http://localhost:3000/api/health/readiness
 It returns which required/recommended keys are present without returning secret
 values. Required production keys are `NEXT_PUBLIC_PRIVY_APP_ID`, `SUPABASE_URL`,
 and `SUPABASE_SERVICE_ROLE_KEY`.
+
+For Base MCP deposit-call preparation, set `BASE_RENTAL_ESCROW_ADDRESS` to the
+escrow wallet or contract address. `BASE_MCP_CHAIN` defaults to `base-sepolia`.
 
 Useful checks:
 
@@ -654,6 +659,36 @@ Handles tool calls:
 - `rentproof.prepare_return_confirmation`
 - `rentproof.prepare_auto_buyout`
 
+### `GET /api/base-plugin/gimi`
+
+Returns the Gimi Base MCP plugin manifest and endpoint map.
+
+### `GET /api/base-plugin/gimi/inventory`
+
+Returns rentable community inventory for an agent query.
+
+```bash
+curl -s "http://localhost:3000/api/base-plugin/gimi/inventory?query=wireless%20mic"
+```
+
+### `GET /api/base-plugin/gimi/quote`
+
+Quotes rent, deposit, platform-fee estimate, and refund model for Base USDC funding.
+
+```bash
+curl -s "http://localhost:3000/api/base-plugin/gimi/quote?itemId=mic_11&hours=2"
+```
+
+### `GET /api/base-plugin/gimi/prepare-deposit`
+
+Returns ERC-20 USDC `transfer` calldata that Base MCP can submit through `send_calls` after user approval. Gimi does not sign or broadcast this call.
+
+```bash
+curl -s "http://localhost:3000/api/base-plugin/gimi/prepare-deposit?itemId=mic_11&hours=2&from=0x000000000000000000000000000000000000dEaD&escrow=0x0000000000000000000000000000000000000001"
+```
+
+See [docs/base-mcp-plugin.md](docs/base-mcp-plugin.md) for the plugin prompt and Base MCP handoff shape.
+
 ### `POST /api/rent`
 
 Starts the local demo rental state and returns the same Gimi PDA metadata used by the agent UI.
@@ -664,14 +699,14 @@ Serves the generated Anchor IDL.
 
 ## Current Boundary
 
-This repo now has a deployed devnet Anchor settlement program, a product-ready demo surface, owner listing prepare/sign/publish flow, item photo upload pipeline, owner inventory pause/re-enable management, notification feed, production env readiness checks, MoonPay checkout smoke tooling, rental start status sync, return/auto-buyout settlement sync, card-funded return ledger and Solana memo receipt issuance, durable receipt persistence, a renter/owner-visible receipt history surface, live LI.FI quote support, ElevenLabs server-tool endpoints, unsigned serialized Solana transaction generation, and wallet-side signing/sending for prepared transactions.
+This repo now has a deployed devnet Anchor settlement program, a product-ready demo surface, owner listing prepare/sign/publish flow, item photo upload pipeline, owner inventory pause/re-enable management, notification feed, production env readiness checks, MoonPay checkout smoke tooling, rental start status sync, return/auto-buyout settlement sync, card-funded return ledger and Solana memo receipt issuance, durable receipt persistence, a renter/owner-visible receipt history surface, live LI.FI quote support, ElevenLabs server-tool endpoints, Base MCP read/prepare endpoints, unsigned serialized Solana transaction generation, and wallet-side signing/sending for prepared transactions.
 
 - Program id: `AVL316tYxrg8MhEeWtaxbwdShMWybzRAH1zNQWvX355K`.
 - Published listings, rental intents, rental sessions, and rental receipts use Supabase when configured. Without Supabase env vars, the app falls back to ephemeral file storage.
 - Privy wallet login requires `NEXT_PUBLIC_PRIVY_APP_ID`.
 - LI.FI live quotes require valid source and destination wallet addresses; local demo mode falls back when those are missing.
 - ElevenLabs is server-tool ready, but the hosted ElevenLabs agent still needs to be configured with this endpoint and `ELEVENLABS_API_KEY`.
-- MCP and ElevenLabs tools never sign or move funds; they expose read/prepare tools only.
+- MCP, Base MCP, and ElevenLabs tools never sign or move funds; they expose read/prepare tools only.
 
 ## Next Steps
 
