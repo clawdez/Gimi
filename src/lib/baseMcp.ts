@@ -67,6 +67,10 @@ export function isEvmAddress(value: unknown): value is string {
   return typeof value === "string" && EVM_ADDRESS_PATTERN.test(value);
 }
 
+export function isBaseTransactionHash(value: unknown): value is string {
+  return typeof value === "string" && /^0x[a-fA-F0-9]{64}$/.test(value);
+}
+
 export function requireEvmAddress(value: unknown, label: string) {
   if (!isEvmAddress(value)) {
     throw new Error(`${label} must be a 0x-prefixed EVM address`);
@@ -148,6 +152,11 @@ function normalizeHours(value: unknown, fallback: number) {
 
 function money(value: number) {
   return Number(value.toFixed(2));
+}
+
+export function baseExplorerUrl(chain: BaseMcpChain, txHash: string) {
+  const host = chain === "base" ? "basescan.org" : "sepolia.basescan.org";
+  return `https://${host}/tx/${txHash}`;
 }
 
 function usdcAtomicAmount(amount: number) {

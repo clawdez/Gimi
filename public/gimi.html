@@ -3013,15 +3013,16 @@ function renderCardReservations(reservations) {
     const item = reservation.item || {};
     const glyph = glyphForItemId(reservation.itemId);
     const pickup = item.locationLabel || 'Owner pickup point';
+    const rail = reservation.paymentMethod === 'base_mcp' ? 'Base MCP' : 'Card';
     const status = reservation.sessionStatus === 'active'
-      ? 'Card funded · active'
+      ? `${rail} funded · active`
       : reservation.sessionStatus === 'returned'
-        ? 'Returned · receipt pending'
+        ? reservation.receiptStatus === 'issued' ? 'Returned · receipt issued' : 'Returned · receipt pending'
       : reservation.paymentStatus === 'confirmed'
-        ? 'Card funded · reserved'
+        ? `${rail} funded · reserved`
       : reservation.paymentStatus === 'requires_action'
-        ? 'Waiting for card checkout'
-        : `Card ${reservation.paymentStatus || 'intent'}`;
+        ? `Waiting for ${rail} checkout`
+        : `${rail} ${reservation.paymentStatus || 'intent'}`;
     const escrow = reservation.escrowStatus === 'provider_captured'
       ? 'Captured by provider'
       : reservation.escrowStatus === 'provider_authorized'
@@ -3047,7 +3048,7 @@ function renderCardReservations(reservations) {
           <div class="rental-detail"><span>Duration</span><strong>${escapeHtml(formatDuration(reservation.durationHours || selectedRentalHours))}</strong></div>
           <div class="rental-detail"><span>Total hold</span><strong>${escapeHtml(total)}</strong></div>
         </div>
-        <div class="rental-escrow-note">Card-funded rentals reserve the item through MoonPay Commerce. After return settlement, Gimi writes the rental receipt on Solana.</div>
+        <div class="rental-escrow-note">${escapeHtml(rail)}-funded rentals reserve the item through a provider rail. After return settlement, Gimi records the payout/refund receipt in history.</div>
       </div>
     `;
   }).join('');
@@ -3096,7 +3097,8 @@ function renderOwnerCardReservations(reservations) {
   return reservations.map((reservation) => {
     const item = reservation.item || {};
     const glyph = glyphForItemId(reservation.itemId);
-    const renter = reservation.renterWallet ? shortWallet(reservation.renterWallet) : 'Card renter';
+    const rail = reservation.paymentMethod === 'base_mcp' ? 'Base MCP' : 'Card';
+    const renter = reservation.renterWallet ? shortWallet(reservation.renterWallet) : `${rail} renter`;
     const pickup = item.locationLabel || 'Owner pickup point';
     const total = reservation.amounts?.total
       ? `${reservation.amounts.total.uiAmount} ${reservation.amounts.total.symbol || 'USD'}`
@@ -3106,7 +3108,7 @@ function renderOwnerCardReservations(reservations) {
     const isActive = reservation.sessionStatus === 'active';
     const isReturned = reservation.sessionStatus === 'returned';
     const receiptIssued = reservation.receiptStatus === 'issued';
-    const status = receiptIssued ? 'Returned · Solana receipt issued' : isReturned ? 'Returned · receipt pending' : isActive ? 'Card rental active' : funded ? 'Card funded · handoff pending' : 'Waiting for card payment';
+    const status = receiptIssued ? 'Returned · receipt issued' : isReturned ? 'Returned · receipt pending' : isActive ? `${rail} rental active` : funded ? `${rail} funded · handoff pending` : `Waiting for ${rail} payment`;
     return `
       <div class="active-rental-card" data-intent-id="${escapeHtml(reservation.id || '')}">
         <div class="active-rental-head">
@@ -3131,13 +3133,13 @@ function renderOwnerCardReservations(reservations) {
             ${isReturned ? 'Returned' : isActive ? 'Handoff complete' : 'Mark handed off'}
           </button>
           <button class="owner-settle-btn is-secondary card-return-btn" type="button" data-intent-id="${escapeHtml(reservation.id || '')}" ${isActive ? '' : 'disabled'}>
-            ${isReturned ? 'Return settled' : 'Confirm card return'}
+            ${isReturned ? 'Return settled' : 'Confirm return'}
           </button>
           <button class="owner-settle-btn card-receipt-btn" type="button" data-intent-id="${escapeHtml(reservation.id || '')}" ${isReturned && !receiptIssued ? '' : 'disabled'}>
             ${receiptIssued ? 'Receipt issued' : 'Issue Solana receipt'}
           </button>
         </div>
-        <div class="rental-return-note">This is a card-funded reservation. Mark handed off after pickup, confirm return to record payout/refund amounts, then issue a Solana receipt from the owner wallet.</div>
+        <div class="rental-return-note">This is a ${escapeHtml(rail)}-funded reservation. Mark handed off after pickup, then confirm return to record payout/refund amounts and receipt history.</div>
       </div>
     `;
   }).join('');
@@ -4087,7 +4089,7 @@ async function markCardReservationHandedOff(reservation, button) {
     requestPrivyAction('connect');
     return;
   }
-  if (!reservation?.id) throw new Error('Card reservation is missing an intent id');
+  if (!reservation?.id) throw new Error('Provider reservation is missing an intent id');
   if (reservation.ownerWallet && reservation.ownerWallet !== connectedWallet) {
     throw new Error(`Connect the owner wallet ${shortWallet(reservation.ownerWallet)} to activate this reservation`);
   }
@@ -4097,7 +4099,7 @@ async function markCardReservationHandedOff(reservation, button) {
     button.disabled = true;
     button.textContent = 'Activating...';
   }
-  setLendingStatus('Marking card-funded rental as handed off...', 'pending');
+  setLendingStatus('Marking provider-funded rental as handed off...', 'pending');
 
   try {
     const res = await fetch('/api/rentals/intent/status', {
@@ -4110,11 +4112,11 @@ async function markCardReservationHandedOff(reservation, button) {
       }),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data?.error || 'Could not activate card reservation');
-    setLendingStatus('Card-funded rental is active. Return settlement is the next step.', 'success');
+    if (!res.ok) throw new Error(data?.error || 'Could not activate provider reservation');
+    setLendingStatus('Provider-funded rental is active. Return settlement is the next step.', 'success');
     await refreshRentalProfile();
   } catch (error) {
-    setLendingStatus(error instanceof Error ? error.message : 'Could not activate card reservation', 'error');
+    setLendingStatus(error instanceof Error ? error.message : 'Could not activate provider reservation', 'error');
     if (button) {
       button.disabled = false;
       button.textContent = originalText;
@@ -4127,7 +4129,7 @@ async function confirmCardReservationReturn(reservation, button) {
     requestPrivyAction('connect');
     return;
   }
-  if (!reservation?.id) throw new Error('Card reservation is missing an intent id');
+  if (!reservation?.id) throw new Error('Provider reservation is missing an intent id');
   if (reservation.ownerWallet && reservation.ownerWallet !== connectedWallet) {
     throw new Error(`Connect the owner wallet ${shortWallet(reservation.ownerWallet)} to settle this reservation`);
   }
@@ -4137,7 +4139,7 @@ async function confirmCardReservationReturn(reservation, button) {
     button.disabled = true;
     button.textContent = 'Settling...';
   }
-  setLendingStatus('Recording card return settlement ledger...', 'pending');
+  setLendingStatus('Recording provider return settlement ledger...', 'pending');
 
   try {
     const res = await fetch('/api/rentals/intent/settle', {
@@ -4150,12 +4152,12 @@ async function confirmCardReservationReturn(reservation, button) {
       }),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data?.error || 'Could not settle card return');
+    if (!res.ok) throw new Error(data?.error || 'Could not settle provider return');
     const settlement = data.settlement || {};
-    setLendingStatus(`Card return recorded. Refund ${settlement.renterRefund || 0} pending provider settlement.`, 'success');
+    setLendingStatus(`Return recorded. Refund ${settlement.renterRefund || 0} saved to receipt history.`, 'success');
     await refreshRentalProfile();
   } catch (error) {
-    setLendingStatus(error instanceof Error ? error.message : 'Could not settle card return', 'error');
+    setLendingStatus(error instanceof Error ? error.message : 'Could not settle provider return', 'error');
     if (button) {
       button.disabled = false;
       button.textContent = originalText;

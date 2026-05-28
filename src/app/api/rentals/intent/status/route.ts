@@ -27,8 +27,10 @@ export async function POST(req: NextRequest) {
     const intent = await repository.getById(intentId);
     if (!intent) return errorResponse("Rental intent not found", 404);
     if (intent.ownerWallet !== ownerWallet) return errorResponse("Only the owner wallet can activate this reservation", 403);
-    if (intent.paymentMethod !== "card") return errorResponse("Only card reservations use this activation path", 400);
-    if (intent.paymentStatus !== "confirmed") return errorResponse("Card payment must be confirmed before handoff", 409, { intent });
+    if (intent.paymentMethod !== "card" && intent.paymentMethod !== "base_mcp") {
+      return errorResponse("Only provider-funded reservations use this activation path", 400);
+    }
+    if (intent.paymentStatus !== "confirmed") return errorResponse("Provider payment must be confirmed before handoff", 409, { intent });
     if (intent.escrowStatus !== "provider_authorized" && intent.escrowStatus !== "provider_captured") {
       return errorResponse("Card escrow must be authorized or captured before handoff", 409, { intent });
     }
@@ -38,9 +40,12 @@ export async function POST(req: NextRequest) {
     const updatedIntent = await repository.save({
       ...intent,
       sessionStatus: "active",
-      receiptStatus: "pending_onchain",
+      receiptStatus: intent.paymentMethod === "base_mcp" ? "none" : "pending_onchain",
       activatedAt: now,
-      notes: "Owner marked physical handoff complete for card-funded rental.",
+      notes:
+        intent.paymentMethod === "base_mcp"
+          ? "Owner marked physical handoff complete for Base MCP-funded rental."
+          : "Owner marked physical handoff complete for card-funded rental.",
       updatedAt: now,
     });
     if (updatedIntent.renterWallet) {
@@ -56,7 +61,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       intent: updatedIntent,
-      nextAction: "track_return_and_settle_card_rental",
+      nextAction: "track_return_and_settle_provider_funded_rental",
     });
   } catch (error) {
     return errorResponse(error instanceof Error ? error.message : "Unable to update rental intent", 400);

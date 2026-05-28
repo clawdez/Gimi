@@ -3,7 +3,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
-export type RentalIntentPaymentMethod = "card" | "solana_wallet";
+export type RentalIntentPaymentMethod = "card" | "solana_wallet" | "base_mcp";
 export type RentalIntentPaymentStatus = "created" | "requires_action" | "confirmed" | "failed" | "expired";
 export type RentalIntentEscrowStatus = "not_funded" | "provider_authorized" | "provider_captured" | "onchain_locked";
 export type RentalIntentSessionStatus = "intent" | "reserved" | "active" | "returned" | "cancelled";
