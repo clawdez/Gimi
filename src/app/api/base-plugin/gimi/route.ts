@@ -4,6 +4,7 @@ const tools = [
   "gimi.search_inventory",
   "gimi.quote_rental",
   "gimi.prepare_base_deposit",
+  "gimi.confirm_base_payment",
   "gimi.get_rental_status",
 ];
 
@@ -21,6 +22,7 @@ export async function GET(req: Request) {
       inventory: `${origin}/api/base-plugin/gimi/inventory?query=wireless%20mic`,
       quote: `${origin}/api/base-plugin/gimi/quote?itemId=mic_11&hours=2`,
       prepareDeposit: `${origin}/api/base-plugin/gimi/prepare-deposit?itemId=mic_11&hours=2&from=0xUSER&escrow=0xESCROW`,
+      paymentConfirmed: `${origin}/api/base-plugin/gimi/payment-confirmed`,
       status: `${origin}/api/base-plugin/gimi/status?wallet=0xUSER`,
     },
     baseMcp: {

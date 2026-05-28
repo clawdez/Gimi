@@ -5,10 +5,17 @@ import { getRentalReceiptsRepository, PersistedRentalReceipt } from "@/lib/renta
 import { getRentalSessionsRepository, PersistedRentalSession } from "@/lib/rentalSessionsRepository";
 import { USDC_DECIMALS } from "@/lib/rentproofProgram";
 
-const WALLET_PATTERN = /^[1-9A-HJ-NP-Za-km-z]{32,64}$/;
+const SOLANA_WALLET_PATTERN = /^[1-9A-HJ-NP-Za-km-z]{32,64}$/;
+const EVM_WALLET_PATTERN = /^0x[a-fA-F0-9]{40}$/;
 const RENTAL_ID_PATTERN = /^[A-Za-z0-9_-]{1,120}$/;
 
 function explorerUrl(signature: string) {
+  const baseMatch = signature.match(/^base:(8453|84532):(0x[a-fA-F0-9]{64})$/);
+  if (baseMatch) {
+    const host = baseMatch[1] === "8453" ? "basescan.org" : "sepolia.basescan.org";
+    return `https://${host}/tx/${baseMatch[2]}`;
+  }
+  if (signature.startsWith("offchain:")) return undefined;
   return `https://explorer.solana.com/tx/${signature}?cluster=devnet`;
 }
 
@@ -55,8 +62,8 @@ export async function GET(req: NextRequest) {
   const limitParam = searchParams.get("limit");
   const limit = limitParam ? Number(limitParam) : undefined;
 
-  if (wallet && !WALLET_PATTERN.test(wallet)) {
-    return errorResponse("wallet must be a Solana-style address", 400);
+  if (wallet && !SOLANA_WALLET_PATTERN.test(wallet) && !EVM_WALLET_PATTERN.test(wallet)) {
+    return errorResponse("wallet must be a Solana or EVM address", 400);
   }
   if (rentalId && !RENTAL_ID_PATTERN.test(rentalId)) {
     return errorResponse("rentalId contains unsupported characters", 400);
@@ -79,25 +86,29 @@ export async function GET(req: NextRequest) {
     });
     const records = await Promise.all(receipts.map(enrichReceipt));
     const activeRentals = await Promise.all(activeSessions.map(enrichSession));
-    const cardReservations = await Promise.all(
+    const providerReservations = await Promise.all(
       paymentIntents
-        .filter((intent) => intent.paymentMethod === "card" && intent.sessionStatus !== "cancelled")
+        .filter((intent) => intent.paymentMethod !== "solana_wallet" && intent.sessionStatus !== "cancelled")
         .map(enrichIntent)
     );
-    const ownerCardReservations = await Promise.all(
+    const ownerProviderReservations = await Promise.all(
       ownerPaymentIntents
-        .filter((intent) => intent.paymentMethod === "card" && intent.sessionStatus !== "cancelled")
+        .filter((intent) => intent.paymentMethod !== "solana_wallet" && intent.sessionStatus !== "cancelled")
         .map(enrichIntent)
     );
 
     return NextResponse.json({
       activeRentals,
-      cardReservations,
-      ownerCardReservations,
+      cardReservations: providerReservations,
+      ownerCardReservations: ownerProviderReservations,
+      providerReservations,
+      ownerProviderReservations,
       receipts: records,
       activeCount: activeRentals.length,
-      cardReservationCount: cardReservations.length,
-      ownerCardReservationCount: ownerCardReservations.length,
+      cardReservationCount: providerReservations.length,
+      ownerCardReservationCount: ownerProviderReservations.length,
+      providerReservationCount: providerReservations.length,
+      ownerProviderReservationCount: ownerProviderReservations.length,
       count: records.length,
       storage: {
         intents: intentsRepository.storageKind,

@@ -112,6 +112,11 @@ supabase/migrations/001_create_listings.sql
 supabase/migrations/002_create_rental_sessions.sql
 supabase/migrations/003_create_rental_receipts.sql
 supabase/migrations/004_create_rental_intents.sql
+supabase/migrations/005_add_card_settlement_fields.sql
+supabase/migrations/006_add_card_receipt_fields.sql
+supabase/migrations/007_add_paused_listing_status.sql
+supabase/migrations/008_create_notifications.sql
+supabase/migrations/009_add_base_mcp_rental_intents.sql
 ```
 
 Then configure these server-side environment variables:
@@ -687,6 +692,29 @@ Returns ERC-20 USDC `transfer` calldata that Base MCP can submit through `send_c
 curl -s "http://localhost:3000/api/base-plugin/gimi/prepare-deposit?itemId=mic_11&hours=2&from=0x000000000000000000000000000000000000dEaD&escrow=0x0000000000000000000000000000000000000001"
 ```
 
+### `POST /api/base-plugin/gimi/payment-confirmed`
+
+Records a confirmed Base MCP payment as a `rental_intent` with `provider:
+"base_mcp"`. The rental appears in profile/history, the owner can mark handoff
+and confirm return, and Base-funded returns write an off-chain receipt tied to
+the Base transaction hash. Set `BASE_MCP_CONFIRMATION_SECRET` in production and
+call this endpoint with `Authorization: Bearer <secret>` from a trusted
+agent/backend; without it, confirmation is caller-attested demo mode.
+
+```bash
+curl -s -X POST http://localhost:3000/api/base-plugin/gimi/payment-confirmed \
+  -H 'content-type: application/json' \
+  -d '{"itemId":"mic_11","hours":2,"renterWallet":"0x000000000000000000000000000000000000dEaD","txHash":"0x1111111111111111111111111111111111111111111111111111111111111111","chain":"base-sepolia"}'
+```
+
+### `GET /api/base-plugin/gimi/status`
+
+Returns Base MCP-funded rental intents and receipts for an EVM renter wallet.
+
+```bash
+curl -s "http://localhost:3000/api/base-plugin/gimi/status?wallet=0x000000000000000000000000000000000000dEaD"
+```
+
 See [docs/base-mcp-plugin.md](docs/base-mcp-plugin.md) for the plugin prompt and Base MCP handoff shape.
 
 ### `POST /api/rent`
@@ -699,7 +727,7 @@ Serves the generated Anchor IDL.
 
 ## Current Boundary
 
-This repo now has a deployed devnet Anchor settlement program, a product-ready demo surface, owner listing prepare/sign/publish flow, item photo upload pipeline, owner inventory pause/re-enable management, notification feed, production env readiness checks, MoonPay checkout smoke tooling, rental start status sync, return/auto-buyout settlement sync, card-funded return ledger and Solana memo receipt issuance, durable receipt persistence, a renter/owner-visible receipt history surface, live LI.FI quote support, ElevenLabs server-tool endpoints, Base MCP read/prepare endpoints, unsigned serialized Solana transaction generation, and wallet-side signing/sending for prepared transactions.
+This repo now has a deployed devnet Anchor settlement program, a product-ready demo surface, owner listing prepare/sign/publish flow, item photo upload pipeline, owner inventory pause/re-enable management, notification feed, production env readiness checks, MoonPay checkout smoke tooling, rental start status sync, return/auto-buyout settlement sync, card-funded return ledger and Solana memo receipt issuance, durable receipt persistence, a renter/owner-visible receipt history surface, live LI.FI quote support, ElevenLabs server-tool endpoints, Base MCP read/prepare/confirm endpoints, unsigned serialized Solana transaction generation, and wallet-side signing/sending for prepared transactions.
 
 - Program id: `AVL316tYxrg8MhEeWtaxbwdShMWybzRAH1zNQWvX355K`.
 - Published listings, rental intents, rental sessions, and rental receipts use Supabase when configured. Without Supabase env vars, the app falls back to ephemeral file storage.

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getNotificationsRepository } from "@/lib/notificationsRepository";
 
-const WALLET_PATTERN = /^[1-9A-HJ-NP-Za-km-z]{32,64}$/;
+const SOLANA_WALLET_PATTERN = /^[1-9A-HJ-NP-Za-km-z]{32,64}$/;
+const EVM_WALLET_PATTERN = /^0x[a-fA-F0-9]{40}$/;
 
 function errorResponse(message: string, status: number) {
   return NextResponse.json({ error: message }, { status });
@@ -12,7 +13,9 @@ export async function GET(req: NextRequest) {
   const limitParam = req.nextUrl.searchParams.get("limit");
   const limit = limitParam ? Number(limitParam) : undefined;
 
-  if (!WALLET_PATTERN.test(wallet)) return errorResponse("wallet must be a Solana-style address", 400);
+  if (!SOLANA_WALLET_PATTERN.test(wallet) && !EVM_WALLET_PATTERN.test(wallet)) {
+    return errorResponse("wallet must be a Solana or EVM address", 400);
+  }
   if (limitParam && (!Number.isFinite(limit) || Number(limit) < 1)) {
     return errorResponse("limit must be a positive number", 400);
   }
