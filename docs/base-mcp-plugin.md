@@ -13,7 +13,10 @@ GET /api/base-plugin/gimi/quote?itemId=mic_11&hours=2
 GET /api/base-plugin/gimi/prepare-deposit?itemId=mic_11&hours=2&from=0xUser&escrow=0xEscrow
 POST /api/base-plugin/gimi/payment-confirmed
 GET /api/base-plugin/gimi/status?wallet=0xUser
+GET /api/base-plugin/gimi/openapi.json
 ```
+
+For production setup, see [base-mcp-production.md](base-mcp-production.md).
 
 ## Base MCP Skill Prompt
 
@@ -75,6 +78,15 @@ Set `BASE_MCP_CONFIRMATION_SECRET` in production and call this endpoint with
 `Authorization: Bearer <secret>` from a trusted agent/backend. Without that env
 var, the endpoint remains caller-attested for local demos and should not be used
 as a payment source of truth.
+
+Production callback:
+
+```bash
+curl -s -X POST https://YOUR_GIMI_DOMAIN/api/base-plugin/gimi/payment-confirmed \
+  -H 'content-type: application/json' \
+  -H "authorization: Bearer $BASE_MCP_CONFIRMATION_SECRET" \
+  -d '{"itemId":"mic_11","hours":2,"renterWallet":"0x000000000000000000000000000000000000dEaD","txHash":"0x1111111111111111111111111111111111111111111111111111111111111111","chain":"base-sepolia"}'
+```
 
 The existing owner flow can then mark handoff and confirm return. For Base MCP-funded rentals, return settlement writes an off-chain receipt to Gimi history immediately, using the Base transaction as the settlement reference.
 

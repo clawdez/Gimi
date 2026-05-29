@@ -668,6 +668,14 @@ Handles tool calls:
 
 Returns the Gimi Base MCP plugin manifest and endpoint map.
 
+### `GET /api/base-plugin/gimi/openapi.json`
+
+Returns a machine-readable OpenAPI 3.1 description for Base plugin setup.
+
+```bash
+curl -s "http://localhost:3000/api/base-plugin/gimi/openapi.json"
+```
+
 ### `GET /api/base-plugin/gimi/inventory`
 
 Returns rentable community inventory for an agent query.
@@ -716,6 +724,7 @@ curl -s "http://localhost:3000/api/base-plugin/gimi/status?wallet=0x000000000000
 ```
 
 See [docs/base-mcp-plugin.md](docs/base-mcp-plugin.md) for the plugin prompt and Base MCP handoff shape.
+See [docs/base-mcp-production.md](docs/base-mcp-production.md) for the production setup guide.
 
 ### `POST /api/rent`
 
