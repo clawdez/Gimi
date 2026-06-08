@@ -207,12 +207,13 @@ The preferred MVP settlement path is:
 ```text
 renter funds escrow
 -> session stays active while rent accrues inside escrow
+-> renter requests return when the item is physically handed back
 -> owner confirms return
 -> program splits accrued rent into owner payout + platform fee
 -> program refunds the remaining escrow to renter
 ```
 
-`auto_buyout` handles the case where the item does not come back after due time plus grace by letting the host claim the buyout-cap escrow. Partial host withdraw before return is intentionally out of scope because it adds dispute and refund complexity.
+`confirm_return` bills against the renter's on-chain return-request timestamp when present, capped at the scheduled due time. This prevents a host from delaying confirmation just to consume more of the escrow. `auto_buyout` handles the case where the item does not come back after due time plus grace; any keeper can trigger it, but escrow still settles only to the owner/platform destination accounts. Partial host withdraw before return is intentionally out of scope because it adds dispute and refund complexity.
 
 ## Anchor Program
 
@@ -242,11 +243,12 @@ npm run devnet:setup
 
 Instructions:
 
-- `initialize_config` sets platform fee authority and fee bps.
+- `initialize_config` sets platform fee authority and fee bps. The initializer is pinned to the platform authority to prevent config squatting.
 - `initialize_item` records owner, payment mint, metered rate, minimum fee, buyout cap, and auto-buyout grace window.
 - `start_rental` transfers the full SPL-token buyout cap from renter to escrow, creates `RentalSession`, starts metered rent accrual, and creates the non-transferable `RentalToken` PDA.
+- `request_return` records a renter-signed return-request timestamp while the session remains active.
 - `confirm_return` settles accrued rent into platform fee and owner payout, refunds the renter remainder, closes escrow, closes rental token, and emits `RentalReturned`.
-- `auto_buyout` lets the owner claim the buyout cap after due time plus grace, closes escrow/token state, marks the item bought out, and emits `RentalBoughtOut`.
+- `auto_buyout` lets any keeper settle the buyout cap to owner/platform accounts after due time plus grace, closes escrow/token state, marks the item bought out, and emits `RentalBoughtOut`.
 
 The rental token is intentionally a program-owned PDA account, not a transferable SPL token. That keeps the rental right bound to the session and prevents a renter from transferring away the obligation.
 
@@ -536,6 +538,18 @@ Response includes:
 - `rentProof.accounts`
 - `explorerUrl`
 
+### `POST /api/solana-pay/request-return`
+
+Returns an unsigned serialized devnet `request_return` transaction for the renter wallet to sign. This records the renter's on-chain return-request timestamp before owner confirmation, so the final rental fee is not controlled only by the owner's confirmation time.
+
+Example request:
+
+```bash
+curl -s -X POST http://localhost:3000/api/solana-pay/request-return \
+  -H 'content-type: application/json' \
+  -d '{"itemId":"mic_11","renterWallet":"5pNLovuXAbyKM8UGDKZg9Qqe85Sqt1kMPNaippombvwC","rentalId":"draft_mic_11"}'
+```
+
 ### `POST /api/solana-pay/confirm-return`
 
 Returns an unsigned serialized devnet `confirm_return` transaction for the owner wallet to sign. It splits accrued rent from escrow into owner payout and platform fee, refunds the renter remainder, closes escrow/rental-token state, and emits the return receipt event.
@@ -553,7 +567,7 @@ curl -s -X POST http://localhost:3000/api/solana-pay/confirm-return \
 
 ### `POST /api/solana-pay/auto-buyout`
 
-Returns an unsigned serialized devnet `auto_buyout` transaction for the owner wallet to sign after due time plus grace. It claims the buyout escrow, closes rental-token state, marks the item bought out, and emits the buyout receipt event.
+Returns an unsigned serialized devnet `auto_buyout` transaction for a keeper wallet to sign after due time plus grace. It claims the buyout escrow into owner/platform destination accounts, closes rental-token state, marks the item bought out, and emits the buyout receipt event.
 The route uses the same settlement preflight and idempotent destination-token
 account setup as `confirm_return`.
 
@@ -661,6 +675,7 @@ Handles tool calls:
 - `rentproof.draft_terms`
 - `rentproof.quote_funding`
 - `rentproof.create_rental_request`
+- `rentproof.prepare_return_request`
 - `rentproof.prepare_return_confirmation`
 - `rentproof.prepare_auto_buyout`
 

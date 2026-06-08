@@ -161,6 +161,10 @@ export function settleRentalInstructionData(kind: "confirm_return" | "auto_buyou
   return anchorInstructionDiscriminator(kind);
 }
 
+export function requestReturnInstructionData() {
+  return anchorInstructionDiscriminator("request_return");
+}
+
 export function initializeItemInstructionData(input: {
   itemIdHash: Buffer;
   metadataHash: Buffer;
@@ -285,7 +289,7 @@ export function rentalSessionAccountDiscriminator() {
 
 export function decodeRentalSessionAccount(data: Uint8Array) {
   const buffer = Buffer.from(data);
-  if (buffer.byteLength < 8 + 32 + 32 + 32 + 32 + 32 + 8 + 8 + 8 + 8 + 8 + 8 + 8 + 8 + 8 + 1 + 1 + 1 + 1) {
+  if (buffer.byteLength < 8 + 32 + 32 + 32 + 32 + 32 + 8 + 8 + 8 + 8 + 8 + 8 + 8 + 8 + 8 + 8 + 1 + 1 + 1 + 1) {
     throw new Error("RentalSession account data is too short");
   }
 
@@ -309,10 +313,11 @@ export function decodeRentalSessionAccount(data: Uint8Array) {
     ownerPayout: buffer.readBigUInt64LE(216),
     platformFee: buffer.readBigUInt64LE(224),
     renterRefund: buffer.readBigUInt64LE(232),
-    status: buffer.readUInt8(240),
-    bump: buffer.readUInt8(241),
-    escrowBump: buffer.readUInt8(242),
-    rentalTokenBump: buffer.readUInt8(243),
+    returnRequestedTs: buffer.readBigInt64LE(240),
+    status: buffer.readUInt8(248),
+    bump: buffer.readUInt8(249),
+    escrowBump: buffer.readUInt8(250),
+    rentalTokenBump: buffer.readUInt8(251),
   };
 }
 
@@ -573,6 +578,48 @@ export async function preflightSettleRental(input: {
   } satisfies RentProofPreflight;
 }
 
+export async function preflightRequestReturn(input: {
+  itemId: string;
+  ownerWallet?: unknown;
+  renterWallet?: unknown;
+  rentalId: string;
+}) {
+  const rentProof = deriveRentProofAccounts(input);
+  const accounts = rentProof.accounts;
+  const connection = new Connection(SOLANA_RPC_URL, "confirmed");
+  const problems: string[] = [];
+  const [itemCheck, sessionCheck, rentalTokenCheck] = await Promise.all([
+    getOwnedAccount(connection, accounts.item, RENTAL_SESSION_PROGRAM_ID),
+    getOwnedAccount(connection, accounts.session, RENTAL_SESSION_PROGRAM_ID),
+    getOwnedAccount(connection, accounts.rentalToken, RENTAL_SESSION_PROGRAM_ID),
+  ]);
+
+  if (!itemCheck.exists) problems.push("Item PDA does not exist.");
+  if (itemCheck.exists && !itemCheck.owned) problems.push("Item PDA is not owned by the Gimi rental program.");
+  if (!sessionCheck.exists) problems.push("Rental session PDA does not exist. Start rental before requesting return.");
+  if (sessionCheck.exists && !sessionCheck.owned) problems.push("Rental session PDA is not owned by the Gimi rental program.");
+  if (!rentalTokenCheck.exists) problems.push("Rental token PDA does not exist.");
+  if (rentalTokenCheck.exists && !rentalTokenCheck.owned) {
+    problems.push("Rental token PDA is not owned by the Gimi rental program.");
+  }
+
+  return {
+    ok: problems.length === 0,
+    cluster: SOLANA_CLUSTER,
+    rpcUrl: SOLANA_RPC_URL,
+    problems,
+    accounts: {
+      item: accounts.item,
+      session: accounts.session,
+      rentalToken: accounts.rentalToken,
+      renterTokenAccount: accounts.renterTokenAccount,
+      ownerTokenAccount: accounts.ownerTokenAccount,
+      platformFeeTokenAccount: accounts.platformFeeTokenAccount,
+      paymentMint: accounts.paymentMint,
+    },
+  };
+}
+
 export async function buildStartRentalTransaction(input: {
   itemId: string;
   ownerWallet?: unknown;
@@ -633,8 +680,7 @@ export async function buildStartRentalTransaction(input: {
   };
 }
 
-export async function buildSettleRentalTransaction(input: {
-  kind: "confirm_return" | "auto_buyout";
+export async function buildRequestReturnTransaction(input: {
   itemId: string;
   ownerWallet?: unknown;
   renterWallet?: unknown;
@@ -642,49 +688,112 @@ export async function buildSettleRentalTransaction(input: {
 }) {
   const rentProof = deriveRentProofAccounts(input);
   const accounts = rentProof.accounts;
-  const owner = new PublicKey(accounts.owner);
+  const renter = new PublicKey(accounts.renter);
   const connection = new Connection(SOLANA_RPC_URL, "confirmed");
   const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
 
   const instruction = new TransactionInstruction({
     programId: RENTAL_SESSION_PROGRAM_ID,
     keys: [
-      { pubkey: new PublicKey(accounts.config), isSigner: false, isWritable: false },
       { pubkey: new PublicKey(accounts.item), isSigner: false, isWritable: true },
-      { pubkey: owner, isSigner: true, isWritable: true },
-      { pubkey: new PublicKey(accounts.renter), isSigner: false, isWritable: true },
-      { pubkey: new PublicKey(accounts.feeAuthority), isSigner: false, isWritable: false },
+      { pubkey: renter, isSigner: true, isWritable: true },
       { pubkey: new PublicKey(accounts.session), isSigner: false, isWritable: true },
-      { pubkey: new PublicKey(accounts.rentalToken), isSigner: false, isWritable: true },
-      { pubkey: new PublicKey(accounts.escrowTokenAccount), isSigner: false, isWritable: true },
-      { pubkey: new PublicKey(accounts.escrowAuthority), isSigner: false, isWritable: false },
-      { pubkey: new PublicKey(accounts.renterTokenAccount), isSigner: false, isWritable: true },
-      { pubkey: new PublicKey(accounts.ownerTokenAccount), isSigner: false, isWritable: true },
-      { pubkey: new PublicKey(accounts.platformFeeTokenAccount), isSigner: false, isWritable: true },
-      { pubkey: new PublicKey(accounts.paymentMint), isSigner: false, isWritable: false },
-      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+      { pubkey: new PublicKey(accounts.rentalToken), isSigner: false, isWritable: false },
     ],
+    data: requestReturnInstructionData(),
+  });
+
+  const transaction = new Transaction({
+    feePayer: renter,
+    recentBlockhash: blockhash,
+  }).add(instruction);
+
+  return {
+    rentProof,
+    transactionBase64: transaction
+      .serialize({ requireAllSignatures: false, verifySignatures: false })
+      .toString("base64"),
+    blockhash,
+    lastValidBlockHeight,
+    cluster: SOLANA_CLUSTER,
+    rpcUrl: SOLANA_RPC_URL,
+  };
+}
+
+export async function buildSettleRentalTransaction(input: {
+  kind: "confirm_return" | "auto_buyout";
+  itemId: string;
+  ownerWallet?: unknown;
+  renterWallet?: unknown;
+  payerWallet?: unknown;
+  rentalId: string;
+}) {
+  const rentProof = deriveRentProofAccounts(input);
+  const accounts = rentProof.accounts;
+  const owner = new PublicKey(accounts.owner);
+  const payer = input.kind === "auto_buyout" ? publicKeyOrFallback(input.payerWallet, owner) : owner;
+  const connection = new Connection(SOLANA_RPC_URL, "confirmed");
+  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+  const settleKeys =
+    input.kind === "confirm_return"
+      ? [
+          { pubkey: new PublicKey(accounts.config), isSigner: false, isWritable: false },
+          { pubkey: new PublicKey(accounts.item), isSigner: false, isWritable: true },
+          { pubkey: owner, isSigner: true, isWritable: true },
+          { pubkey: new PublicKey(accounts.renter), isSigner: false, isWritable: true },
+          { pubkey: new PublicKey(accounts.feeAuthority), isSigner: false, isWritable: false },
+          { pubkey: new PublicKey(accounts.session), isSigner: false, isWritable: true },
+          { pubkey: new PublicKey(accounts.rentalToken), isSigner: false, isWritable: true },
+          { pubkey: new PublicKey(accounts.escrowTokenAccount), isSigner: false, isWritable: true },
+          { pubkey: new PublicKey(accounts.escrowAuthority), isSigner: false, isWritable: false },
+          { pubkey: new PublicKey(accounts.renterTokenAccount), isSigner: false, isWritable: true },
+          { pubkey: new PublicKey(accounts.ownerTokenAccount), isSigner: false, isWritable: true },
+          { pubkey: new PublicKey(accounts.platformFeeTokenAccount), isSigner: false, isWritable: true },
+          { pubkey: new PublicKey(accounts.paymentMint), isSigner: false, isWritable: false },
+          { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+        ]
+      : [
+          { pubkey: new PublicKey(accounts.config), isSigner: false, isWritable: false },
+          { pubkey: new PublicKey(accounts.item), isSigner: false, isWritable: true },
+          { pubkey: payer, isSigner: true, isWritable: true },
+          { pubkey: owner, isSigner: false, isWritable: true },
+          { pubkey: new PublicKey(accounts.renter), isSigner: false, isWritable: true },
+          { pubkey: new PublicKey(accounts.feeAuthority), isSigner: false, isWritable: false },
+          { pubkey: new PublicKey(accounts.session), isSigner: false, isWritable: true },
+          { pubkey: new PublicKey(accounts.rentalToken), isSigner: false, isWritable: true },
+          { pubkey: new PublicKey(accounts.escrowTokenAccount), isSigner: false, isWritable: true },
+          { pubkey: new PublicKey(accounts.escrowAuthority), isSigner: false, isWritable: false },
+          { pubkey: new PublicKey(accounts.renterTokenAccount), isSigner: false, isWritable: true },
+          { pubkey: new PublicKey(accounts.ownerTokenAccount), isSigner: false, isWritable: true },
+          { pubkey: new PublicKey(accounts.platformFeeTokenAccount), isSigner: false, isWritable: true },
+          { pubkey: new PublicKey(accounts.paymentMint), isSigner: false, isWritable: false },
+          { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+        ];
+
+  const instruction = new TransactionInstruction({
+    programId: RENTAL_SESSION_PROGRAM_ID,
+    keys: settleKeys,
     data: settleRentalInstructionData(input.kind),
   });
 
   const transaction = new Transaction({
-    feePayer: owner,
+    feePayer: payer,
     recentBlockhash: blockhash,
   }).add(
     createAssociatedTokenAccountIdempotentInstruction(
-      owner,
+      payer,
       new PublicKey(accounts.renterTokenAccount),
       new PublicKey(accounts.renter),
       new PublicKey(accounts.paymentMint)
     ),
     createAssociatedTokenAccountIdempotentInstruction(
-      owner,
+      payer,
       new PublicKey(accounts.ownerTokenAccount),
       owner,
       new PublicKey(accounts.paymentMint)
     ),
     createAssociatedTokenAccountIdempotentInstruction(
-      owner,
+      payer,
       new PublicKey(accounts.platformFeeTokenAccount),
       new PublicKey(accounts.feeAuthority),
       new PublicKey(accounts.paymentMint)
@@ -701,6 +810,8 @@ export async function buildSettleRentalTransaction(input: {
     lastValidBlockHeight,
     cluster: SOLANA_CLUSTER,
     rpcUrl: SOLANA_RPC_URL,
+    feePayer: payer.toBase58(),
+    requiredSigner: payer.toBase58(),
   };
 }
 

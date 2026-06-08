@@ -1,4 +1,5 @@
 use anchor_lang::prelude::*;
+use anchor_lang::solana_program::pubkey;
 use anchor_spl::token::{self, CloseAccount, Mint, Token, TokenAccount, Transfer};
 
 declare_id!("AVL316tYxrg8MhEeWtaxbwdShMWybzRAH1zNQWvX355K");
@@ -6,6 +7,7 @@ declare_id!("AVL316tYxrg8MhEeWtaxbwdShMWybzRAH1zNQWvX355K");
 const BPS_DENOMINATOR: u64 = 10_000;
 const MAX_PLATFORM_FEE_BPS: u16 = 2_000;
 const MAX_RENTAL_SECONDS: i64 = 60 * 60 * 24 * 30;
+const PLATFORM_AUTHORITY: Pubkey = pubkey!("7Fmr5t2h2SZ55n4w3dkgWTjaXRafDnBLLy1RhdmPJk6b");
 
 pub const ITEM_STATUS_AVAILABLE: u8 = 0;
 pub const ITEM_STATUS_RENTED: u8 = 1;
@@ -24,6 +26,10 @@ pub mod rental_session {
 
     pub fn initialize_config(ctx: Context<InitializeConfig>, fee_bps: u16) -> Result<()> {
         require!(fee_bps <= MAX_PLATFORM_FEE_BPS, RentProofError::FeeTooHigh);
+        require!(
+            ctx.accounts.authority.key() == PLATFORM_AUTHORITY,
+            RentProofError::InvalidPlatformAuthority
+        );
 
         let config = &mut ctx.accounts.config;
         config.authority = ctx.accounts.authority.key();
@@ -124,6 +130,7 @@ pub mod rental_session {
         session.owner_payout = 0;
         session.platform_fee = 0;
         session.renter_refund = 0;
+        session.return_requested_ts = 0;
         session.status = SESSION_STATUS_ACTIVE;
         session.bump = ctx.bumps.session;
         session.escrow_bump = ctx.bumps.escrow_authority;
@@ -153,6 +160,34 @@ pub mod rental_session {
         Ok(())
     }
 
+    pub fn request_return(ctx: Context<RequestReturn>) -> Result<()> {
+        require!(
+            ctx.accounts.session.status == SESSION_STATUS_ACTIVE,
+            RentProofError::SessionNotActive
+        );
+        require!(
+            ctx.accounts.item.status == ITEM_STATUS_RENTED,
+            RentProofError::ItemUnavailable
+        );
+        require!(
+            ctx.accounts.session.return_requested_ts == 0,
+            RentProofError::ReturnAlreadyRequested
+        );
+
+        let clock = Clock::get()?;
+        let session = &mut ctx.accounts.session;
+        session.return_requested_ts = clock.unix_timestamp;
+
+        emit!(ReturnRequested {
+            session: session.key(),
+            item: ctx.accounts.item.key(),
+            renter: session.renter,
+            requested_ts: session.return_requested_ts,
+        });
+
+        Ok(())
+    }
+
     pub fn confirm_return(ctx: Context<SettleRental>) -> Result<()> {
         require!(
             ctx.accounts.session.status == SESSION_STATUS_ACTIVE,
@@ -164,11 +199,7 @@ pub mod rental_session {
         );
 
         let clock = Clock::get()?;
-        let elapsed = clock
-            .unix_timestamp
-            .checked_sub(ctx.accounts.session.start_ts)
-            .ok_or(RentProofError::MathOverflow)?
-            .max(1);
+        let elapsed = settlement_elapsed_seconds(&ctx.accounts.session, clock.unix_timestamp)?;
         let final_fee = calculate_fee(&ctx.accounts.item, elapsed)?;
         let (platform_fee, owner_payout, renter_refund) = split_return_settlement(
             final_fee,
@@ -242,7 +273,7 @@ pub mod rental_session {
         Ok(())
     }
 
-    pub fn auto_buyout(ctx: Context<SettleRental>) -> Result<()> {
+    pub fn auto_buyout(ctx: Context<AutoBuyout>) -> Result<()> {
         require!(
             ctx.accounts.session.status == SESSION_STATUS_ACTIVE,
             RentProofError::SessionNotActive
@@ -420,6 +451,37 @@ pub struct StartRental<'info> {
 }
 
 #[derive(Accounts)]
+pub struct RequestReturn<'info> {
+    #[account(
+        mut,
+        seeds = [b"item", item.owner.as_ref(), item.item_id.as_ref()],
+        bump = item.bump,
+        constraint = item.status == ITEM_STATUS_RENTED @ RentProofError::ItemUnavailable,
+        constraint = item.active_session == session.key() @ RentProofError::InvalidSession
+    )]
+    pub item: Box<Account<'info, RentalItem>>,
+    #[account(mut)]
+    pub renter: Signer<'info>,
+    #[account(
+        mut,
+        constraint = session.item == item.key() @ RentProofError::InvalidSession,
+        constraint = session.renter == renter.key() @ RentProofError::InvalidRenter,
+        constraint = session.status == SESSION_STATUS_ACTIVE @ RentProofError::SessionNotActive,
+        seeds = [b"session", item.key().as_ref(), session.rental_id.as_ref()],
+        bump = session.bump
+    )]
+    pub session: Box<Account<'info, RentalSession>>,
+    #[account(
+        constraint = rental_token.session == session.key() @ RentProofError::InvalidRentalToken,
+        constraint = rental_token.renter == renter.key() @ RentProofError::InvalidRenter,
+        constraint = rental_token.status == RENTAL_TOKEN_STATUS_ACTIVE @ RentProofError::InvalidRentalToken,
+        seeds = [b"rental_token", session.key().as_ref()],
+        bump = rental_token.bump
+    )]
+    pub rental_token: Box<Account<'info, RentalToken>>,
+}
+
+#[derive(Accounts)]
 pub struct SettleRental<'info> {
     #[account(seeds = [b"config"], bump = config.bump)]
     pub config: Account<'info, PlatformConfig>,
@@ -434,6 +496,77 @@ pub struct SettleRental<'info> {
     pub item: Box<Account<'info, RentalItem>>,
     #[account(mut)]
     pub owner: Signer<'info>,
+    #[account(mut, address = session.renter @ RentProofError::InvalidRenter)]
+    pub renter: SystemAccount<'info>,
+    #[account(address = config.fee_authority @ RentProofError::InvalidFeeAuthority)]
+    pub fee_authority: SystemAccount<'info>,
+    #[account(
+        mut,
+        constraint = session.item == item.key() @ RentProofError::InvalidSession,
+        constraint = session.owner == owner.key() @ RentProofError::InvalidOwner,
+        constraint = session.payment_mint == payment_mint.key() @ RentProofError::InvalidPaymentMint,
+        seeds = [b"session", item.key().as_ref(), session.rental_id.as_ref()],
+        bump = session.bump
+    )]
+    pub session: Box<Account<'info, RentalSession>>,
+    #[account(
+        mut,
+        close = renter,
+        constraint = rental_token.session == session.key() @ RentProofError::InvalidRentalToken,
+        constraint = rental_token.renter == renter.key() @ RentProofError::InvalidRenter,
+        seeds = [b"rental_token", session.key().as_ref()],
+        bump = rental_token.bump
+    )]
+    pub rental_token: Box<Account<'info, RentalToken>>,
+    #[account(
+        mut,
+        seeds = [b"escrow", session.key().as_ref()],
+        bump,
+        token::mint = payment_mint,
+        token::authority = escrow_authority
+    )]
+    pub escrow_token_account: Box<Account<'info, TokenAccount>>,
+    /// CHECK: PDA authority for the escrow token account.
+    #[account(seeds = [b"escrow_authority", session.key().as_ref()], bump = session.escrow_bump)]
+    pub escrow_authority: UncheckedAccount<'info>,
+    #[account(
+        mut,
+        token::mint = payment_mint,
+        token::authority = renter
+    )]
+    pub renter_token_account: Box<Account<'info, TokenAccount>>,
+    #[account(
+        mut,
+        token::mint = payment_mint,
+        token::authority = owner
+    )]
+    pub owner_token_account: Box<Account<'info, TokenAccount>>,
+    #[account(
+        mut,
+        token::mint = payment_mint,
+        token::authority = fee_authority
+    )]
+    pub platform_fee_token_account: Box<Account<'info, TokenAccount>>,
+    pub payment_mint: Box<Account<'info, Mint>>,
+    pub token_program: Program<'info, Token>,
+}
+
+#[derive(Accounts)]
+pub struct AutoBuyout<'info> {
+    #[account(seeds = [b"config"], bump = config.bump)]
+    pub config: Account<'info, PlatformConfig>,
+    #[account(
+        mut,
+        seeds = [b"item", item.owner.as_ref(), item.item_id.as_ref()],
+        bump = item.bump,
+        constraint = item.payment_mint == payment_mint.key() @ RentProofError::InvalidPaymentMint,
+        constraint = item.active_session == session.key() @ RentProofError::InvalidSession
+    )]
+    pub item: Box<Account<'info, RentalItem>>,
+    #[account(mut)]
+    pub keeper: Signer<'info>,
+    #[account(mut, address = item.owner @ RentProofError::InvalidOwner)]
+    pub owner: SystemAccount<'info>,
     #[account(mut, address = session.renter @ RentProofError::InvalidRenter)]
     pub renter: SystemAccount<'info>,
     #[account(address = config.fee_authority @ RentProofError::InvalidFeeAuthority)]
@@ -531,6 +664,7 @@ pub struct RentalSession {
     pub owner_payout: u64,
     pub platform_fee: u64,
     pub renter_refund: u64,
+    pub return_requested_ts: i64,
     pub status: u8,
     pub bump: u8,
     pub escrow_bump: u8,
@@ -572,6 +706,14 @@ pub struct RentalStarted {
     pub escrow_amount: u64,
     pub expected_fee: u64,
     pub due_ts: i64,
+}
+
+#[event]
+pub struct ReturnRequested {
+    pub session: Pubkey,
+    pub item: Pubkey,
+    pub renter: Pubkey,
+    pub requested_ts: i64,
 }
 
 #[event]
@@ -625,6 +767,10 @@ pub enum RentProofError {
     InvalidSession,
     #[msg("Invalid rental token")]
     InvalidRentalToken,
+    #[msg("Invalid platform authority")]
+    InvalidPlatformAuthority,
+    #[msg("Return has already been requested")]
+    ReturnAlreadyRequested,
 }
 
 fn calculate_fee(item: &RentalItem, elapsed_seconds: i64) -> Result<u64> {
@@ -654,6 +800,19 @@ fn split_return_settlement(
         .checked_sub(final_fee)
         .ok_or(RentProofError::MathOverflow)?;
     Ok((platform_fee, owner_payout, renter_refund))
+}
+
+fn settlement_elapsed_seconds(session: &RentalSession, now_ts: i64) -> Result<i64> {
+    let requested_or_now = if session.return_requested_ts > 0 {
+        session.return_requested_ts
+    } else {
+        now_ts
+    };
+    let fee_cutoff_ts = requested_or_now.min(session.due_ts);
+    Ok(fee_cutoff_ts
+        .checked_sub(session.start_ts)
+        .ok_or(RentProofError::MathOverflow)?
+        .max(1))
 }
 
 fn split_buyout_settlement(final_fee: u64, fee_bps: u16) -> Result<(u64, u64, u64)> {
@@ -748,6 +907,30 @@ mod tests {
         }
     }
 
+    fn test_session() -> RentalSession {
+        RentalSession {
+            item: Pubkey::default(),
+            renter: Pubkey::default(),
+            owner: Pubkey::default(),
+            payment_mint: Pubkey::default(),
+            rental_id: [3; 32],
+            start_ts: 1_000,
+            due_ts: 4_600,
+            returned_ts: 0,
+            escrow_amount: 100,
+            expected_fee_at_start: 10,
+            final_fee: 0,
+            owner_payout: 0,
+            platform_fee: 0,
+            renter_refund: 0,
+            return_requested_ts: 0,
+            status: SESSION_STATUS_ACTIVE,
+            bump: 255,
+            escrow_bump: 254,
+            rental_token_bump: 253,
+        }
+    }
+
     #[test]
     fn metered_fee_respects_minimum_and_cap() {
         let item = test_item();
@@ -772,5 +955,18 @@ mod tests {
         assert_eq!(platform_fee, 5);
         assert_eq!(owner_payout, 95);
         assert_eq!(renter_refund, 0);
+    }
+
+    #[test]
+    fn settlement_elapsed_uses_return_request_when_present() {
+        let mut session = test_session();
+        session.return_requested_ts = 1_900;
+        assert_eq!(settlement_elapsed_seconds(&session, 4_000).unwrap(), 900);
+    }
+
+    #[test]
+    fn settlement_elapsed_is_capped_at_due_time() {
+        let session = test_session();
+        assert_eq!(settlement_elapsed_seconds(&session, 9_000).unwrap(), 3_600);
     }
 }

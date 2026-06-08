@@ -2,10 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { getRentableItem, getRentableItems } from "@/lib/rentableItems";
 import { quoteLifiFunding } from "@/lib/lifi";
 import {
+  buildRequestReturnTransaction,
   buildSettleRentalTransaction,
   buildStartRentalTransaction,
   publicKeyOrFallback,
   DEMO_RENTER_WALLET,
+  preflightRequestReturn,
   preflightSettleRental,
   preflightStartRental,
 } from "@/lib/rentproofProgram";
@@ -15,6 +17,7 @@ const tools = [
   "rentproof.draft_terms",
   "rentproof.quote_funding",
   "rentproof.create_rental_request",
+  "rentproof.prepare_return_request",
   "rentproof.prepare_return_confirmation",
   "rentproof.prepare_auto_buyout",
 ] as const;
@@ -48,9 +51,11 @@ export async function GET(req: NextRequest) {
             ? "Quote cross-chain funding into Solana USDC using LI.FI."
               : tool === "rentproof.create_rental_request"
                 ? "Create an unsigned serialized Solana devnet start_rental transaction."
-                : tool === "rentproof.prepare_return_confirmation"
-                  ? "Create an unsigned serialized Solana devnet confirm_return transaction for the owner to sign after physical return."
-                  : "Create an unsigned serialized Solana devnet auto_buyout transaction for the owner to sign.",
+                : tool === "rentproof.prepare_return_request"
+                  ? "Create an unsigned serialized Solana devnet request_return transaction for the renter to sign."
+                  : tool === "rentproof.prepare_return_confirmation"
+                    ? "Create an unsigned serialized Solana devnet confirm_return transaction for the owner to sign after physical return."
+                    : "Create an unsigned serialized Solana devnet auto_buyout transaction for a keeper to sign.",
     })),
     request_body_schema: {
       type: "object",
@@ -132,6 +137,44 @@ export async function POST(req: NextRequest) {
   const renter = publicKeyOrFallback(body.renterWallet, DEMO_RENTER_WALLET);
   const rentalId = body.draftId ?? `elevenlabs_${item.id}_${crypto.randomUUID()}`;
 
+  if (tool === "rentproof.prepare_return_request") {
+    const settleRentalId = body.rentalId ?? body.draftId ?? rentalId;
+    const preflight = await preflightRequestReturn({
+      itemId: item.id,
+      ownerWallet: item.owner,
+      renterWallet: renter.toBase58(),
+      rentalId: settleRentalId,
+    });
+
+    if (!preflight.ok) {
+      return NextResponse.json({ error: "Return request preflight failed", problems: preflight.problems, preflight }, { status: 409 });
+    }
+
+    const serialized = await buildRequestReturnTransaction({
+      itemId: item.id,
+      ownerWallet: item.owner,
+      renterWallet: renter.toBase58(),
+      rentalId: settleRentalId,
+    });
+
+    return NextResponse.json({
+      rentalId: settleRentalId,
+      itemId: item.id,
+      transaction: serialized.transactionBase64,
+      transactionMetadata: {
+        cluster: serialized.cluster,
+        rpcUrl: serialized.rpcUrl,
+        blockhash: serialized.blockhash,
+        lastValidBlockHeight: serialized.lastValidBlockHeight,
+        feePayer: serialized.rentProof.accounts.renter,
+        requiredSigner: serialized.rentProof.accounts.renter,
+      },
+      rentProof: serialized.rentProof,
+      preflight,
+      safety: "Unsigned renter transaction only. The ElevenLabs tool cannot sign or move funds.",
+    });
+  }
+
   if (tool === "rentproof.prepare_return_confirmation" || tool === "rentproof.prepare_auto_buyout") {
     const kind = tool === "rentproof.prepare_return_confirmation" ? "confirm_return" : "auto_buyout";
     const settleRentalId = body.rentalId ?? body.draftId ?? rentalId;
@@ -151,6 +194,7 @@ export async function POST(req: NextRequest) {
       itemId: item.id,
       ownerWallet: item.owner,
       renterWallet: renter.toBase58(),
+      payerWallet: body.payerWallet,
       rentalId: settleRentalId,
     });
 
@@ -163,16 +207,16 @@ export async function POST(req: NextRequest) {
         rpcUrl: serialized.rpcUrl,
         blockhash: serialized.blockhash,
         lastValidBlockHeight: serialized.lastValidBlockHeight,
-        feePayer: serialized.rentProof.accounts.owner,
-        requiredSigner: serialized.rentProof.accounts.owner,
+        feePayer: serialized.feePayer,
+        requiredSigner: serialized.requiredSigner,
       },
       rentProof: serialized.rentProof,
       preflight,
       settlementModel:
         kind === "confirm_return"
           ? "Owner confirmation splits accrued rent from escrow into owner payout and platform fee, then refunds the renter remainder."
-          : "Auto-buyout claims escrow after due time plus grace.",
-      safety: "Unsigned owner transaction only. The ElevenLabs tool cannot sign or move funds.",
+          : "Permissionless auto-buyout can be signed by any keeper after due time plus grace; funds still settle to owner/platform accounts.",
+      safety: "Unsigned wallet transaction only. The ElevenLabs tool cannot sign or move funds.",
     });
   }
 
