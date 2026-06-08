@@ -40,12 +40,39 @@
         },
         {
           "name": "item",
-          "writable": true
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  116,
+                  101,
+                  109
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "item.owner",
+                "account": "RentalItem"
+              },
+              {
+                "kind": "account",
+                "path": "item.item_id",
+                "account": "RentalItem"
+              }
+            ]
+          }
+        },
+        {
+          "name": "keeper",
+          "writable": true,
+          "signer": true
         },
         {
           "name": "owner",
-          "writable": true,
-          "signer": true
+          "writable": true
         },
         {
           "name": "renter",
@@ -222,7 +249,30 @@
         },
         {
           "name": "item",
-          "writable": true
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  116,
+                  101,
+                  109
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "item.owner",
+                "account": "RentalItem"
+              },
+              {
+                "kind": "account",
+                "path": "item.item_id",
+                "account": "RentalItem"
+              }
+            ]
+          }
         },
         {
           "name": "owner",
@@ -512,6 +562,111 @@
       ]
     },
     {
+      "name": "request_return",
+      "discriminator": [
+        74,
+        176,
+        238,
+        73,
+        206,
+        45,
+        244,
+        133
+      ],
+      "accounts": [
+        {
+          "name": "item",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  116,
+                  101,
+                  109
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "item.owner",
+                "account": "RentalItem"
+              },
+              {
+                "kind": "account",
+                "path": "item.item_id",
+                "account": "RentalItem"
+              }
+            ]
+          }
+        },
+        {
+          "name": "renter",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "session",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  101,
+                  115,
+                  115,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "item"
+              },
+              {
+                "kind": "account",
+                "path": "session.rental_id",
+                "account": "RentalSession"
+              }
+            ]
+          }
+        },
+        {
+          "name": "rental_token",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  110,
+                  116,
+                  97,
+                  108,
+                  95,
+                  116,
+                  111,
+                  107,
+                  101,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "session"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "start_rental",
       "discriminator": [
         18,
@@ -544,7 +699,30 @@
         },
         {
           "name": "item",
-          "writable": true
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  116,
+                  101,
+                  109
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "item.owner",
+                "account": "RentalItem"
+              },
+              {
+                "kind": "account",
+                "path": "item.item_id",
+                "account": "RentalItem"
+              }
+            ]
+          }
         },
         {
           "name": "renter",
@@ -819,6 +997,19 @@
         40,
         252
       ]
+    },
+    {
+      "name": "ReturnRequested",
+      "discriminator": [
+        146,
+        142,
+        135,
+        67,
+        92,
+        65,
+        237,
+        250
+      ]
     }
   ],
   "errors": [
@@ -886,6 +1077,16 @@
       "code": 6012,
       "name": "InvalidRentalToken",
       "msg": "Invalid rental token"
+    },
+    {
+      "code": 6013,
+      "name": "InvalidPlatformAuthority",
+      "msg": "Invalid platform authority"
+    },
+    {
+      "code": 6014,
+      "name": "ReturnAlreadyRequested",
+      "msg": "Return has already been requested"
     }
   ],
   "types": [
@@ -1162,6 +1363,10 @@
             "type": "u64"
           },
           {
+            "name": "return_requested_ts",
+            "type": "i64"
+          },
+          {
             "name": "status",
             "type": "u8"
           },
@@ -1244,6 +1449,30 @@
           {
             "name": "bump",
             "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ReturnRequested",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "session",
+            "type": "pubkey"
+          },
+          {
+            "name": "item",
+            "type": "pubkey"
+          },
+          {
+            "name": "renter",
+            "type": "pubkey"
+          },
+          {
+            "name": "requested_ts",
+            "type": "i64"
           }
         ]
       }

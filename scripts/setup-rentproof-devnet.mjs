@@ -20,6 +20,7 @@ import {
 } from "@solana/spl-token";
 
 const PROGRAM_ID = new PublicKey("AVL316tYxrg8MhEeWtaxbwdShMWybzRAH1zNQWvX355K");
+const PLATFORM_AUTHORITY = new PublicKey("7Fmr5t2h2SZ55n4w3dkgWTjaXRafDnBLLy1RhdmPJk6b");
 const FEE_AUTHORITY = new PublicKey("AWesFzR3x97q5QWk6MBxLU8kRGZcuobtKuoABtMiHWH1");
 const USDC_DECIMALS = 6;
 const PLATFORM_FEE_BPS = 500;
@@ -85,11 +86,11 @@ function pda(seeds) {
   return PublicKey.findProgramAddressSync(seeds, PROGRAM_ID)[0];
 }
 
-function initializeConfigIx({ payer, config }) {
+function initializeConfigIx({ authority, config }) {
   return new TransactionInstruction({
     programId: PROGRAM_ID,
     keys: [
-      { pubkey: payer, isSigner: true, isWritable: true },
+      { pubkey: authority, isSigner: true, isWritable: true },
       { pubkey: FEE_AUTHORITY, isSigner: false, isWritable: false },
       { pubkey: config, isSigner: false, isWritable: true },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
@@ -131,6 +132,12 @@ async function main() {
   console.log(`owner=${owner.publicKey.toBase58()}`);
   console.log(`renter=${renter.publicKey.toBase58()}`);
   console.log(`mint=${mint.publicKey.toBase58()}`);
+
+  if (!owner.publicKey.equals(PLATFORM_AUTHORITY)) {
+    throw new Error(
+      `Owner keypair ${owner.publicKey.toBase58()} does not match required platform authority ${PLATFORM_AUTHORITY.toBase58()}`
+    );
+  }
 
   const fundTx = new Transaction();
   for (const account of [owner.publicKey, renter.publicKey]) {
@@ -196,7 +203,10 @@ async function main() {
 
   const config = pda([Buffer.from("config")]);
   if (!(await connection.getAccountInfo(config))) {
-    setupTx.add(initializeConfigIx({ payer: payer.publicKey, config }));
+    setupTx.add(initializeConfigIx({ authority: owner.publicKey, config }));
+    if (!setupSigners.some((signer) => signer.publicKey.equals(owner.publicKey))) {
+      setupSigners.push(owner);
+    }
   }
 
   if (setupTx.instructions.length) {

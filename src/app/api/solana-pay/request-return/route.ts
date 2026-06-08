@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRentableItem } from "@/lib/rentableItems";
-import { buildSettleRentalTransaction, deriveRentProofAccounts, preflightSettleRental } from "@/lib/rentproofProgram";
+import {
+  buildRequestReturnTransaction,
+  deriveRentProofAccounts,
+  preflightRequestReturn,
+} from "@/lib/rentproofProgram";
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
@@ -23,7 +27,7 @@ export async function POST(req: NextRequest) {
     renterWallet: body.renterWallet,
     rentalId,
   });
-  const preflight = await preflightSettleRental({
+  const preflight = await preflightRequestReturn({
     itemId: item.id,
     ownerWallet: body.ownerWallet ?? item.owner,
     renterWallet: body.renterWallet,
@@ -33,7 +37,7 @@ export async function POST(req: NextRequest) {
   if (!preflight.ok) {
     return NextResponse.json(
       {
-        error: "Settlement preflight failed",
+        error: "Return request preflight failed",
         problems: preflight.problems,
         preflight,
         rentProof,
@@ -42,12 +46,10 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const serialized = await buildSettleRentalTransaction({
-    kind: "auto_buyout",
+  const serialized = await buildRequestReturnTransaction({
     itemId: item.id,
     ownerWallet: body.ownerWallet ?? item.owner,
     renterWallet: body.renterWallet,
-    payerWallet: body.payerWallet ?? body.ownerWallet ?? item.owner,
     rentalId,
   });
 
@@ -57,26 +59,23 @@ export async function POST(req: NextRequest) {
     preflight,
     programStatus: "devnet_program_deployed_unsigned_transaction_serialized",
     transaction: serialized.transactionBase64,
-    message: `Auto-buyout ${item.name}. Any keeper wallet can sign after due time plus grace to claim escrow for the owner and close rental-token state.`,
+    message: `Request return for ${item.name}. Renter signs to record a return-request timestamp on-chain before owner confirmation.`,
     transactionMetadata: {
       cluster: serialized.cluster,
       rpcUrl: serialized.rpcUrl,
       blockhash: serialized.blockhash,
       lastValidBlockHeight: serialized.lastValidBlockHeight,
-      feePayer: serialized.feePayer,
-      requiredSigner: serialized.requiredSigner,
+      feePayer: serialized.rentProof.accounts.renter,
+      requiredSigner: serialized.rentProof.accounts.renter,
     },
     transactionPlan: [
-      "auto_buyout",
-      "preflight_session_and_token_accounts",
-      "idempotently_create_missing_destination_atas",
-      "verify_due_time_plus_grace",
-      "pay_owner_and_platform",
-      "close_escrow_and_rental_token",
-      "emit_rental_bought_out_receipt",
+      "request_return",
+      "verify_active_session_and_rental_token",
+      "record_return_requested_timestamp",
+      "emit_return_requested_receipt",
     ],
     instructionArgs: {
-      autoBuyout: {
+      requestReturn: {
         rentalIdHash: rentProof.rentalIdHash,
       },
     },
