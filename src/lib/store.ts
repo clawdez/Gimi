@@ -1,115 +1,267 @@
-import { RentalItem } from "./types";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { getServiceClient } from "./supabase";
+import { NewItemInput, Receipt, Rental, RentalItem } from "./types";
 
-// In-memory store for hackathon MVP — would be on-chain + database in production
-const SAMPLE_ITEMS: RentalItem[] = [
-  {
-    id: "1",
-    name: "Callaway Rogue ST Max Irons",
-    brand: "Callaway",
-    model: "Rogue ST Max",
-    condition: 7,
-    description: "Full iron set (5-PW). Some scuffs on club heads but grips are solid. Great for weekend rounds.",
-    imageUrl: "/items/golf-clubs.jpg",
-    dailyRate: 20,
-    retailPrice: 1800,
-    overageMultiplier: 1.5,
-    status: "available",
-    owner: "7xKX...m3Qp",
-    category: "Sports",
-    trustScore: 92,
-    createdAt: Date.now() - 86400000 * 3,
-  },
-  {
-    id: "2",
-    name: "DeWalt 20V MAX Drill Kit",
-    brand: "DeWalt",
-    model: "DCD771C2",
-    condition: 8,
-    description: "Barely used drill with 2 batteries and charger. Perfect for home projects.",
-    imageUrl: "/items/drill.jpg",
-    dailyRate: 8,
-    retailPrice: 149,
-    overageMultiplier: 1.5,
-    status: "available",
-    owner: "3kPQ...x9Rv",
-    category: "Tools",
-    trustScore: 88,
-    createdAt: Date.now() - 86400000 * 1,
-  },
-  {
-    id: "3",
-    name: "Sony A7 III Camera Body",
-    brand: "Sony",
-    model: "A7 III (ILCE-7M3)",
-    condition: 9,
-    description: "Excellent condition, low shutter count (~5k). Body only — bring your own lens.",
-    imageUrl: "/items/camera.jpg",
-    dailyRate: 45,
-    retailPrice: 1999,
-    overageMultiplier: 2.0,
-    status: "available",
-    owner: "9mNB...w2Lk",
-    category: "Electronics",
-    trustScore: 95,
-    createdAt: Date.now() - 86400000 * 5,
-  },
-  {
-    id: "4",
-    name: "KitchenAid Stand Mixer",
-    brand: "KitchenAid",
-    model: "Artisan 5-Quart",
-    condition: 8,
-    description: "Empire Red, comes with flat beater, dough hook, and wire whip. Used a handful of times.",
-    imageUrl: "/items/mixer.jpg",
-    dailyRate: 12,
-    retailPrice: 449,
-    overageMultiplier: 1.5,
-    status: "rented",
-    owner: "5jRT...k8Wp",
-    renter: "2nVX...p4Qs",
-    rentalStart: Date.now() - 86400000 * 2,
-    rentalDays: 5,
-    category: "Kitchen",
-    trustScore: 90,
-    createdAt: Date.now() - 86400000 * 7,
-  },
-  {
-    id: "5",
-    name: "Louis Vuitton Keepall 55",
-    brand: "Louis Vuitton",
-    model: "Keepall Bandoulière 55",
-    condition: 9,
-    description: "Monogram canvas, excellent condition. Perfect for a weekend trip or event.",
-    imageUrl: "/items/lv-bag.jpg",
-    dailyRate: 35,
-    retailPrice: 2260,
-    overageMultiplier: 2.0,
-    status: "available",
-    owner: "8pFG...n1Yk",
-    category: "Luxury",
-    trustScore: 97,
-    createdAt: Date.now() - 86400000 * 2,
-  },
-];
+// Server-side data layer backed by Supabase (schema `gimi`).
 
-let items = [...SAMPLE_ITEMS];
+type ItemRow = {
+  id: string;
+  name: string;
+  brand: string;
+  model: string;
+  condition: number;
+  description: string;
+  image_url: string;
+  daily_rate: number | string;
+  retail_price: number | string;
+  overage_multiplier: number | string;
+  status: RentalItem["status"];
+  owner: string;
+  renter: string | null;
+  rental_start: string | null;
+  rental_days: number | null;
+  category: string;
+  trust_score: number;
+  created_at: string;
+};
 
-export function getItems(): RentalItem[] {
-  return items;
+type RentalRow = {
+  id: string;
+  item_id: string;
+  renter: string;
+  rental_days: number;
+  daily_rate: number | string;
+  amount_usd: number | string;
+  status: Rental["status"];
+  stripe_customer_id: string | null;
+  stripe_payment_intent_id: string | null;
+  stripe_payment_status: string | null;
+  overage_payment_intent_id: string | null;
+  overage_amount_usd: number | string | null;
+  rental_start: string;
+  returned_at: string | null;
+  created_at: string;
+};
+
+type ReceiptRow = {
+  id: string;
+  rental_id: string;
+  memo_hash: string;
+  tx_signature: string;
+  explorer_url: string;
+  cluster: string;
+  payload: Record<string, unknown>;
+  created_at: string;
+};
+
+const ms = (t: string | null): number | null => (t ? new Date(t).getTime() : null);
+
+function itemFromRow(r: ItemRow): RentalItem {
+  return {
+    id: r.id,
+    name: r.name,
+    brand: r.brand,
+    model: r.model,
+    condition: r.condition,
+    description: r.description,
+    imageUrl: r.image_url,
+    dailyRate: Number(r.daily_rate),
+    retailPrice: Number(r.retail_price),
+    overageMultiplier: Number(r.overage_multiplier),
+    status: r.status,
+    owner: r.owner,
+    renter: r.renter ?? undefined,
+    rentalStart: ms(r.rental_start) ?? undefined,
+    rentalDays: r.rental_days ?? undefined,
+    category: r.category,
+    trustScore: r.trust_score,
+    createdAt: ms(r.created_at) ?? 0,
+  };
 }
 
-export function getItem(id: string): RentalItem | undefined {
-  return items.find((i) => i.id === id);
+function rentalFromRow(r: RentalRow): Rental {
+  return {
+    id: r.id,
+    itemId: r.item_id,
+    renter: r.renter,
+    rentalDays: r.rental_days,
+    dailyRate: Number(r.daily_rate),
+    amountUsd: Number(r.amount_usd),
+    status: r.status,
+    stripeCustomerId: r.stripe_customer_id,
+    stripePaymentIntentId: r.stripe_payment_intent_id,
+    stripePaymentStatus: r.stripe_payment_status,
+    overagePaymentIntentId: r.overage_payment_intent_id,
+    overageAmountUsd: r.overage_amount_usd == null ? null : Number(r.overage_amount_usd),
+    rentalStart: ms(r.rental_start) ?? 0,
+    returnedAt: ms(r.returned_at),
+    createdAt: ms(r.created_at) ?? 0,
+  };
 }
 
-export function addItem(item: RentalItem): void {
-  items = [item, ...items];
+function receiptFromRow(r: ReceiptRow): Receipt {
+  return {
+    id: r.id,
+    rentalId: r.rental_id,
+    memoHash: r.memo_hash,
+    txSignature: r.tx_signature,
+    explorerUrl: r.explorer_url,
+    cluster: r.cluster,
+    payload: r.payload,
+    createdAt: ms(r.created_at) ?? 0,
+  };
 }
 
-export function rentItem(id: string, renter: string, days: number): void {
-  items = items.map((i) =>
-    i.id === id
-      ? { ...i, status: "rented" as const, renter, rentalStart: Date.now(), rentalDays: days }
-      : i
-  );
+export function createStore(db: SupabaseClient) {
+  return {
+    async getItems(): Promise<RentalItem[]> {
+      const { data, error } = await db
+        .from("items")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (error) throw new Error(`getItems failed: ${error.message}`);
+      return (data as ItemRow[]).map(itemFromRow);
+    },
+
+    async getItem(id: string): Promise<RentalItem | undefined> {
+      const { data, error } = await db.from("items").select("*").eq("id", id).maybeSingle();
+      if (error) throw new Error(`getItem failed: ${error.message}`);
+      return data ? itemFromRow(data as ItemRow) : undefined;
+    },
+
+    async addItem(input: NewItemInput): Promise<RentalItem> {
+      const row = {
+        name: input.name,
+        brand: input.brand,
+        model: input.model ?? "",
+        condition: input.condition ?? 7,
+        description: input.description ?? "",
+        category: input.category,
+        daily_rate: input.dailyRate ?? 15,
+        retail_price: input.retailPrice ?? 500,
+        overage_multiplier: 1.5,
+        status: "available",
+        image_url:
+          input.imageUrl ??
+          "https://images.unsplash.com/photo-1560472355-536de3962603?w=400&h=300&fit=crop",
+        owner: input.owner ?? "",
+        trust_score: 50,
+      };
+      const { data, error } = await db.from("items").insert(row).select("*").single();
+      if (error) throw new Error(`addItem failed: ${error.message}`);
+      return itemFromRow(data as ItemRow);
+    },
+
+    async rentItem(id: string, renter: string, days: number): Promise<RentalItem> {
+      // Only flips an *available* item; returns undefined data if already rented.
+      const { data, error } = await db
+        .from("items")
+        .update({
+          status: "rented",
+          renter,
+          rental_start: new Date().toISOString(),
+          rental_days: days,
+        })
+        .eq("id", id)
+        .eq("status", "available")
+        .select("*")
+        .maybeSingle();
+      if (error) throw new Error(`rentItem failed: ${error.message}`);
+      if (!data) throw new Error("Item is not available");
+      return itemFromRow(data as ItemRow);
+    },
+
+    async returnItem(id: string): Promise<RentalItem> {
+      const { data, error } = await db
+        .from("items")
+        .update({ status: "available", renter: null, rental_start: null, rental_days: null })
+        .eq("id", id)
+        .select("*")
+        .single();
+      if (error) throw new Error(`returnItem failed: ${error.message}`);
+      return itemFromRow(data as ItemRow);
+    },
+
+    async createRental(input: {
+      itemId: string;
+      renter: string;
+      rentalDays: number;
+      dailyRate: number;
+      amountUsd: number;
+      stripeCustomerId?: string | null;
+      stripePaymentIntentId?: string | null;
+      stripePaymentStatus?: string | null;
+    }): Promise<Rental> {
+      const row = {
+        item_id: input.itemId,
+        renter: input.renter,
+        rental_days: input.rentalDays,
+        daily_rate: input.dailyRate,
+        amount_usd: input.amountUsd,
+        status: "active",
+        stripe_customer_id: input.stripeCustomerId ?? null,
+        stripe_payment_intent_id: input.stripePaymentIntentId ?? null,
+        stripe_payment_status: input.stripePaymentStatus ?? null,
+      };
+      const { data, error } = await db.from("rentals").insert(row).select("*").single();
+      if (error) throw new Error(`createRental failed: ${error.message}`);
+      return rentalFromRow(data as RentalRow);
+    },
+
+    async getRental(id: string): Promise<Rental | undefined> {
+      const { data, error } = await db.from("rentals").select("*").eq("id", id).maybeSingle();
+      if (error) throw new Error(`getRental failed: ${error.message}`);
+      return data ? rentalFromRow(data as RentalRow) : undefined;
+    },
+
+    async updateRental(
+      id: string,
+      patch: {
+        status?: Rental["status"];
+        returnedAt?: number;
+        overagePaymentIntentId?: string | null;
+        overageAmountUsd?: number | null;
+      }
+    ): Promise<Rental> {
+      const row: Record<string, unknown> = {};
+      if (patch.status !== undefined) row.status = patch.status;
+      if (patch.returnedAt !== undefined) row.returned_at = new Date(patch.returnedAt).toISOString();
+      if (patch.overagePaymentIntentId !== undefined)
+        row.overage_payment_intent_id = patch.overagePaymentIntentId;
+      if (patch.overageAmountUsd !== undefined) row.overage_amount_usd = patch.overageAmountUsd;
+      const { data, error } = await db.from("rentals").update(row).eq("id", id).select("*").single();
+      if (error) throw new Error(`updateRental failed: ${error.message}`);
+      return rentalFromRow(data as RentalRow);
+    },
+
+    async addReceipt(input: {
+      rentalId: string;
+      memoHash: string;
+      txSignature: string;
+      explorerUrl: string;
+      cluster?: string;
+      payload: Record<string, unknown>;
+    }): Promise<Receipt> {
+      const row = {
+        rental_id: input.rentalId,
+        memo_hash: input.memoHash,
+        tx_signature: input.txSignature,
+        explorer_url: input.explorerUrl,
+        cluster: input.cluster ?? "devnet",
+        payload: input.payload,
+      };
+      const { data, error } = await db.from("receipts").insert(row).select("*").single();
+      if (error) throw new Error(`addReceipt failed: ${error.message}`);
+      return receiptFromRow(data as ReceiptRow);
+    },
+  };
+}
+
+export type Store = ReturnType<typeof createStore>;
+
+let defaultStore: Store | null = null;
+
+export function getStore(): Store {
+  if (!defaultStore) defaultStore = createStore(getServiceClient());
+  return defaultStore;
 }

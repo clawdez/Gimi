@@ -2,8 +2,6 @@
 
 import { useState, useRef, useEffect } from "react";
 import { ChatMessage } from "@/lib/types";
-import { useWallet } from "@solana/wallet-adapter-react";
-import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 
 interface ListingAgentProps {
   onDone: () => void;
@@ -46,7 +44,6 @@ function suggestPrice(state: AgentState): { daily: number; retail: number } {
 }
 
 export function ListingAgent({ onDone }: ListingAgentProps) {
-  const { connected } = useWallet();
   const [messages, setMessages] = useState<ChatMessage[]>([
     { role: "agent", content: "Hey! I'm your Gimi listing agent. I'll help you list your item for rent in about 60 seconds. Let's get started." },
     { role: "agent", content: STEPS[0].question, options: STEPS[0].options },
@@ -63,6 +60,7 @@ export function ListingAgent({ onDone }: ListingAgentProps) {
   const [input, setInput] = useState("");
   const [minting, setMinting] = useState(false);
   const [minted, setMinted] = useState(false);
+  const [customDaily, setCustomDaily] = useState<number | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -77,6 +75,26 @@ export function ListingAgent({ onDone }: ListingAgentProps) {
     const newMessages: ChatMessage[] = [...messages, { role: "user", content: userText }];
     const newState = { ...state };
     const currentStep = STEPS[state.step];
+
+    if (!currentStep) {
+      // Past the questions (e.g. adjusting price): treat numeric input as a new daily rate.
+      const num = parseInt(userText);
+      if (!isNaN(num) && num > 0) {
+        setCustomDaily(num);
+        newMessages.push({
+          role: "agent",
+          content: `Got it — $${num}/day it is. Ready to publish?`,
+          options: ["Mint it!", "Start over"],
+        });
+      } else {
+        newMessages.push({
+          role: "agent",
+          content: "Just type a number for the daily rate, or pick an option above.",
+        });
+      }
+      setMessages(newMessages);
+      return;
+    }
 
     // Parse response into state
     switch (currentStep.key) {
@@ -113,7 +131,7 @@ export function ListingAgent({ onDone }: ListingAgentProps) {
       const price = suggestPrice(newState);
       newMessages.push({
         role: "agent",
-        content: `Here's what I've got:\n\n**${newState.itemName}**\n${newState.brand} ${newState.model}\nCondition: ${newState.condition}/10\n"${newState.description}"\n\nBased on market data, I'd recommend:\n- **$${price.daily}/day** rental rate\n- **$${price.retail}** retail backstop (what renter pays if they don't return it)\n\nReady to mint this on Solana and go live?`,
+        content: `Here's what I've got:\n\n**${newState.itemName}**\n${newState.brand} ${newState.model}\nCondition: ${newState.condition}/10\n"${newState.description}"\n\nBased on market data, I'd recommend:\n- **$${price.daily}/day** rental rate\n- **$${price.retail}** retail backstop (what renter pays if they don't return it)\n\nReady to publish and go live?`,
         options: ["Mint it!", "Adjust price", "Start over"],
       });
     }
@@ -127,22 +145,48 @@ export function ListingAgent({ onDone }: ListingAgentProps) {
     setMessages((prev) => [
       ...prev,
       { role: "user", content: "Mint it!" },
-      { role: "agent", content: "Minting your item on Solana..." },
+      { role: "agent", content: "Publishing your listing..." },
     ]);
 
-    await new Promise((r) => setTimeout(r, 2500));
+    const price = suggestPrice(state);
+    try {
+      const res = await fetch("/api/list", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: state.itemName,
+          brand: state.brand,
+          model: state.model,
+          condition: state.condition,
+          description: state.description,
+          category: state.category,
+          dailyRate: customDaily ?? price.daily,
+          retailPrice: price.retail,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Listing failed");
 
-    const fakeMint = `${Math.random().toString(36).substring(2, 8)}...${Math.random().toString(36).substring(2, 6)}`;
-    setMessages((prev) => [
-      ...prev,
-      {
-        role: "agent",
-        content: `Your item is live!\n\n**${state.itemName}** has been tokenized on Solana.\n\nMint address: \`${fakeMint}\`\nStatus: Available for rent\n\nBuyers can now find and rent your item on the marketplace.`,
-        options: ["View marketplace", "List another item"],
-      },
-    ]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "agent",
+          content: `Your item is live!\n\n**${state.itemName}** is listed at $${data.listing.dailyRate}/day.\n\nListing ID: \`${data.listing.id}\`\nStatus: Available for rent\n\nRenters can now find and rent your item on the marketplace.`,
+          options: ["View marketplace", "List another item"],
+        },
+      ]);
+      setMinted(true);
+    } catch (e) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "agent",
+          content: `Hmm, that didn't work: ${(e as Error).message}. Want to try again?`,
+          options: ["Mint it!", "Start over"],
+        },
+      ]);
+    }
     setMinting(false);
-    setMinted(true);
   }
 
   function handleOptionClick(option: string) {
@@ -240,31 +284,23 @@ export function ListingAgent({ onDone }: ListingAgentProps) {
       {/* Input */}
       {!minted && state.step < STEPS.length + 1 && (
         <div className="flex gap-2">
-          {!connected ? (
-            <div className="flex-1 flex justify-center">
-              <WalletMultiButton className="!bg-purple-600 !rounded-xl !h-12" />
-            </div>
-          ) : (
-            <>
-              <input
-                type="text"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSend()}
-                placeholder="Type your answer..."
-                className="flex-1 bg-gray-900 border border-gray-700 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-green-500/50 transition-colors"
-              />
-              <button
-                onClick={() => handleSend()}
-                disabled={!input.trim()}
-                className="px-4 py-3 rounded-xl bg-green-500 hover:bg-green-400 text-black font-medium transition-colors disabled:opacity-50"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                </svg>
-              </button>
-            </>
-          )}
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleSend()}
+            placeholder="Type your answer..."
+            className="flex-1 bg-gray-900 border border-gray-700 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-green-500/50 transition-colors"
+          />
+          <button
+            onClick={() => handleSend()}
+            disabled={!input.trim()}
+            className="px-4 py-3 rounded-xl bg-green-500 hover:bg-green-400 text-black font-medium transition-colors disabled:opacity-50"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+            </svg>
+          </button>
         </div>
       )}
     </div>
