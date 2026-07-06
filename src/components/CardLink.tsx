@@ -53,7 +53,12 @@ function CardForm({ onLinked, onCancel }: CardLinkProps) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      <PaymentElement />
+      {/* Card only: hide Link/wallet upsells for a deterministic Redbox-style flow */}
+      <PaymentElement
+        options={{
+          wallets: { applePay: "never", googlePay: "never", link: "never" },
+        }}
+      />
       {error && <p className="text-sm text-red-400">{error}</p>}
       <div className="flex gap-2">
         <button
