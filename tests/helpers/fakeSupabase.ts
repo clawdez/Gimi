@@ -4,8 +4,9 @@
 type Row = Record<string, unknown>;
 
 const TABLE_DEFAULTS: Record<string, Row> = {
-  items: { renter: null, rental_start: null, rental_days: null },
+  items: { owner_id: null, renter: null, renter_id: null, rental_start: null, rental_days: null },
   rentals: {
+    user_id: null,
     stripe_customer_id: null,
     stripe_payment_intent_id: null,
     stripe_payment_status: null,

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
-import { WalletProviderWrapper } from "@/components/WalletProvider";
+import { AuthProvider } from "@/components/AuthProvider";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -14,7 +14,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className="h-full antialiased">
       <body className={`${inter.className} min-h-full flex flex-col bg-gray-950 text-white`}>
-        <WalletProviderWrapper>{children}</WalletProviderWrapper>
+        <AuthProvider>{children}</AuthProvider>
       </body>
     </html>
   );

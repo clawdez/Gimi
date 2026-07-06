@@ -1,23 +1,31 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { getPayments, isStripeConfigured } from "@/lib/payments";
+import { getAuthContext } from "@/lib/supabase/server";
 
-// GET /api/card/status?email= — whether payments are configured and a card is linked.
-export async function GET(req: NextRequest) {
-  const email = req.nextUrl.searchParams.get("email");
+// GET /api/card/status — whether payments are configured and the signed-in
+// user has a linked card. Email comes from the session, not a query param.
+export async function GET() {
   if (!isStripeConfigured()) {
     return NextResponse.json({ configured: false, linked: false });
   }
-  if (!email) {
+
+  const { user } = await getAuthContext();
+  if (!user) {
     return NextResponse.json({ configured: true, linked: false });
   }
+
   try {
-    const card = await getPayments()!.getLinkedCard(email);
+    const card = await getPayments()!.getLinkedCard(user.email);
     return NextResponse.json({
       configured: true,
       linked: Boolean(card),
       card: card ? { brand: card.brand, last4: card.last4 } : null,
     });
   } catch (e) {
-    return NextResponse.json({ error: (e as Error).message }, { status: 500 });
+    console.error("card status failed:", e);
+    return NextResponse.json(
+      { error: "internal_error", message: "Card status unavailable" },
+      { status: 500 }
+    );
   }
 }

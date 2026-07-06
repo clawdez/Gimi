@@ -10,8 +10,10 @@ export interface RentalItem {
   retailPrice: number; // full retail price for backstop
   overageMultiplier: number; // e.g. 1.5
   status: "available" | "rented" | "overdue";
-  owner: string; // wallet address
+  owner: string; // display handle (legacy rows) — canonical identity is ownerId
+  ownerId?: string | null; // auth.uid() of the listing owner
   renter?: string;
+  renterId?: string | null; // auth.uid() of the current renter
   rentalStart?: number; // unix timestamp
   rentalDays?: number;
   category: string;
@@ -22,7 +24,8 @@ export interface RentalItem {
 export interface Rental {
   id: string;
   itemId: string;
-  renter: string; // renter id (email for MVP)
+  renter: string; // renter email (display)
+  userId?: string | null; // auth.uid() of the renter
   rentalDays: number;
   dailyRate: number;
   amountUsd: number;
@@ -59,6 +62,7 @@ export interface NewItemInput {
   retailPrice?: number;
   imageUrl?: string;
   owner?: string;
+  ownerId?: string | null;
 }
 
 export interface ChatMessage {

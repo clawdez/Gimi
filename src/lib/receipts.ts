@@ -10,6 +10,7 @@ import {
   TransactionInstruction,
   sendAndConfirmTransaction,
 } from "@solana/web3.js";
+import { solanaCluster } from "./env";
 
 // On-chain proof layer: every paid rental mints a Solana DEVNET memo tx whose
 // memo is the sha256 hash of the rental facts. Never mainnet. Not a payment.
@@ -83,6 +84,11 @@ export function createReceiptMinter({ connection, keypair }: MinterDeps) {
 export type ReceiptMinter = ReturnType<typeof createReceiptMinter>;
 
 export function loadOrCreateKeypair(filePath: string = KEYPAIR_PATH): Keypair {
+  // Serverless-friendly: on Vercel the signer ships as an env var, not a file.
+  const fromEnv = process.env.GIMI_SOLANA_KEYPAIR;
+  if (fromEnv) {
+    return Keypair.fromSecretKey(Uint8Array.from(JSON.parse(fromEnv)));
+  }
   if (existsSync(filePath)) {
     const secret = Uint8Array.from(JSON.parse(readFileSync(filePath, "utf8")));
     return Keypair.fromSecretKey(secret);
@@ -97,6 +103,7 @@ let defaultMinter: ReceiptMinter | null = null;
 
 export function getReceiptMinter(): ReceiptMinter {
   if (!defaultMinter) {
+    solanaCluster(); // hard refusal of any non-devnet cluster
     defaultMinter = createReceiptMinter({
       connection: new Connection(DEVNET_RPC, "confirmed"),
       keypair: loadOrCreateKeypair(),

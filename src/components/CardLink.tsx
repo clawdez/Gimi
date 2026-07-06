@@ -13,12 +13,11 @@ const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
 const stripePromise = publishableKey ? loadStripe(publishableKey) : null;
 
 interface CardLinkProps {
-  email: string;
   onLinked: (card: LinkedCardInfo) => void;
   onCancel: () => void;
 }
 
-function CardForm({ onLinked, onCancel }: Omit<CardLinkProps, "email">) {
+function CardForm({ onLinked, onCancel }: CardLinkProps) {
   const stripe = useStripe();
   const elements = useElements();
   const [submitting, setSubmitting] = useState(false);
@@ -76,7 +75,7 @@ function CardForm({ onLinked, onCancel }: Omit<CardLinkProps, "email">) {
   );
 }
 
-export function CardLink({ email, onLinked, onCancel }: CardLinkProps) {
+export function CardLink({ onLinked, onCancel }: CardLinkProps) {
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [unconfigured, setUnconfigured] = useState(false);
@@ -84,11 +83,8 @@ export function CardLink({ email, onLinked, onCancel }: CardLinkProps) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const res = await fetch("/api/card/setup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ renterEmail: email }),
-      });
+      // Card is linked to the signed-in session; no body needed.
+      const res = await fetch("/api/card/setup", { method: "POST" });
       const data = await res.json();
       if (cancelled) return;
       if (res.status === 503 || !publishableKey) {
@@ -102,7 +98,7 @@ export function CardLink({ email, onLinked, onCancel }: CardLinkProps) {
     return () => {
       cancelled = true;
     };
-  }, [email]);
+  }, []);
 
   if (unconfigured || (!publishableKey && !clientSecret)) {
     return (

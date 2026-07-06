@@ -1,11 +1,18 @@
 import { NextResponse } from "next/server";
-import { getStore } from "@/lib/store";
+import { createStore } from "@/lib/store";
+import { createServerSupabase } from "@/lib/supabase/server";
 
+// GET /api/items — public catalog, read through the anon/RLS client.
 export async function GET() {
   try {
-    const items = await getStore().getItems();
+    const supabase = await createServerSupabase();
+    const items = await createStore(supabase).getItems();
     return NextResponse.json({ items });
   } catch (e) {
-    return NextResponse.json({ error: (e as Error).message }, { status: 500 });
+    console.error("items failed:", e);
+    return NextResponse.json(
+      { error: "internal_error", message: "Could not load items" },
+      { status: 500 }
+    );
   }
 }

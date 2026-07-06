@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { RentalItem } from "@/lib/types";
 import { CardLink, LinkedCardInfo } from "./CardLink";
+import { useAuth } from "./AuthProvider";
 
 interface ItemDetailProps {
   item: RentalItem;
@@ -26,11 +27,10 @@ interface ReturnConfirmation {
 
 type Step = "idle" | "link-card" | "renting" | "confirmed";
 
-const EMAIL_KEY = "gimi_renter_email";
 const rentalKey = (itemId: string) => `gimi_rental_${itemId}`;
 
 export function ItemDetail({ item, onBack, onChanged }: ItemDetailProps) {
-  const [email, setEmail] = useState("");
+  const { user, openSignIn } = useAuth();
   const [rentalDays, setRentalDays] = useState(3);
   const [step, setStep] = useState<Step>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -42,10 +42,8 @@ export function ItemDetail({ item, onBack, onChanged }: ItemDetailProps) {
 
   const rented = item.status === "rented";
   const totalCost = item.dailyRate * rentalDays;
-  const emailValid = /.+@.+\..+/.test(email);
 
   useEffect(() => {
-    setEmail(localStorage.getItem(EMAIL_KEY) ?? "");
     setMyRentalId(localStorage.getItem(rentalKey(item.id)));
     fetch("/api/card/status")
       .then((r) => r.json())
@@ -53,18 +51,13 @@ export function ItemDetail({ item, onBack, onChanged }: ItemDetailProps) {
       .catch(() => setPaymentsConfigured(false));
   }, [item.id]);
 
-  function saveEmail(value: string) {
-    setEmail(value);
-    localStorage.setItem(EMAIL_KEY, value);
-  }
-
   async function startRent() {
     setError(null);
-    if (!emailValid) {
-      setError("Enter your email to rent — that's your renter ID.");
+    if (!user) {
+      openSignIn();
       return;
     }
-    const res = await fetch(`/api/card/status?email=${encodeURIComponent(email)}`);
+    const res = await fetch("/api/card/status");
     const status = await res.json();
     if (!status.configured) {
       setPaymentsConfigured(false);
@@ -83,7 +76,7 @@ export function ItemDetail({ item, onBack, onChanged }: ItemDetailProps) {
     const res = await fetch("/api/rent", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ itemId: item.id, renterEmail: email, rentalDays }),
+      body: JSON.stringify({ itemId: item.id, rentalDays }),
     });
     const data = await res.json();
     if (!res.ok) {
@@ -260,17 +253,15 @@ export function ItemDetail({ item, onBack, onChanged }: ItemDetailProps) {
 
               {!rented && step !== "link-card" && (
                 <>
-                  {/* Renter id */}
-                  <div className="mb-4">
-                    <label className="text-sm text-gray-400 mb-2 block">Your email (renter ID)</label>
-                    <input
-                      type="email"
-                      value={email}
-                      onChange={(e) => saveEmail(e.target.value)}
-                      placeholder="you@example.com"
-                      className="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-green-500/50"
-                    />
-                  </div>
+                  {user ? (
+                    <p className="text-xs text-gray-500 mb-4">
+                      Renting as <span className="text-gray-300">{user.email}</span>
+                    </p>
+                  ) : (
+                    <p className="text-xs text-gray-500 mb-4" data-testid="rent-signin-hint">
+                      You&apos;ll be asked to sign in — no passwords, just a magic link.
+                    </p>
+                  )}
 
                   {/* Rental duration selector */}
                   <div className="mb-4">
@@ -327,7 +318,6 @@ export function ItemDetail({ item, onBack, onChanged }: ItemDetailProps) {
                 <div>
                   <h3 className="text-sm font-medium text-gray-300 mb-3">Link your card</h3>
                   <CardLink
-                    email={email}
                     onLinked={(card: LinkedCardInfo) => {
                       setStep("idle");
                       setError(null);

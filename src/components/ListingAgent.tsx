@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { ChatMessage } from "@/lib/types";
+import { useAuth } from "./AuthProvider";
 
 interface ListingAgentProps {
   onDone: () => void;
@@ -44,6 +45,7 @@ function suggestPrice(state: AgentState): { daily: number; retail: number } {
 }
 
 export function ListingAgent({ onDone }: ListingAgentProps) {
+  const { user, loading, openSignIn } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([
     { role: "agent", content: "Hey! I'm your Gimi listing agent. I'll help you list your item for rent in about 60 seconds. Let's get started." },
     { role: "agent", content: STEPS[0].question, options: STEPS[0].options },
@@ -216,6 +218,24 @@ export function ListingAgent({ onDone }: ListingAgentProps) {
     } else {
       handleSend(option);
     }
+  }
+
+  if (!loading && !user) {
+    return (
+      <div className="max-w-2xl mx-auto px-4 py-16 text-center" data-testid="listing-auth-gate">
+        <h2 className="text-2xl font-bold mb-2">Sign in to list your items</h2>
+        <p className="text-gray-500 mb-6">
+          Listings are tied to your account so only you can manage them. No passwords — we email
+          you a magic link.
+        </p>
+        <button
+          onClick={openSignIn}
+          className="px-6 py-3 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-400 hover:to-emerald-500 text-black font-bold transition-all"
+        >
+          Sign in to continue
+        </button>
+      </div>
+    );
   }
 
   return (

@@ -1,11 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getPayments } from "@/lib/payments";
+import { getAuthContext } from "@/lib/supabase/server";
+import { asStr, readJson } from "@/lib/validate";
 
 // POST /api/card/confirm — finalize a card link after the SetupIntent succeeds.
 export async function POST(req: NextRequest) {
-  const { setupIntentId } = await req.json();
+  const { user } = await getAuthContext();
+  if (!user) {
+    return NextResponse.json(
+      { error: "auth_required", message: "Sign in to link a card" },
+      { status: 401 }
+    );
+  }
+
+  const body = await readJson(req);
+  const setupIntentId = body ? asStr(body.setupIntentId, { max: 128 }) : null;
   if (!setupIntentId) {
-    return NextResponse.json({ error: "Missing setupIntentId" }, { status: 400 });
+    return NextResponse.json(
+      { error: "invalid_input", message: "setupIntentId is required" },
+      { status: 400 }
+    );
   }
 
   const payments = getPayments();
@@ -20,6 +34,10 @@ export async function POST(req: NextRequest) {
     const card = await payments.finalizeCardLink(setupIntentId);
     return NextResponse.json({ card });
   } catch (e) {
-    return NextResponse.json({ error: (e as Error).message }, { status: 500 });
+    console.error("card confirm failed:", e);
+    return NextResponse.json(
+      { error: "internal_error", message: "Card link failed" },
+      { status: 500 }
+    );
   }
 }

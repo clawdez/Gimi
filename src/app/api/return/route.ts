@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getPayments } from "@/lib/payments";
 import { executeReturn, RentFlowError } from "@/lib/rentflow";
 import { getStore } from "@/lib/store";
+import { getAuthContext } from "@/lib/supabase/server";
+import { asStr, readJson } from "@/lib/validate";
 
 const ERROR_STATUS: Record<string, number> = {
   payment_not_configured: 503,
@@ -10,17 +12,34 @@ const ERROR_STATUS: Record<string, number> = {
   rental_not_found: 404,
   rental_not_active: 409,
   charge_failed: 402,
+  forbidden: 403,
 };
 
 // POST /api/return — return an item; charges Redbox overage if late.
+// Only the renter who holds the rental may return it.
 export async function POST(req: NextRequest) {
-  const { rentalId } = await req.json();
+  const { user } = await getAuthContext();
+  if (!user) {
+    return NextResponse.json(
+      { error: "auth_required", message: "Sign in to return items" },
+      { status: 401 }
+    );
+  }
+
+  const body = await readJson(req);
+  const rentalId = body ? asStr(body.rentalId, { max: 64 }) : null;
   if (!rentalId) {
-    return NextResponse.json({ error: "Missing rentalId" }, { status: 400 });
+    return NextResponse.json(
+      { error: "invalid_input", message: "rentalId is required" },
+      { status: 400 }
+    );
   }
 
   try {
-    const result = await executeReturn({ store: getStore(), payments: getPayments() }, { rentalId });
+    const result = await executeReturn(
+      { store: getStore(), payments: getPayments() },
+      { rentalId, requester: user }
+    );
     return NextResponse.json({ ...result, message: "Item returned" });
   } catch (e) {
     if (e instanceof RentFlowError) {
@@ -29,6 +48,10 @@ export async function POST(req: NextRequest) {
         { status: ERROR_STATUS[e.code] ?? 500 }
       );
     }
-    return NextResponse.json({ error: (e as Error).message }, { status: 500 });
+    console.error("return failed:", e);
+    return NextResponse.json(
+      { error: "internal_error", message: "Return failed" },
+      { status: 500 }
+    );
   }
 }

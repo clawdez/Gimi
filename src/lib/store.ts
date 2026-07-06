@@ -17,7 +17,9 @@ type ItemRow = {
   overage_multiplier: number | string;
   status: RentalItem["status"];
   owner: string;
+  owner_id: string | null;
   renter: string | null;
+  renter_id: string | null;
   rental_start: string | null;
   rental_days: number | null;
   category: string;
@@ -29,6 +31,7 @@ type RentalRow = {
   id: string;
   item_id: string;
   renter: string;
+  user_id: string | null;
   rental_days: number;
   daily_rate: number | string;
   amount_usd: number | string;
@@ -70,7 +73,9 @@ function itemFromRow(r: ItemRow): RentalItem {
     overageMultiplier: Number(r.overage_multiplier),
     status: r.status,
     owner: r.owner,
+    ownerId: r.owner_id ?? null,
     renter: r.renter ?? undefined,
+    renterId: r.renter_id ?? null,
     rentalStart: ms(r.rental_start) ?? undefined,
     rentalDays: r.rental_days ?? undefined,
     category: r.category,
@@ -84,6 +89,7 @@ function rentalFromRow(r: RentalRow): Rental {
     id: r.id,
     itemId: r.item_id,
     renter: r.renter,
+    userId: r.user_id ?? null,
     rentalDays: r.rental_days,
     dailyRate: Number(r.daily_rate),
     amountUsd: Number(r.amount_usd),
@@ -145,6 +151,7 @@ export function createStore(db: SupabaseClient) {
           input.imageUrl ??
           "https://images.unsplash.com/photo-1560472355-536de3962603?w=400&h=300&fit=crop",
         owner: input.owner ?? "",
+        owner_id: input.ownerId ?? null,
         trust_score: 50,
       };
       const { data, error } = await db.from("items").insert(row).select("*").single();
@@ -152,13 +159,14 @@ export function createStore(db: SupabaseClient) {
       return itemFromRow(data as ItemRow);
     },
 
-    async rentItem(id: string, renter: string, days: number): Promise<RentalItem> {
+    async rentItem(id: string, renter: string, days: number, renterId?: string | null): Promise<RentalItem> {
       // Only flips an *available* item; returns undefined data if already rented.
       const { data, error } = await db
         .from("items")
         .update({
           status: "rented",
           renter,
+          renter_id: renterId ?? null,
           rental_start: new Date().toISOString(),
           rental_days: days,
         })
@@ -174,7 +182,7 @@ export function createStore(db: SupabaseClient) {
     async returnItem(id: string): Promise<RentalItem> {
       const { data, error } = await db
         .from("items")
-        .update({ status: "available", renter: null, rental_start: null, rental_days: null })
+        .update({ status: "available", renter: null, renter_id: null, rental_start: null, rental_days: null })
         .eq("id", id)
         .select("*")
         .single();
@@ -185,6 +193,7 @@ export function createStore(db: SupabaseClient) {
     async createRental(input: {
       itemId: string;
       renter: string;
+      userId?: string | null;
       rentalDays: number;
       dailyRate: number;
       amountUsd: number;
@@ -195,6 +204,7 @@ export function createStore(db: SupabaseClient) {
       const row = {
         item_id: input.itemId,
         renter: input.renter,
+        user_id: input.userId ?? null,
         rental_days: input.rentalDays,
         daily_rate: input.dailyRate,
         amount_usd: input.amountUsd,
@@ -206,6 +216,25 @@ export function createStore(db: SupabaseClient) {
       const { data, error } = await db.from("rentals").insert(row).select("*").single();
       if (error) throw new Error(`createRental failed: ${error.message}`);
       return rentalFromRow(data as RentalRow);
+    },
+
+    async listRentals(): Promise<Rental[]> {
+      // With an RLS-scoped client this returns only the caller's rentals.
+      const { data, error } = await db
+        .from("rentals")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (error) throw new Error(`listRentals failed: ${error.message}`);
+      return (data as RentalRow[]).map(rentalFromRow);
+    },
+
+    async listReceipts(): Promise<Receipt[]> {
+      const { data, error } = await db
+        .from("receipts")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (error) throw new Error(`listReceipts failed: ${error.message}`);
+      return (data as ReceiptRow[]).map(receiptFromRow);
     },
 
     async getRental(id: string): Promise<Rental | undefined> {

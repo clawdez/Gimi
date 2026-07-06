@@ -17,6 +17,7 @@ export class RentFlowError extends Error {
       | "item_not_available"
       | "rental_not_found"
       | "rental_not_active"
+      | "forbidden"
       | "charge_failed",
     message: string
   ) {
@@ -38,9 +39,14 @@ export interface RentResult {
   receiptError?: string;
 }
 
+export interface AuthedUser {
+  id: string;
+  email: string;
+}
+
 export async function executeRent(
   deps: RentDeps,
-  input: { itemId: string; renterEmail: string; rentalDays: number }
+  input: { itemId: string; renter: AuthedUser; rentalDays: number }
 ): Promise<RentResult> {
   const { store, payments, minter } = deps;
   const now = deps.now ?? Date.now;
@@ -55,13 +61,13 @@ export async function executeRent(
     throw new RentFlowError("item_not_available", "Item is not available");
   }
 
-  const card = await payments.getLinkedCard(input.renterEmail);
+  const card = await payments.getLinkedCard(input.renter.email);
   if (!card) throw new RentFlowError("card_not_linked", "Link a card before renting");
 
   const amountUsd = item.dailyRate * input.rentalDays;
 
   // Reserve the item first (atomic status flip), then charge; roll back on failure.
-  await store.rentItem(item.id, input.renterEmail, input.rentalDays);
+  await store.rentItem(item.id, input.renter.email, input.rentalDays, input.renter.id);
 
   let charge;
   try {
@@ -70,7 +76,7 @@ export async function executeRent(
       paymentMethodId: card.paymentMethodId,
       amountUsd,
       description: `Gimi rental: ${item.name} × ${input.rentalDays} day(s)`,
-      metadata: { itemId: item.id, renter: input.renterEmail },
+      metadata: { itemId: item.id, renter: input.renter.email },
     });
   } catch (e) {
     await store.returnItem(item.id);
@@ -79,7 +85,8 @@ export async function executeRent(
 
   const rental = await store.createRental({
     itemId: item.id,
-    renter: input.renterEmail,
+    renter: input.renter.email,
+    userId: input.renter.id,
     rentalDays: input.rentalDays,
     dailyRate: item.dailyRate,
     amountUsd,
@@ -95,7 +102,7 @@ export async function executeRent(
     await minter.ensureFunds();
     const minted = await minter.mint({
       itemId: item.id,
-      renter: input.renterEmail,
+      renter: input.renter.email,
       amountUsd,
       rentalDays: input.rentalDays,
       timestamp: now(),
@@ -108,7 +115,7 @@ export async function executeRent(
       cluster: minted.cluster,
       payload: {
         itemId: item.id,
-        renter: input.renterEmail,
+        renter: input.renter.email,
         amountUsd,
         rentalDays: input.rentalDays,
       },
@@ -133,7 +140,7 @@ export interface ReturnResult {
 
 export async function executeReturn(
   deps: Pick<RentDeps, "store" | "payments" | "now">,
-  input: { rentalId: string }
+  input: { rentalId: string; requester: AuthedUser }
 ): Promise<ReturnResult> {
   const { store, payments } = deps;
   const now = deps.now ?? Date.now;
@@ -142,6 +149,13 @@ export async function executeReturn(
   if (!rental) throw new RentFlowError("rental_not_found", "Rental not found");
   if (rental.status !== "active") {
     throw new RentFlowError("rental_not_active", "Rental is not active");
+  }
+  // Only the renter may return. Legacy rentals (pre-auth) match on email.
+  const isRenter = rental.userId
+    ? rental.userId === input.requester.id
+    : rental.renter === input.requester.email;
+  if (!isRenter) {
+    throw new RentFlowError("forbidden", "This rental belongs to another account");
   }
 
   const item = await store.getItem(rental.itemId);

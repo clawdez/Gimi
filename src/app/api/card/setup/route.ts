@@ -1,11 +1,16 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { getPayments } from "@/lib/payments";
+import { getAuthContext } from "@/lib/supabase/server";
 
 // POST /api/card/setup — start the "Link your card" step (Stripe SetupIntent).
-export async function POST(req: NextRequest) {
-  const { renterEmail } = await req.json();
-  if (!renterEmail) {
-    return NextResponse.json({ error: "Missing renterEmail" }, { status: 400 });
+// Card is linked to the signed-in user's email, never a body-supplied one.
+export async function POST() {
+  const { user } = await getAuthContext();
+  if (!user) {
+    return NextResponse.json(
+      { error: "auth_required", message: "Sign in to link a card" },
+      { status: 401 }
+    );
   }
 
   const payments = getPayments();
@@ -17,9 +22,13 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { clientSecret, customerId } = await payments.createCardSetupIntent(renterEmail);
+    const { clientSecret, customerId } = await payments.createCardSetupIntent(user.email);
     return NextResponse.json({ configured: true, clientSecret, customerId });
   } catch (e) {
-    return NextResponse.json({ error: (e as Error).message }, { status: 500 });
+    console.error("card setup failed:", e);
+    return NextResponse.json(
+      { error: "internal_error", message: "Card setup failed" },
+      { status: 500 }
+    );
   }
 }

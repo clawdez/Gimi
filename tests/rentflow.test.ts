@@ -7,6 +7,9 @@ import type { Rental, RentalItem } from "@/lib/types";
 
 const NOW = 1751760000000;
 
+const RENTER = { id: "user-1", email: "r@x.com" };
+const STRANGER = { id: "user-2", email: "someone-else@x.com" };
+
 const item: RentalItem = {
   id: "1",
   name: "Callaway Rogue ST Max Irons",
@@ -29,6 +32,7 @@ const activeRental: Rental = {
   id: "rental-1",
   itemId: "1",
   renter: "r@x.com",
+  userId: "user-1",
   rentalDays: 3,
   dailyRate: 20,
   amountUsd: 60,
@@ -109,15 +113,15 @@ describe("executeRent (Redbox flow)", () => {
 
     const result = await executeRent(
       { store, payments, minter, now: () => NOW },
-      { itemId: "1", renterEmail: "r@x.com", rentalDays: 3 }
+      { itemId: "1", renter: RENTER, rentalDays: 3 }
     );
 
     expect(payments.chargeSavedCard).toHaveBeenCalledWith(
       expect.objectContaining({ amountUsd: 60, customerId: "cus_1", paymentMethodId: "pm_1" })
     );
-    expect(store.rentItem).toHaveBeenCalledWith("1", "r@x.com", 3);
+    expect(store.rentItem).toHaveBeenCalledWith("1", "r@x.com", 3, "user-1");
     expect(store.createRental).toHaveBeenCalledWith(
-      expect.objectContaining({ amountUsd: 60, stripePaymentIntentId: "pi_1" })
+      expect.objectContaining({ amountUsd: 60, stripePaymentIntentId: "pi_1", userId: "user-1" })
     );
     expect(minter.mint).toHaveBeenCalledWith({
       itemId: "1",
@@ -137,7 +141,7 @@ describe("executeRent (Redbox flow)", () => {
     await expect(
       executeRent(
         { store: makeStore(), payments: null, minter: makeMinter() },
-        { itemId: "1", renterEmail: "r@x.com", rentalDays: 3 }
+        { itemId: "1", renter: RENTER, rentalDays: 3 }
       )
     ).rejects.toMatchObject({ code: "payment_not_configured" });
   });
@@ -147,7 +151,7 @@ describe("executeRent (Redbox flow)", () => {
     await expect(
       executeRent(
         { store: makeStore(), payments, minter: makeMinter() },
-        { itemId: "1", renterEmail: "r@x.com", rentalDays: 3 }
+        { itemId: "1", renter: RENTER, rentalDays: 3 }
       )
     ).rejects.toMatchObject({ code: "card_not_linked" });
   });
@@ -159,7 +163,7 @@ describe("executeRent (Redbox flow)", () => {
     await expect(
       executeRent(
         { store, payments: makePayments(), minter: makeMinter() },
-        { itemId: "1", renterEmail: "r@x.com", rentalDays: 3 }
+        { itemId: "1", renter: RENTER, rentalDays: 3 }
       )
     ).rejects.toMatchObject({ code: "item_not_available" });
   });
@@ -172,7 +176,7 @@ describe("executeRent (Redbox flow)", () => {
     await expect(
       executeRent(
         { store, payments, minter: makeMinter() },
-        { itemId: "1", renterEmail: "r@x.com", rentalDays: 3 }
+        { itemId: "1", renter: RENTER, rentalDays: 3 }
       )
     ).rejects.toMatchObject({ code: "charge_failed" });
     expect(store.returnItem).toHaveBeenCalledWith("1");
@@ -184,7 +188,7 @@ describe("executeRent (Redbox flow)", () => {
     const minter = makeMinter({ mint: vi.fn().mockRejectedValue(new Error("devnet down")) });
     const result = await executeRent(
       { store, payments: makePayments(), minter },
-      { itemId: "1", renterEmail: "r@x.com", rentalDays: 3 }
+      { itemId: "1", renter: RENTER, rentalDays: 3 }
     );
     expect(result.rental.id).toBe("rental-1");
     expect(result.receipt).toBeNull();
@@ -199,7 +203,7 @@ describe("executeReturn (Redbox overage)", () => {
     const payments = makePayments();
     const result = await executeReturn(
       { store, payments, now: () => activeRental.rentalStart + 2 * MS_PER_DAY },
-      { rentalId: "rental-1" }
+      { rentalId: "rental-1", requester: RENTER }
     );
     expect(result.extraDays).toBe(0);
     expect(result.overage).toBeNull();
@@ -214,7 +218,7 @@ describe("executeReturn (Redbox overage)", () => {
     // rented for 3 days, returned after 5 → 2 extra days → 20 × 1.5 × 2 = 60
     const result = await executeReturn(
       { store, payments, now: () => activeRental.rentalStart + 5 * MS_PER_DAY },
-      { rentalId: "rental-1" }
+      { rentalId: "rental-1", requester: RENTER }
     );
     expect(result.extraDays).toBe(2);
     expect(payments.chargeSavedCard).toHaveBeenCalledWith(
@@ -227,12 +231,34 @@ describe("executeReturn (Redbox overage)", () => {
     );
   });
 
+  it("forbids returning someone else's rental", async () => {
+    const store = makeStore();
+    await expect(
+      executeReturn(
+        { store, payments: makePayments() },
+        { rentalId: "rental-1", requester: STRANGER }
+      )
+    ).rejects.toMatchObject({ code: "forbidden" });
+    expect(store.returnItem).not.toHaveBeenCalled();
+  });
+
+  it("falls back to email matching for legacy rentals without userId", async () => {
+    const store = makeStore({
+      getRental: vi.fn().mockResolvedValue({ ...activeRental, userId: null }),
+    });
+    const result = await executeReturn(
+      { store, payments: makePayments(), now: () => activeRental.rentalStart + 2 * MS_PER_DAY },
+      { rentalId: "rental-1", requester: RENTER }
+    );
+    expect(result.rental.status).toBe("returned");
+  });
+
   it("rejects returning a non-active rental", async () => {
     const store = makeStore({
       getRental: vi.fn().mockResolvedValue({ ...activeRental, status: "returned" }),
     });
     await expect(
-      executeReturn({ store, payments: makePayments() }, { rentalId: "rental-1" })
+      executeReturn({ store, payments: makePayments() }, { rentalId: "rental-1", requester: RENTER })
     ).rejects.toMatchObject({ code: "rental_not_active" });
   });
 
@@ -241,7 +267,7 @@ describe("executeReturn (Redbox overage)", () => {
     await expect(
       executeReturn(
         { store, payments: null, now: () => activeRental.rentalStart + 5 * MS_PER_DAY },
-        { rentalId: "rental-1" }
+        { rentalId: "rental-1", requester: RENTER }
       )
     ).rejects.toMatchObject({ code: "payment_not_configured" });
     expect(store.returnItem).not.toHaveBeenCalled();
