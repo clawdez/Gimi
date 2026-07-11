@@ -3628,6 +3628,7 @@ function updatePaymentUI() {
 }
 
 function updateCheckoutCTA() {
+  sheetCTA.disabled = false;
   if (selectedPaymentMethod === 'card') {
     sheetCTA.textContent = 'Pay and reserve';
   } else if (connectedWallet) {
@@ -3675,6 +3676,36 @@ window.addEventListener('message', async (event) => {
     closePrivyRequest();
     saveWalletSession(String(event.data.address || ''), 'privy');
     setSheetStatus(`Wallet connected · ${shortWallet(connectedWallet)}`, 'success');
+    return;
+  }
+  if (event.data?.type === 'gimi:card-checkout-complete') {
+    closePrivyRequest();
+    const intent = event.data.intent || {};
+    const authorization = event.data.authorization || {};
+    const card = authorization.card || {};
+    sheetCTA.textContent = 'Reserved';
+    setSheetStatus(
+      `${card.brand || 'Card'} •••• ${card.last4 || ''} authorized · ${shortWallet(intent.id || authorization.paymentIntentId || '')}`,
+      'success'
+    );
+    if (connectedWallet) await refreshRentalProfile();
+    return;
+  }
+  if (event.data?.type === 'gimi:card-checkout-unavailable') {
+    closePrivyRequest();
+    if (!activeSheetItem) return;
+    try {
+      await startMoonPayCardRentalIntent(activeSheetItem);
+    } catch (error) {
+      updateCheckoutCTA();
+      setSheetStatus(error instanceof Error ? error.message : 'Card checkout failed', 'error');
+    }
+    return;
+  }
+  if (event.data?.type === 'gimi:card-checkout-error') {
+    closePrivyRequest();
+    updateCheckoutCTA();
+    setSheetStatus(String(event.data.message || 'Card checkout cancelled'), 'error');
     return;
   }
   if (event.data?.type === 'gimi:privy-wallet-error') {
@@ -3780,7 +3811,7 @@ async function createRentalIntent(item, paymentMethod, renterWallet) {
   return data;
 }
 
-async function startCardRentalIntent(item) {
+async function startMoonPayCardRentalIntent(item) {
   sheetCTA.textContent = 'Preparing card checkout...';
   setSheetStatus('Creating rental intent for card payment...', 'pending');
   const data = await createRentalIntent(item, 'card', connectedWallet || '');
@@ -3802,6 +3833,22 @@ async function startCardRentalIntent(item) {
   sheetCTA.textContent = 'MoonPay setup needed';
   setSheetStatus('Rental intent saved. Configure MoonPay Commerce checkout before accepting card payments.', 'pending');
   if (connectedWallet) await refreshRentalProfile();
+}
+
+async function startCardRentalIntent(item) {
+  sheetCTA.disabled = true;
+  sheetCTA.textContent = 'Opening secure checkout...';
+  setSheetStatus('Signing in to authorize the refundable rental hold...', 'pending');
+  if (!window.parent || window.parent === window) {
+    await startMoonPayCardRentalIntent(item);
+    return;
+  }
+  window.parent.postMessage({
+    type: 'gimi:request-card-checkout',
+    itemId: mappedRentalItemId(item),
+    hours: clampRentalHours(selectedRentalHours),
+    renterWallet: connectedWallet || undefined,
+  }, window.location.origin);
 }
 
 async function recordRentalStart(prepared, signature) {
@@ -4441,7 +4488,6 @@ sheetCTA.addEventListener('click', async (event) => {
 
     if (selectedPaymentMethod === 'card') {
       await startCardRentalIntent(activeSheetItem);
-      setTimeout(updateCheckoutCTA, 2400);
       return;
     }
 

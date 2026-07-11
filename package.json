@@ -29,7 +29,10 @@
     "e2e:devnet": "node scripts/e2e-owner-listing-rental-devnet.mjs",
     "start": "node scripts/run-next-clean.cjs start",
     "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
     "test:anchor": "NO_DNA=1 anchor build && cargo test -p rental_session",
+    "verify:prod-ready": "npm run typecheck && npm test && npm run lint && npm run build",
     "smoke:moonpay": "node scripts/smoke-moonpay-commerce.mjs"
   },
   "dependencies": {
@@ -40,10 +43,14 @@
     "@solana/kit": "^6.9.0",
     "@solana/spl-token": "^0.4.14",
     "@solana/web3.js": "^1.98.4",
+    "@stripe/react-stripe-js": "^6.7.0",
+    "@stripe/stripe-js": "^9.9.0",
     "@supabase/supabase-js": "^2.105.4",
+    "jose": "^6.2.3",
     "next": "16.2.6",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "stripe": "^22.3.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -53,6 +60,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.10"
   }
 }

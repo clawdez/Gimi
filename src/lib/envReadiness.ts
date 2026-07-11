@@ -8,6 +8,13 @@ export interface EnvReadinessCheck {
 }
 
 export function getEnvReadiness() {
+  const stripeTestConfigured =
+    process.env.STRIPE_SECRET_KEY?.startsWith("sk_test_") === true &&
+    process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY?.startsWith("pk_test_") === true &&
+    hasEnv("PRIVY_JWT_VERIFICATION_KEY");
+  const moonPayConfigured =
+    hasEnv("MOONPAY_COMMERCE_CHECKOUT_URL") ||
+    (hasEnv("MOONPAY_COMMERCE_API_URL") && hasEnv("MOONPAY_COMMERCE_API_KEY"));
   const checks: EnvReadinessCheck[] = [
     {
       key: "NEXT_PUBLIC_PRIVY_APP_ID",
@@ -28,18 +35,16 @@ export function getEnvReadiness() {
       purpose: "Server-side Supabase writes. Must not be public.",
     },
     {
-      key: "MOONPAY_COMMERCE_CHECKOUT_URL or MOONPAY_COMMERCE_API_URL + MOONPAY_COMMERCE_API_KEY",
+      key: "Stripe TEST rail or MoonPay Commerce",
       level: "recommended",
-      configured:
-        hasEnv("MOONPAY_COMMERCE_CHECKOUT_URL") ||
-        (hasEnv("MOONPAY_COMMERCE_API_URL") && hasEnv("MOONPAY_COMMERCE_API_KEY")),
-      purpose: "Card-funded rental checkout.",
+      configured: stripeTestConfigured || moonPayConfigured,
+      purpose: "Card-funded rental authorization with Stripe TEST mode or MoonPay fallback.",
     },
     {
-      key: "MOONPAY_COMMERCE_WEBHOOK_SECRET",
+      key: "Card settlement verification",
       level: "recommended",
-      configured: hasEnv("MOONPAY_COMMERCE_WEBHOOK_SECRET"),
-      purpose: "Verify provider payment webhooks.",
+      configured: stripeTestConfigured || (moonPayConfigured && hasEnv("MOONPAY_COMMERCE_WEBHOOK_SECRET")),
+      purpose: "Privy JWT verification for Stripe, or signed MoonPay payment webhooks.",
     },
     {
       key: "ELEVENLABS_AGENT_ID + ELEVENLABS_API_KEY",
