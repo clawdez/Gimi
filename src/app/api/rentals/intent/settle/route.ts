@@ -54,7 +54,9 @@ export async function POST(req: NextRequest) {
       notes:
         intent.paymentMethod === "base_mcp"
           ? "Owner confirmed Base MCP return. Gimi recorded the off-chain payout/refund receipt against the Base payment transaction."
-          : "Owner confirmed card-funded return. Provider refund/payout and Solana receipt issuance are pending.",
+          : intent.provider === "stripe_redbox"
+            ? "Owner confirmed return. Owner-signed Solana receipt will capture the final Stripe amount and release unused authorization."
+            : "Owner confirmed card-funded return. Provider refund/payout and Solana receipt issuance are pending.",
       updatedAt: now,
     });
     let receipt = null;
@@ -118,7 +120,9 @@ export async function POST(req: NextRequest) {
       nextAction:
         updatedIntent.paymentMethod === "base_mcp"
           ? "base_mcp_receipt_available_in_history"
-          : "provider_refund_payout_then_issue_solana_receipt",
+          : updatedIntent.provider === "stripe_redbox"
+            ? "owner_sign_solana_receipt_to_capture_stripe_authorization"
+            : "provider_refund_payout_then_issue_solana_receipt",
     });
   } catch (error) {
     return errorResponse(error instanceof Error ? error.message : "Unable to settle card rental", 400);

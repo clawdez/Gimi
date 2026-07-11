@@ -4,7 +4,7 @@ Gimi is an AI rental agent for community inventory: chat-to-rent discovery, Card
 
 The product is built for schools, coworking spaces, apartment communities, and hackathon venues where people need to borrow real items from nearby owners. Gimi handles inventory search, rental intent creation, refundable deposit/funding, hourly rent accrual inside escrow, owner return confirmation, card-funded receipt issuance, and reputation-ready history.
 
-The current demo opens at `/` and renders the Gimi one-page agent shell from `public/gimi.html` inside a Next controller shell: a large central agent orb, a bottom chat input, nearby inventory, a product checkout drawer, and same-page Privy wallet connection for email, Google, or Solana wallet users.
+The current demo opens at `/` and renders the Gimi one-page agent shell from `public/gimi.html` inside a Next controller shell: a large central agent orb, a bottom chat input, nearby inventory, a product checkout drawer, and same-page Privy connection for email or Solana wallet users.
 
 ## Product Loop
 
@@ -31,7 +31,7 @@ The MVP is designed for physical-world rentals where the agent helps people borr
 - Central orb plus bottom chat input for natural-language rental requests.
 - Clickable nearby inventory and product checkout drawer.
 - Payment-router checkout with one user-facing action, Card and Solana wallet options, and a shared rental intent record before funding.
-- Same-page Privy controller for direct email, Google, or Solana wallet login. The controller signs a Solana sign-in message before the shell stores the wallet session.
+- Same-page Privy controller for direct email or Solana wallet login. The controller signs a Solana sign-in message before the shell stores a wallet session.
 - Wallet session reuse: once Privy connects, the checkout drawer changes from `Connect wallet` to `Start rental` instead of asking the user to connect again.
 - Demo inventory, rental session state, return flow, receipt copy, and reputation-ready result.
 - Receipt/history page for recent settled rentals, item context, wallet parties, payout/refund split, and Solana explorer links.
@@ -60,7 +60,7 @@ The MVP is designed for physical-world rentals where the agent helps people borr
 | MCP | `/api/mcp` exposes read/prepare rental tools for external agents |
 | Base MCP | `/api/base-plugin/gimi` exposes Base agent endpoints for inventory, quote, and user-approved USDC deposit calldata |
 | Solana Pay | `/api/solana-pay/initialize-item`, `/api/solana-pay/start-rental`, `/api/solana-pay/confirm-return`, and `/api/solana-pay/auto-buyout` return Solana Pay-style request payloads plus program id, PDA accounts, required signer, and instruction args |
-| Privy | `@privy-io/react-auth` provides email/Google onboarding and embedded Solana checkout wallets through `NEXT_PUBLIC_PRIVY_APP_ID` |
+| Privy | `@privy-io/react-auth` provides email onboarding and embedded or external Solana checkout wallets through `NEXT_PUBLIC_PRIVY_APP_ID` |
 
 ## Local Development
 
@@ -75,6 +75,14 @@ For wallet login, create `.env.local`:
 
 ```bash
 NEXT_PUBLIC_PRIVY_APP_ID=YOUR_PRIVY_APP_ID
+```
+
+The optional Stripe Redbox path also verifies Privy access tokens on the server.
+Copy the JWT verification public key from the Privy dashboard and preserve its
+PEM line breaks:
+
+```bash
+PRIVY_JWT_VERIFICATION_KEY="-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----"
 ```
 
 The production Vercel project must also have `NEXT_PUBLIC_PRIVY_APP_ID` configured. Without it, Gimi shows a setup screen instead of the rental shell.
@@ -147,10 +155,25 @@ Rental intent
 -> Solana receipt / reputation record
 ```
 
-Card users should not need crypto to reserve an item. The UI creates a
-`rental_intents` row with `payment_method: "card"`, rent, deposit, duration,
-and a MoonPay provider slot. Configure MoonPay Commerce server env vars when a
-real card checkout is ready:
+Card users should not need crypto to reserve an item. The preferred migrated
+rail is a Stripe TEST-mode Redbox flow: the user links a card after Privy login,
+Gimi authorizes the refundable buyout cap, and no money is captured until the
+owner confirms return and signs the Solana receipt transaction. At that point
+Gimi captures only the final rental fee and releases the unused authorization.
+
+```bash
+NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_...
+STRIPE_SECRET_KEY=sk_test_...
+PRIVY_JWT_VERIFICATION_KEY="-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----"
+```
+
+Live Stripe keys are deliberately rejected in this migration. This keeps the
+new payment path testable without presenting it as production money movement.
+The Stripe customer, authorization, and receipt are joined by Privy user id and
+the existing `rental_intents` id; no second rental store or schema is introduced.
+
+When the Stripe TEST variables are absent, the same Card button falls back to
+the existing MoonPay Commerce flow:
 
 ```bash
 MOONPAY_COMMERCE_API_URL=https://...
@@ -164,8 +187,8 @@ MOONPAY_COMMERCE_WEBHOOK_URL=https://YOUR_DOMAIN/api/payments/moonpay/webhook
 MOONPAY_COMMERCE_CHECKOUT_URL=https://...
 ```
 
-Without MoonPay API env vars or a hosted checkout URL, the app still records the
-intent and shows a setup message instead of pretending to charge the user. A
+Without either Stripe TEST configuration or MoonPay API env vars/hosted checkout,
+the app shows a setup message instead of pretending to charge the user. A
 MoonPay webhook marks the intent funded, sets escrow to provider-authorized or
 provider-captured, reserves the rental, and leaves the Solana receipt pending
 for return settlement.

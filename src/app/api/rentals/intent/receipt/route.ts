@@ -4,6 +4,7 @@ import { getRentalIntentsRepository } from "@/lib/rentalIntentsRepository";
 import { getRentalReceiptsRepository } from "@/lib/rentalReceiptsRepository";
 import { getNotificationsRepository, newNotification } from "@/lib/notificationsRepository";
 import { MEMO_PROGRAM_ID, SOLANA_RPC_URL, assertConfirmedSignature } from "@/lib/rentproofProgram";
+import { getStripeRedbox } from "@/lib/stripeRedbox";
 
 const SIGNATURE_PATTERN = /^[1-9A-HJ-NP-Za-km-z]{64,100}$/;
 const CARD_PAYMENT_MINT = "USD_CARD";
@@ -69,6 +70,18 @@ export async function POST(req: NextRequest) {
     await assertConfirmedSignature(connection, signature);
     await assertReceiptTransaction(connection, signature, ownerWallet);
 
+    let providerSettlement = null;
+    if (intent.provider === "stripe_redbox") {
+      if (!intent.providerPaymentId) return errorResponse("Stripe authorization id is missing", 409, { intent });
+      const redbox = getStripeRedbox();
+      if (!redbox) return errorResponse("Stripe TEST payments are not configured", 503);
+      providerSettlement = await redbox.settleAuthorization({
+        paymentIntentId: intent.providerPaymentId,
+        intentId: intent.id,
+        finalAmount: intent.finalFee ?? 0,
+      });
+    }
+
     const now = new Date().toISOString();
     const rentalId = intent.rentalId || intent.id;
     const renterWallet = intent.renterWallet || `card:${intent.renterIdentity || intent.id}`;
@@ -95,7 +108,12 @@ export async function POST(req: NextRequest) {
       receiptStatus: "issued",
       receiptSignature: signature,
       receiptIssuedAt: now,
-      notes: "Card-funded return has a Solana memo receipt. Provider payout/refund reconciliation remains on the payment provider rail.",
+      escrowStatus: intent.provider === "stripe_redbox" ? "provider_captured" : intent.escrowStatus,
+      settlementStatus: intent.provider === "stripe_redbox" ? "settled" : intent.settlementStatus,
+      notes:
+        intent.provider === "stripe_redbox"
+          ? "Owner-signed Solana receipt verified. Stripe captured the final rental fee and released the unused authorization."
+          : "Card-funded return has a Solana memo receipt. Provider payout/refund reconciliation remains on the payment provider rail.",
       updatedAt: now,
     });
     const notification = {
@@ -122,6 +140,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       intent: updatedIntent,
       receipt,
+      providerSettlement,
       explorerUrl: `https://explorer.solana.com/tx/${signature}?cluster=devnet`,
     });
   } catch (error) {
