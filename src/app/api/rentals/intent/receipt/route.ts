@@ -3,8 +3,10 @@ import { Connection, PublicKey } from "@solana/web3.js";
 import { getRentalIntentsRepository } from "@/lib/rentalIntentsRepository";
 import { getRentalReceiptsRepository } from "@/lib/rentalReceiptsRepository";
 import { getNotificationsRepository, newNotification } from "@/lib/notificationsRepository";
-import { MEMO_PROGRAM_ID, SOLANA_RPC_URL, assertConfirmedSignature } from "@/lib/rentproofProgram";
+import { SOLANA_RPC_URL, assertConfirmedSignature } from "@/lib/rentproofProgram";
 import { getStripeRedbox } from "@/lib/stripeRedbox";
+import { executionProvenanceReady, recordExecutionEventsSafely } from "@/lib/rentalExecutionEvents";
+import { assertCardReceiptMessage, buildCardReceiptMemo } from "@/lib/cardReceipt";
 
 const SIGNATURE_PATTERN = /^[1-9A-HJ-NP-Za-km-z]{64,100}$/;
 const CARD_PAYMENT_MINT = "USD_CARD";
@@ -17,7 +19,7 @@ function moneyToBaseUnits(value: number | undefined) {
   return String(Math.round(Number(value || 0) * 1_000_000));
 }
 
-async function assertReceiptTransaction(connection: Connection, signature: string, ownerWallet: string) {
+async function assertReceiptTransaction(connection: Connection, signature: string, ownerWallet: string, expectedMemo: string) {
   const transaction = await connection.getTransaction(signature, {
     commitment: "confirmed",
     maxSupportedTransactionVersion: 0,
@@ -25,16 +27,18 @@ async function assertReceiptTransaction(connection: Connection, signature: strin
 
   if (!transaction) throw new Error("Receipt transaction details were not found on devnet");
 
-  const accountKeys = transaction.transaction.message.staticAccountKeys.map((key) => key.toBase58());
-  if (!accountKeys.includes(ownerWallet)) {
-    throw new Error("Receipt signature does not include the owner wallet");
-  }
-  if (!accountKeys.includes(MEMO_PROGRAM_ID.toBase58())) {
-    throw new Error("Receipt signature does not include the Solana Memo program");
-  }
+  const message = transaction.transaction.message;
+  assertCardReceiptMessage({
+    accountKeys: message.staticAccountKeys.map((key) => key.toBase58()),
+    numRequiredSignatures: message.header.numRequiredSignatures,
+    instructions: message.compiledInstructions,
+    ownerWallet,
+    expectedMemo,
+  });
 }
 
 export async function POST(req: NextRequest) {
+  if (!executionProvenanceReady()) return errorResponse("Execution provenance is not configured", 503);
   let body: Record<string, unknown>;
   try {
     body = (await req.json()) as Record<string, unknown>;
@@ -68,7 +72,20 @@ export async function POST(req: NextRequest) {
 
     const connection = new Connection(SOLANA_RPC_URL, "confirmed");
     await assertConfirmedSignature(connection, signature);
-    await assertReceiptTransaction(connection, signature, ownerWallet);
+    const expectedMemo = buildCardReceiptMemo({
+      intentId: intent.id,
+      rentalId: intent.rentalId || intent.id,
+      itemId: intent.itemId,
+      ownerWallet: intent.ownerWallet,
+      renterWallet: intent.renterWallet || `card:${intent.renterIdentity || intent.id}`,
+      finalFee: intent.finalFee ?? 0,
+      ownerPayout: intent.ownerPayout ?? 0,
+      platformFee: intent.platformFee ?? 0,
+      renterRefund: intent.renterRefund ?? 0,
+      currency: intent.currency,
+      returnedAt: intent.returnedAt || "",
+    });
+    await assertReceiptTransaction(connection, signature, ownerWallet, expectedMemo);
 
     let providerSettlement = null;
     if (intent.provider === "stripe_redbox") {
@@ -136,9 +153,43 @@ export async function POST(req: NextRequest) {
         })
       );
     }
+    const providerSettlementCompleted = updatedIntent.provider === "stripe_redbox";
+    const executionTraceStatus = await recordExecutionEventsSafely([
+      {
+        eventKey: "provider-settlement-completed",
+        intentId: updatedIntent.id,
+        rentalId: updatedIntent.rentalId,
+        itemId: updatedIntent.itemId,
+        step: "settlement_completed",
+        actor: "payment_provider",
+        tool: updatedIntent.provider === "stripe_redbox" ? "Stripe partial capture" : "provider reconciliation",
+        summary: providerSettlementCompleted
+          ? `Settlement finalized with ${updatedIntent.ownerPayout ?? 0} ${updatedIntent.currency} owner payout and ${updatedIntent.renterRefund ?? 0} ${updatedIntent.currency} refund.`
+          : "On-chain receipt verified; payment provider payout and refund reconciliation remain pending.",
+        approvalRequired: false,
+        status: providerSettlementCompleted ? "completed" : "waiting",
+        paymentMode: "provider_authorized",
+        recordRef: `intent:${updatedIntent.id}`,
+      },
+      {
+        eventKey: "solana-receipt-issued",
+        intentId: updatedIntent.id,
+        rentalId: updatedIntent.rentalId,
+        itemId: updatedIntent.itemId,
+        step: "receipt_issued",
+        actor: "chain",
+        tool: "Solana Memo receipt",
+        summary: "Verified owner-signed Solana receipt and persisted the settlement record.",
+        approvalRequired: true,
+        status: "completed",
+        paymentMode: "onchain_confirmed",
+        recordRef: signature,
+      },
+    ]);
 
     return NextResponse.json({
       intent: updatedIntent,
+      executionTraceStatus,
       receipt,
       providerSettlement,
       explorerUrl: `https://explorer.solana.com/tx/${signature}?cluster=devnet`,

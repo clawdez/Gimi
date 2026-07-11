@@ -3,11 +3,13 @@ import { requirePrivyAuth } from "@/lib/privyServerAuth";
 import { getRentableItem } from "@/lib/rentableItems";
 import { getRentalIntentsRepository, newRentalIntentId } from "@/lib/rentalIntentsRepository";
 import { getStripeRedbox } from "@/lib/stripeRedbox";
+import { executionProvenanceReady, initialIntentExecutionEvents, recordExecutionEventsSafely } from "@/lib/rentalExecutionEvents";
 
 const WALLET_PATTERN = /^[1-9A-HJ-NP-Za-km-z]{32,64}$/;
 
 export async function POST(request: Request) {
   try {
+    if (!executionProvenanceReady()) return NextResponse.json({ error: "execution_provenance_not_configured" }, { status: 503 });
     const auth = await requirePrivyAuth(request);
     const body = await request.json().catch(() => null);
     const itemId = typeof body?.itemId === "string" ? body.itemId.trim() : "";
@@ -63,7 +65,30 @@ export async function POST(request: Request) {
         createdAt: now.toISOString(),
         updatedAt: now.toISOString(),
       });
-      return NextResponse.json({ intent, authorization });
+      const executionTraceStatus = await recordExecutionEventsSafely([
+        ...initialIntentExecutionEvents(intent, {
+          sourceTool: "POST /api/payments/stripe/authorize",
+          approvalTool: "Stripe manual-capture authorization",
+          approvalStatus: "completed",
+          approvalPaymentMode: "provider_authorized",
+          approvalSummary: `Renter approved a refundable ${intent.depositAmount} USD authorization.`,
+        }),
+        {
+          eventKey: "stripe-funded",
+          intentId: intent.id,
+          rentalId: intent.rentalId,
+          itemId: intent.itemId,
+          step: "rental_funded",
+          actor: "payment_provider",
+          tool: "Stripe PaymentIntent",
+          summary: "Provider authorization succeeded; capture remains blocked until return and receipt approval.",
+          approvalRequired: false,
+          status: "completed",
+          paymentMode: "provider_authorized",
+          recordRef: `intent:${intent.id}`,
+        },
+      ]);
+      return NextResponse.json({ intent, authorization, executionTraceStatus });
     } catch (error) {
       await redbox.cancelAuthorization(authorization.paymentIntentId).catch(() => undefined);
       throw error;

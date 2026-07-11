@@ -14,6 +14,9 @@ export interface MoonPayWebhookEvent {
   raw: unknown;
 }
 
+type MoonPayMappedStatus = ReturnType<typeof moonPayStatusToIntent>;
+const WEBHOOK_TOLERANCE_MS = 5 * 60 * 1000;
+
 export function moonPayConfigured() {
   return Boolean(process.env.MOONPAY_COMMERCE_API_URL && process.env.MOONPAY_COMMERCE_API_KEY);
 }
@@ -144,9 +147,9 @@ export function moonPayStatusToIntent(status: string) {
   };
 }
 
-export async function verifyMoonPayWebhook(req: Request, rawBody: string) {
+export async function verifyMoonPayWebhook(req: Request, rawBody: string, nowMs = Date.now()) {
   const secret = process.env.MOONPAY_COMMERCE_WEBHOOK_SECRET;
-  if (!secret) return { ok: true, mode: "disabled" as const };
+  if (!secret) return { ok: false, mode: "not_configured" as const };
 
   const authorization = req.headers.get("authorization") ?? "";
   if (authorization === `Bearer ${secret}`) return { ok: true, mode: "bearer" as const };
@@ -154,7 +157,7 @@ export async function verifyMoonPayWebhook(req: Request, rawBody: string) {
   const moonPaySignature = req.headers.get("moonpay-signature-v2") ?? req.headers.get("x-moonpay-signature-v2");
   if (moonPaySignature) {
     return {
-      ok: verifyTimestampedSignature(rawBody, secret, moonPaySignature),
+      ok: verifyTimestampedSignature(rawBody, secret, moonPaySignature, nowMs),
       mode: "moonpay-signature-v2" as const,
     };
   }
@@ -166,6 +169,20 @@ export async function verifyMoonPayWebhook(req: Request, rawBody: string) {
     ok: verifyHexSignature(rawBody, secret, signature),
     mode: "x-signature" as const,
   };
+}
+
+export function moonPayTransitionAllowed(intent: PersistedRentalIntent, next: MoonPayMappedStatus) {
+  if (["active", "returned"].includes(intent.sessionStatus) || intent.settlementStatus === "settled") return false;
+  if (intent.sessionStatus === "cancelled") return false;
+  if (intent.paymentStatus === "confirmed" && next.paymentStatus !== "confirmed") return false;
+  if (intent.sessionStatus === "reserved" && next.sessionStatus !== "reserved") return false;
+  if (intent.escrowStatus === "provider_captured" && next.escrowStatus !== "provider_captured") return false;
+  return !(
+    intent.paymentStatus === next.paymentStatus &&
+    intent.escrowStatus === next.escrowStatus &&
+    intent.sessionStatus === next.sessionStatus &&
+    intent.receiptStatus === next.receiptStatus
+  );
 }
 
 export function totalAmount(intent: PersistedRentalIntent) {
@@ -207,7 +224,7 @@ function providerError(value: unknown): string | undefined {
   return stringValue(record.error) || stringValue(record.message) || stringValue(data.error) || stringValue(data.message) || undefined;
 }
 
-function verifyTimestampedSignature(rawBody: string, secret: string, header: string) {
+function verifyTimestampedSignature(rawBody: string, secret: string, header: string, nowMs: number) {
   const fields = new Map(
     header.split(",").map((part) => {
       const [key, ...rest] = part.trim().split("=");
@@ -217,6 +234,10 @@ function verifyTimestampedSignature(rawBody: string, secret: string, header: str
   const timestamp = fields.get("t");
   const signature = fields.get("s");
   if (!timestamp || !signature) return false;
+  const timestampValue = Number(timestamp);
+  if (!Number.isFinite(timestampValue)) return false;
+  const timestampMs = timestampValue < 1_000_000_000_000 ? timestampValue * 1000 : timestampValue;
+  if (Math.abs(nowMs - timestampMs) > WEBHOOK_TOLERANCE_MS) return false;
   return verifyHexSignature(`${timestamp}.${rawBody}`, secret, signature);
 }
 

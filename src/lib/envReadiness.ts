@@ -8,6 +8,7 @@ export interface EnvReadinessCheck {
 }
 
 export function getEnvReadiness() {
+  const provenanceLevel: EnvReadinessLevel = process.env.VERCEL ? "required" : "recommended";
   const stripeTestConfigured =
     process.env.STRIPE_SECRET_KEY?.startsWith("sk_test_") === true &&
     process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY?.startsWith("pk_test_") === true &&
@@ -33,6 +34,12 @@ export function getEnvReadiness() {
       level: "required",
       configured: hasEnv("SUPABASE_SERVICE_ROLE_KEY") || hasEnv("SUPABASE_SERVICE_KEY"),
       purpose: "Server-side Supabase writes. Must not be public.",
+    },
+    {
+      key: "GIMI_ENVIRONMENT + GIMI_ACTIVITY_TYPE",
+      level: provenanceLevel,
+      configured: hasEnv("GIMI_ENVIRONMENT") && hasEnv("GIMI_ACTIVITY_TYPE"),
+      purpose: "Keep demo, test, pilot, and organic activity separated in execution evidence.",
     },
     {
       key: "Stripe TEST rail or MoonPay Commerce",

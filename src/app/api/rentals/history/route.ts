@@ -4,6 +4,12 @@ import { getRentalIntentsRepository, PersistedRentalIntent } from "@/lib/rentalI
 import { getRentalReceiptsRepository, PersistedRentalReceipt } from "@/lib/rentalReceiptsRepository";
 import { getRentalSessionsRepository, PersistedRentalSession } from "@/lib/rentalSessionsRepository";
 import { USDC_DECIMALS } from "@/lib/rentproofProgram";
+import {
+  buildFunnelSummary,
+  executionTimelineDisclosureAllowed,
+  getRentalExecutionEventsRepository,
+  PersistedRentalExecutionEvent,
+} from "@/lib/rentalExecutionEvents";
 
 const SOLANA_WALLET_PATTERN = /^[1-9A-HJ-NP-Za-km-z]{32,64}$/;
 const EVM_WALLET_PATTERN = /^0x[a-fA-F0-9]{40}$/;
@@ -61,6 +67,7 @@ export async function GET(req: NextRequest) {
   const rentalId = searchParams.get("rentalId")?.trim() ?? "";
   const limitParam = searchParams.get("limit");
   const limit = limitParam ? Number(limitParam) : undefined;
+  const discloseTimeline = executionTimelineDisclosureAllowed(searchParams.get("timeline"));
 
   if (wallet && !SOLANA_WALLET_PATTERN.test(wallet) && !EVM_WALLET_PATTERN.test(wallet)) {
     return errorResponse("wallet must be a Solana or EVM address", 400);
@@ -76,6 +83,7 @@ export async function GET(req: NextRequest) {
     const repository = getRentalReceiptsRepository();
     const sessionsRepository = getRentalSessionsRepository();
     const intentsRepository = getRentalIntentsRepository();
+    const executionEventsRepository = getRentalExecutionEventsRepository();
     const activeSessions = wallet ? await sessionsRepository.listByWallet(wallet, { status: "active", limit }) : [];
     const paymentIntents = wallet ? await intentsRepository.listByRenterWallet(wallet, limit) : [];
     const ownerPaymentIntents = wallet ? await intentsRepository.listByOwnerWallet(wallet, limit) : [];
@@ -86,15 +94,25 @@ export async function GET(req: NextRequest) {
     });
     const records = await Promise.all(receipts.map(enrichReceipt));
     const activeRentals = await Promise.all(activeSessions.map(enrichSession));
+    const visibleIntents = [...new Map([...paymentIntents, ...ownerPaymentIntents].map((intent) => [intent.id, intent])).values()];
+    let executionEvents: PersistedRentalExecutionEvent[] = [];
+    let executionTraceStatus: "recorded" | "unavailable" = "recorded";
+    try {
+      executionEvents = await executionEventsRepository.listByIntentIds(visibleIntents.map((intent) => intent.id));
+    } catch (error) {
+      executionTraceStatus = "unavailable";
+      console.error("Rental execution timeline read failed", error);
+    }
+    const eventsByIntent = groupEventsByIntent(executionEvents);
     const providerReservations = await Promise.all(
       paymentIntents
         .filter((intent) => intent.paymentMethod !== "solana_wallet" && intent.sessionStatus !== "cancelled")
-        .map(enrichIntent)
+        .map((intent) => enrichIntent(intent, eventsByIntent.get(intent.id) ?? [], discloseTimeline))
     );
     const ownerProviderReservations = await Promise.all(
       ownerPaymentIntents
         .filter((intent) => intent.paymentMethod !== "solana_wallet" && intent.sessionStatus !== "cancelled")
-        .map(enrichIntent)
+        .map((intent) => enrichIntent(intent, eventsByIntent.get(intent.id) ?? [], discloseTimeline))
     );
 
     return NextResponse.json({
@@ -110,10 +128,13 @@ export async function GET(req: NextRequest) {
       providerReservationCount: providerReservations.length,
       ownerProviderReservationCount: ownerProviderReservations.length,
       count: records.length,
+      funnel: executionTraceStatus === "recorded" ? buildFunnelSummary(executionEvents) : null,
+      executionTraceStatus,
       storage: {
         intents: intentsRepository.storageKind,
         sessions: sessionsRepository.storageKind,
         receipts: repository.storageKind,
+        executionEvents: executionEventsRepository.storageKind,
       },
       filters: {
         wallet: wallet || null,
@@ -125,7 +146,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-async function enrichIntent(intent: PersistedRentalIntent) {
+async function enrichIntent(intent: PersistedRentalIntent, events: PersistedRentalExecutionEvent[], discloseTimeline: boolean) {
   const item = await getRentableItem(intent.itemId);
 
   return {
@@ -159,8 +180,14 @@ async function enrichIntent(intent: PersistedRentalIntent) {
     receiptIssuedAt: intent.receiptIssuedAt,
     settlementStatus: intent.settlementStatus,
     provider: intent.provider,
-    providerPaymentId: intent.providerPaymentId,
-    providerCheckoutUrl: intent.providerCheckoutUrl,
+    provenance: events.length
+      ? {
+          environment: events[events.length - 1].environment,
+          activityType: events[events.length - 1].activityType,
+          paymentMode: events[events.length - 1].paymentMode,
+        }
+      : undefined,
+    timeline: discloseTimeline ? events.filter((event) => event.activityType === "seeded_demo") : [],
     durationHours: intent.durationHours,
     activatedAt: intent.activatedAt,
     returnedAt: intent.returnedAt,
@@ -181,6 +208,12 @@ async function enrichIntent(intent: PersistedRentalIntent) {
     createdAt: intent.createdAt,
     updatedAt: intent.updatedAt,
   };
+}
+
+function groupEventsByIntent(events: PersistedRentalExecutionEvent[]) {
+  const grouped = new Map<string, PersistedRentalExecutionEvent[]>();
+  for (const event of events) grouped.set(event.intentId, [...(grouped.get(event.intentId) ?? []), event]);
+  return grouped;
 }
 
 async function enrichSession(session: PersistedRentalSession) {

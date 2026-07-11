@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getRentalIntentsRepository } from "@/lib/rentalIntentsRepository";
 import { getNotificationsRepository, newNotification } from "@/lib/notificationsRepository";
+import { executionProvenanceReady, recordExecutionEventsSafely } from "@/lib/rentalExecutionEvents";
+import { verifyOwnerActionProof } from "@/lib/ownerActionProof";
 
 function errorResponse(message: string, status: number, extra?: Record<string, unknown>) {
   return NextResponse.json({ error: message, ...extra }, { status });
 }
 
 export async function POST(req: NextRequest) {
+  if (!executionProvenanceReady()) return errorResponse("Execution provenance is not configured", 503);
   let body: Record<string, unknown>;
   try {
     body = (await req.json()) as Record<string, unknown>;
@@ -27,6 +30,7 @@ export async function POST(req: NextRequest) {
     const intent = await repository.getById(intentId);
     if (!intent) return errorResponse("Rental intent not found", 404);
     if (intent.ownerWallet !== ownerWallet) return errorResponse("Only the owner wallet can activate this reservation", 403);
+    verifyOwnerActionProof({ proof: body.ownerProof, action: "mark_handed_off", intentId, ownerWallet });
     if (intent.paymentMethod !== "card" && intent.paymentMethod !== "base_mcp") {
       return errorResponse("Only provider-funded reservations use this activation path", 400);
     }
@@ -35,6 +39,8 @@ export async function POST(req: NextRequest) {
       return errorResponse("Card escrow must be authorized or captured before handoff", 409, { intent });
     }
     if (intent.sessionStatus === "cancelled") return errorResponse("Cancelled reservations cannot be activated", 409, { intent });
+    if (intent.sessionStatus === "active") return NextResponse.json({ intent, executionTraceStatus: "recorded", nextAction: "track_return_and_settle_provider_funded_rental" });
+    if (intent.sessionStatus !== "reserved") return errorResponse("Reservation must be reserved before handoff", 409, { intent });
 
     const now = new Date().toISOString();
     const updatedIntent = await repository.save({
@@ -58,9 +64,26 @@ export async function POST(req: NextRequest) {
         })
       );
     }
+    const executionTraceStatus = await recordExecutionEventsSafely([
+      {
+        eventKey: "owner-handoff-confirmed",
+        intentId: updatedIntent.id,
+        rentalId: updatedIntent.rentalId,
+        itemId: updatedIntent.itemId,
+        step: "handoff_confirmed",
+        actor: "owner",
+        tool: "POST /api/rentals/intent/status",
+        summary: "Owner confirmed that physical custody was handed to the renter.",
+        approvalRequired: true,
+        status: "completed",
+        paymentMode: updatedIntent.paymentMethod === "base_mcp" ? "onchain_confirmed" : "provider_authorized",
+        recordRef: `intent:${updatedIntent.id}`,
+      },
+    ]);
 
     return NextResponse.json({
       intent: updatedIntent,
+      executionTraceStatus,
       nextAction: "track_return_and_settle_provider_funded_rental",
     });
   } catch (error) {

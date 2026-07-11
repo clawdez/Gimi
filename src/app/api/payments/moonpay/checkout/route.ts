@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createMoonPayCheckout, totalAmount } from "@/lib/moonpayCommerce";
 import { getRentalIntentsRepository } from "@/lib/rentalIntentsRepository";
+import { executionProvenanceReady, recordExecutionEventsSafely } from "@/lib/rentalExecutionEvents";
 
 function errorResponse(message: string, status: number, extra?: Record<string, unknown>) {
   return NextResponse.json({ error: message, ...extra }, { status });
 }
 
 export async function POST(req: NextRequest) {
+  if (!executionProvenanceReady()) return errorResponse("Execution provenance is not configured", 503);
   let body: Record<string, unknown>;
   try {
     body = (await req.json()) as Record<string, unknown>;
@@ -39,9 +41,26 @@ export async function POST(req: NextRequest) {
       sessionStatus: "intent",
       updatedAt: new Date().toISOString(),
     });
+    const executionTraceStatus = await recordExecutionEventsSafely([
+      {
+        eventKey: "moonpay-checkout-requested",
+        intentId: updatedIntent.id,
+        rentalId: updatedIntent.rentalId,
+        itemId: updatedIntent.itemId,
+        step: "approval_requested",
+        actor: "gimi_agent",
+        tool: "MoonPay Commerce checkout",
+        summary: "Opened provider checkout and is waiting for renter authorization.",
+        approvalRequired: true,
+        status: "waiting",
+        paymentMode: "simulated",
+        recordRef: `intent:${updatedIntent.id}`,
+      },
+    ]);
 
     return NextResponse.json({
       intent: updatedIntent,
+      executionTraceStatus,
       providerPaymentId: checkout.providerPaymentId,
       checkoutUrl: checkout.checkoutUrl ?? null,
       amount: {
