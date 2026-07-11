@@ -17,8 +17,9 @@ import { StripeCardLink } from "./StripeCardLink";
 const privyAppId = process.env.NEXT_PUBLIC_PRIVY_APP_ID;
 const loginMethods = ["email", "wallet"] as const;
 
-type WalletAction = "connect" | "send-transaction" | "card-checkout";
+type WalletAction = "connect" | "send-transaction" | "sign-message" | "card-checkout";
 type PendingTransaction = { transactionBase64: string; cluster: string; requiredSigner?: string };
+type PendingMessage = { message: string; requiredSigner: string };
 type PendingCardCheckout = { itemId: string; hours: number; renterWallet?: string };
 type PrivySolanaSignMessage = ReturnType<typeof usePrivySolanaSignMessage>["signMessage"];
 type PrivySolanaSignTransaction = ReturnType<typeof usePrivySolanaSignTransaction>["signTransaction"];
@@ -117,7 +118,7 @@ async function signAndSendTransaction(
   }
 }
 
-export function GimiAppShell() {
+export function GimiAppShell({ partnerDemo = false }: { partnerDemo?: boolean }) {
   const solanaConnectors = useMemo<ReturnType<typeof toSolanaWalletConnectors> | undefined>(
     () => (typeof window === "undefined" ? undefined : toSolanaWalletConnectors()),
     []
@@ -159,15 +160,16 @@ export function GimiAppShell() {
         },
       }}
     >
-      <GimiShellFrame />
+      <GimiShellFrame partnerDemo={partnerDemo} />
     </PrivyProvider>
   );
 }
 
-function GimiShellFrame() {
+function GimiShellFrame({ partnerDemo }: { partnerDemo: boolean }) {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const pendingAction = useRef<WalletAction | null>(null);
   const pendingTx = useRef<PendingTransaction | null>(null);
+  const pendingMessage = useRef<PendingMessage | null>(null);
   const pendingCardCheckout = useRef<PendingCardCheckout | null>(null);
   const hasStartedSignIn = useRef(false);
   const hasStartedTransaction = useRef(false);
@@ -190,6 +192,7 @@ function GimiShellFrame() {
   const fail = useCallback((message: string) => {
     pendingAction.current = null;
     pendingTx.current = null;
+    pendingMessage.current = null;
     hasStartedSignIn.current = false;
     hasStartedTransaction.current = false;
     hasStartedCardCheckout.current = false;
@@ -337,6 +340,18 @@ function GimiShellFrame() {
       if (type === "gimi:request-privy-transaction") {
         startAction("send-transaction");
       }
+      if (type === "gimi:request-privy-message") {
+        const message = typeof event.data?.message === "string" ? event.data.message : "";
+        const requiredSigner = typeof event.data?.requiredSigner === "string" ? event.data.requiredSigner : "";
+        try {
+          if (!message || message.length > 1000) throw new Error("Invalid owner action message");
+          new PublicKey(requiredSigner);
+          pendingMessage.current = { message, requiredSigner };
+          startAction("sign-message");
+        } catch (error) {
+          fail(error instanceof Error ? error.message : "Invalid owner action request");
+        }
+      }
       if (type === "gimi:request-card-checkout") {
         startCardCheckout(event.data || {});
       }
@@ -344,7 +359,7 @@ function GimiShellFrame() {
 
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [startAction, startCardCheckout]);
+  }, [fail, startAction, startCardCheckout]);
 
   useEffect(() => {
     if (!pendingAction.current || !ready || authenticated || hasOpenedLogin.current) return;
@@ -387,8 +402,17 @@ function GimiShellFrame() {
 
     if (!walletsReady) return;
 
-    const wallet = wallets[0] as ConnectedStandardSolanaWallet | undefined;
+    const requiredSigner =
+      action === "sign-message" ? pendingMessage.current?.requiredSigner :
+      action === "send-transaction" ? pendingTx.current?.requiredSigner : undefined;
+    const wallet = (requiredSigner
+      ? wallets.find((candidate) => candidate.address === requiredSigner)
+      : wallets[0]) as ConnectedStandardSolanaWallet | undefined;
     if (!wallet) {
+      if (requiredSigner && wallets.length) {
+        fail("Connect the wallet required for this rental action");
+        return;
+      }
       if (hasTriedCreateWallet.current) return;
       hasTriedCreateWallet.current = true;
       postToShell({ type: "gimi:privy-status", message: "Creating your Solana wallet..." });
@@ -414,6 +438,45 @@ function GimiShellFrame() {
         .catch(() => {
           hasStartedSignIn.current = false;
           fail("Could not sign wallet login message");
+        });
+      return;
+    }
+
+    if (action === "sign-message") {
+      const pending = pendingMessage.current;
+      if (!pending || hasStartedSignIn.current) return;
+      if (wallet.address !== pending.requiredSigner) {
+        fail("Connected wallet does not match the rental owner");
+        return;
+      }
+      hasStartedSignIn.current = true;
+      postToShell({ type: "gimi:privy-status", message: "Awaiting owner approval..." });
+      signMessage({
+        message: new TextEncoder().encode(pending.message),
+        wallet,
+        options: {
+          uiOptions: {
+            title: "Approve rental action",
+            description: "Sign this message to confirm the selected owner action.",
+            buttonText: "Approve",
+          },
+        },
+      })
+        .then(({ signature }) => {
+          pendingAction.current = null;
+          pendingMessage.current = null;
+          hasOpenedLogin.current = false;
+          setActionVersion((version) => version + 1);
+          postToShell({
+            type: "gimi:privy-message-signed",
+            address: wallet.address,
+            message: pending.message,
+            signature: signatureToBase58(signature),
+          });
+        })
+        .catch(() => {
+          hasStartedSignIn.current = false;
+          fail("Could not approve owner action");
         });
       return;
     }
@@ -451,7 +514,7 @@ function GimiShellFrame() {
     <main className="h-screen overflow-hidden bg-[#080a12]">
       <iframe
         ref={frameRef}
-        src="/gimi.html?embedded=1"
+        src={`/gimi.html?embedded=1${partnerDemo ? "&demo=partner" : ""}`}
         title="Gimi"
         className="block h-full w-full border-0"
         allow="clipboard-read; clipboard-write; publickey-credentials-get"

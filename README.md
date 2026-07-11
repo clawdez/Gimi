@@ -98,6 +98,21 @@ It returns which required/recommended keys are present without returning secret
 values. Required production keys are `NEXT_PUBLIC_PRIVY_APP_ID`, `SUPABASE_URL`,
 and `SUPABASE_SERVICE_ROLE_KEY`.
 
+Every recorded agent execution event carries explicit provenance. Keep local
+and preview deployments labeled as demo/test activity; change these values only
+when a real operator pilot or organic production surface exists:
+
+```bash
+GIMI_ENVIRONMENT=local
+GIMI_ACTIVITY_TYPE=seeded_demo
+```
+
+The current partner-diligence package is in
+[`docs/partner-diligence`](docs/partner-diligence/architecture.md). For a local,
+clearly labeled end-to-end fixture run `npm run demo:seed`, then open
+`http://localhost:3000/?demo=partner` and select **My rentals**. The fixture
+creates no provider charge or chain transaction.
+
 For Base MCP deposit-call preparation, set `BASE_RENTAL_ESCROW_ADDRESS` to the
 escrow wallet or contract address. `BASE_MCP_CHAIN` defaults to `base-sepolia`.
 
@@ -125,6 +140,7 @@ supabase/migrations/006_add_card_receipt_fields.sql
 supabase/migrations/007_add_paused_listing_status.sql
 supabase/migrations/008_create_notifications.sql
 supabase/migrations/009_add_base_mcp_rental_intents.sql
+supabase/migrations/010_create_rental_execution_events.sql
 ```
 
 Then configure these server-side environment variables:
@@ -451,8 +467,8 @@ curl -s -X POST http://localhost:3000/api/rentals/intent/receipt \
   -d '{"intentId":"intent_...","ownerWallet":"OWNER_WALLET","receiptSignature":"CONFIRMED_DEVNET_SIGNATURE"}'
 ```
 
-The server verifies the devnet signature, checks that it includes the owner
-wallet and Solana Memo program, writes a durable `rental_receipts` row with
+The server verifies the devnet signature, checks that the owner is a required
+transaction signer and that the exact rental settlement memo is present, writes a durable `rental_receipts` row with
 `payment_mint=USD_CARD`, and marks the intent `receipt_status=issued`.
 
 ### `POST /api/payments/moonpay/checkout`

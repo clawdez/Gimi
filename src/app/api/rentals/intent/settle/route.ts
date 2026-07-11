@@ -2,12 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { getRentalIntentsRepository } from "@/lib/rentalIntentsRepository";
 import { getRentalReceiptsRepository } from "@/lib/rentalReceiptsRepository";
 import { getNotificationsRepository, newNotification } from "@/lib/notificationsRepository";
+import { executionProvenanceReady, recordExecutionEventsSafely } from "@/lib/rentalExecutionEvents";
+import { verifyOwnerActionProof } from "@/lib/ownerActionProof";
 
 function errorResponse(message: string, status: number, extra?: Record<string, unknown>) {
   return NextResponse.json({ error: message, ...extra }, { status });
 }
 
 export async function POST(req: NextRequest) {
+  if (!executionProvenanceReady()) return errorResponse("Execution provenance is not configured", 503);
   let body: Record<string, unknown>;
   try {
     body = (await req.json()) as Record<string, unknown>;
@@ -30,6 +33,7 @@ export async function POST(req: NextRequest) {
     const intent = await repository.getById(intentId);
     if (!intent) return errorResponse("Rental intent not found", 404);
     if (intent.ownerWallet !== ownerWallet) return errorResponse("Only the owner wallet can settle this reservation", 403);
+    verifyOwnerActionProof({ proof: body.ownerProof, action, intentId, ownerWallet });
     const isProviderFunded = intent.paymentMethod === "card" || intent.paymentMethod === "base_mcp";
     if (!isProviderFunded) return errorResponse("Only provider-funded reservations use this settlement path", 400);
     if (intent.paymentStatus !== "confirmed") return errorResponse("Provider payment must be confirmed before settlement", 409, { intent });
@@ -106,9 +110,41 @@ export async function POST(req: NextRequest) {
         body: `${updatedIntent.itemName} return ledger is recorded. Host payout: ${ownerPayout} ${updatedIntent.currency}.`,
       })
     );
+    const paymentMode = updatedIntent.paymentMethod === "base_mcp" ? "onchain_confirmed" : "provider_authorized";
+    const executionTraceStatus = await recordExecutionEventsSafely([
+      {
+        eventKey: "owner-return-confirmed",
+        intentId: updatedIntent.id,
+        rentalId: updatedIntent.rentalId,
+        itemId: updatedIntent.itemId,
+        step: "return_confirmed",
+        actor: "owner",
+        tool: "POST /api/rentals/intent/settle",
+        summary: "Owner confirmed the physical return and condition outcome.",
+        approvalRequired: true,
+        status: "completed",
+        paymentMode,
+        recordRef: `intent:${updatedIntent.id}`,
+      },
+      {
+        eventKey: "settlement-calculated",
+        intentId: updatedIntent.id,
+        rentalId: updatedIntent.rentalId,
+        itemId: updatedIntent.itemId,
+        step: "settlement_completed",
+        actor: updatedIntent.paymentMethod === "base_mcp" ? "chain" : "gimi_agent",
+        tool: "deterministic settlement",
+        summary: `Calculated ${fee} ${updatedIntent.currency} fee, ${ownerPayout} owner payout, and ${renterRefund} renter refund.`,
+        approvalRequired: false,
+        status: updatedIntent.paymentMethod === "base_mcp" ? "completed" : "waiting",
+        paymentMode,
+        recordRef: `intent:${updatedIntent.id}`,
+      },
+    ]);
 
     return NextResponse.json({
       intent: updatedIntent,
+      executionTraceStatus,
       settlement: {
         finalFee: fee,
         ownerPayout,

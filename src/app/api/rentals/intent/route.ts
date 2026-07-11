@@ -5,6 +5,7 @@ import {
   newRentalIntentId,
   RentalIntentPaymentMethod,
 } from "@/lib/rentalIntentsRepository";
+import { executionProvenanceReady, initialIntentExecutionEvents, recordExecutionEventsSafely } from "@/lib/rentalExecutionEvents";
 
 const PAYMENT_METHODS = new Set<RentalIntentPaymentMethod>(["card", "solana_wallet"]);
 const WALLET_PATTERN = /^[1-9A-HJ-NP-Za-km-z]{32,64}$/;
@@ -33,6 +34,7 @@ function checkoutUrl(intentId: string) {
 }
 
 export async function POST(req: NextRequest) {
+  if (!executionProvenanceReady()) return errorResponse("Execution provenance is not configured", 503);
   let body: Record<string, unknown>;
   try {
     body = (await req.json()) as Record<string, unknown>;
@@ -94,9 +96,18 @@ export async function POST(req: NextRequest) {
       createdAt: now.toISOString(),
       updatedAt: now.toISOString(),
     });
+    const executionTraceStatus = await recordExecutionEventsSafely(
+      initialIntentExecutionEvents(intent, {
+        sourceTool: "POST /api/rentals/intent",
+        approvalTool: isCard ? "card checkout" : "Solana wallet approval",
+        approvalStatus: "waiting",
+        approvalPaymentMode: "simulated",
+      })
+    );
 
     return NextResponse.json({
       intent,
+      executionTraceStatus,
       paymentRouter: {
         method: intent.paymentMethod,
         cardCheckoutReady: Boolean(providerCheckoutUrl),

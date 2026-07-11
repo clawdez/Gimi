@@ -725,6 +725,59 @@
     color: var(--ink-3);
     text-align: center;
   }
+  .profile-evidence {
+    margin: 0 0 18px;
+    border-top: 1px solid var(--hairline);
+    border-bottom: 1px solid var(--hairline);
+    padding: 14px 2px;
+  }
+  .profile-evidence-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+  .profile-evidence-title {
+    color: var(--ink);
+    font-size: 13px;
+    font-weight: 650;
+  }
+  .profile-evidence-copy {
+    color: var(--ink-3);
+    font-size: 11px;
+    line-height: 1.45;
+  }
+  .profile-evidence-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .profile-evidence-stat {
+    border-left: 1px solid var(--hairline);
+    padding-left: 10px;
+  }
+  .profile-evidence-stat:first-child {
+    border-left: 0;
+    padding-left: 0;
+  }
+  .profile-evidence-stat strong,
+  .profile-evidence-stat span {
+    display: block;
+  }
+  .profile-evidence-stat strong {
+    color: var(--ink);
+    font-size: 18px;
+    font-variant-numeric: tabular-nums;
+  }
+  .profile-evidence-stat span {
+    margin-top: 3px;
+    color: var(--ink-3);
+    font-family: 'Geist Mono', monospace;
+    font-size: 8px;
+    text-transform: uppercase;
+  }
   .profile-tabs {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -933,6 +986,98 @@
     color: var(--ink-3);
     font-size: 11px;
     line-height: 1.35;
+  }
+  .provenance-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 12px;
+  }
+  .provenance-badge {
+    border: 1px solid rgba(240, 242, 247, 0.12);
+    border-radius: 999px;
+    padding: 5px 8px;
+    color: var(--ink-3);
+    background: rgba(0, 0, 0, 0.16);
+    font-family: 'Geist Mono', monospace;
+    font-size: 8px;
+    text-transform: uppercase;
+  }
+  .execution-timeline {
+    margin-top: 12px;
+    border-top: 1px solid var(--hairline);
+    padding-top: 12px;
+  }
+  .execution-timeline summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    color: var(--ink-2);
+    font-size: 12px;
+    font-weight: 650;
+    cursor: pointer;
+  }
+  .execution-timeline summary:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 4px;
+    border-radius: 4px;
+  }
+  .execution-timeline summary span {
+    color: var(--ink-3);
+    font-family: 'Geist Mono', monospace;
+    font-size: 8px;
+    text-transform: uppercase;
+  }
+  .execution-timeline ol {
+    list-style: none;
+    margin: 14px 0 0;
+    padding: 0 0 0 9px;
+    border-left: 1px solid var(--hairline);
+  }
+  .execution-step {
+    position: relative;
+    padding: 0 0 16px 14px;
+  }
+  .execution-step:last-child {
+    padding-bottom: 2px;
+  }
+  .execution-step::before {
+    content: '';
+    position: absolute;
+    top: 4px;
+    left: -13px;
+    width: 7px;
+    height: 7px;
+    border: 2px solid #151923;
+    border-radius: 50%;
+    background: var(--ink-3);
+  }
+  .execution-step.is-completed::before,
+  .execution-step.is-recovered::before {
+    background: #6bd49b;
+  }
+  .execution-step.is-failed::before {
+    background: #ff8f8f;
+  }
+  .execution-step-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    color: var(--ink-2);
+    font-size: 11px;
+    font-weight: 650;
+  }
+  .execution-step-meta,
+  .execution-step-copy {
+    margin-top: 4px;
+    color: var(--ink-3);
+    font-size: 10px;
+    line-height: 1.4;
+  }
+  .execution-step-meta {
+    font-family: 'Geist Mono', monospace;
+    text-transform: uppercase;
   }
   .owner-action-row {
     display: grid;
@@ -1591,6 +1736,9 @@
   }
 
   /* Vertical reveal: orb-centered page, sticky chatbox, products below. */
+  html {
+    overflow-x: clip;
+  }
   body {
     height: auto;
     min-height: 100svh;
@@ -1598,6 +1746,7 @@
     overflow-y: auto;
   }
   .phone {
+    margin: 0;
     height: auto;
     min-height: 100svh;
     overflow: visible;
@@ -1843,12 +1992,15 @@
           <div class="sheet-handle"></div>
           <div class="profile-title">Your rentals</div>
           <div class="profile-wallet" id="profileWallet">Connect wallet</div>
-          <div class="profile-tabs" role="tablist" aria-label="Rental profile">
-            <button class="profile-tab is-active" type="button" role="tab" data-profile-tab="borrowing">Borrowing now</button>
-            <button class="profile-tab" type="button" role="tab" data-profile-tab="lending">Lending now</button>
-            <button class="profile-tab" type="button" role="tab" data-profile-tab="listing">List item</button>
+          <div class="profile-evidence" id="profileEvidencePanel" aria-live="polite">
+            <div class="profile-evidence-copy">Connect a wallet to inspect separated demo and pilot evidence.</div>
           </div>
-          <div class="profile-pane is-active" id="borrowingPane">
+          <div class="profile-tabs" role="tablist" aria-label="Rental profile">
+            <button class="profile-tab is-active" id="borrowingTab" type="button" role="tab" aria-selected="true" aria-controls="borrowingPane" data-profile-tab="borrowing">Borrowing now</button>
+            <button class="profile-tab" id="lendingTab" type="button" role="tab" aria-selected="false" aria-controls="lendingPane" data-profile-tab="lending">Lending now</button>
+            <button class="profile-tab" id="listingTab" type="button" role="tab" aria-selected="false" aria-controls="listingPane" data-profile-tab="listing">List item</button>
+          </div>
+          <div class="profile-pane is-active" id="borrowingPane" role="tabpanel" aria-labelledby="borrowingTab">
             <div class="profile-section-label">Notifications</div>
             <div id="notificationsPanel">
               <div class="empty-profile-card">Important rental updates will appear here.</div>
@@ -1862,14 +2014,14 @@
               <div class="empty-profile-card">Returned items and buyout receipts will appear here.</div>
             </div>
           </div>
-          <div class="profile-pane" id="lendingPane">
+          <div class="profile-pane" id="lendingPane" role="tabpanel" aria-labelledby="lendingTab">
             <div class="profile-section-label">Lending now</div>
             <div class="profile-status" id="lendingStatus"></div>
             <div id="lendingRentalsPanel">
               <div class="empty-profile-card">Items you are lending will appear here after a renter starts checkout.</div>
             </div>
           </div>
-          <div class="profile-pane" id="listingPane">
+          <div class="profile-pane" id="listingPane" role="tabpanel" aria-labelledby="listingTab">
             <div class="profile-section-label">Your inventory</div>
             <div id="ownerInventoryPanel">
               <div class="empty-profile-card">Connect your wallet to manage listed items.</div>
@@ -2788,8 +2940,10 @@ const rentalReceiptsPanel = document.getElementById('rentalReceiptsPanel');
 const lendingRentalsPanel = document.getElementById('lendingRentalsPanel');
 const ownerInventoryPanel = document.getElementById('ownerInventoryPanel');
 const notificationsPanel = document.getElementById('notificationsPanel');
+const profileEvidencePanel = document.getElementById('profileEvidencePanel');
 let connectedWallet = '';
 let connectedWalletSource = '';
+let pendingOwnerProof = null;
 let activeSheetItem = null;
 let lastQuery = '';
 let selectedRentalHours = 3;
@@ -3048,6 +3202,8 @@ function renderCardReservations(reservations) {
           <div class="rental-detail"><span>Duration</span><strong>${escapeHtml(formatDuration(reservation.durationHours || selectedRentalHours))}</strong></div>
           <div class="rental-detail"><span>Total hold</span><strong>${escapeHtml(total)}</strong></div>
         </div>
+        ${renderProvenance(reservation.provenance)}
+        ${renderExecutionTimeline(reservation.timeline || [])}
         <div class="rental-escrow-note">${escapeHtml(rail)}-funded rentals reserve the item through a provider rail. After return settlement, Gimi records the payout/refund receipt in history.</div>
       </div>
     `;
@@ -3128,6 +3284,8 @@ function renderOwnerCardReservations(reservations) {
             <div class="rental-detail"><span>Refund</span><strong>${escapeHtml(reservation.amounts?.renterRefund?.uiAmount || '0')} ${escapeHtml(reservation.amounts?.renterRefund?.symbol || 'USD')}</strong></div>
           ` : ''}
         </div>
+        ${renderProvenance(reservation.provenance)}
+        ${renderExecutionTimeline(reservation.timeline || [])}
         <div class="owner-action-row">
           <button class="owner-settle-btn card-handoff-btn" type="button" data-intent-id="${escapeHtml(reservation.id || '')}" ${funded && !isActive && !isReturned ? '' : 'disabled'}>
             ${isReturned ? 'Returned' : isActive ? 'Handoff complete' : 'Mark handed off'}
@@ -3143,6 +3301,94 @@ function renderOwnerCardReservations(reservations) {
       </div>
     `;
   }).join('');
+}
+
+const EXECUTION_STEP_LABELS = {
+  intent_received: 'Intent received',
+  inventory_searched: 'Inventory checked',
+  offer_selected: 'Offer selected',
+  terms_drafted: 'Terms drafted',
+  approval_requested: 'Approval requested',
+  rental_funded: 'Rental funded',
+  handoff_confirmed: 'Handoff confirmed',
+  return_confirmed: 'Return confirmed',
+  settlement_completed: 'Settlement completed',
+  receipt_issued: 'Receipt issued',
+};
+
+function renderProvenance(provenance) {
+  if (!provenance) return '';
+  return `
+    <div class="provenance-row" aria-label="Activity provenance">
+      <span class="provenance-badge">${escapeHtml(provenance.environment || 'unknown')}</span>
+      <span class="provenance-badge">${escapeHtml((provenance.activityType || 'unknown').replaceAll('_', ' '))}</span>
+      <span class="provenance-badge">${escapeHtml((provenance.paymentMode || 'unknown').replaceAll('_', ' '))}</span>
+    </div>
+  `;
+}
+
+function renderExecutionTimeline(events) {
+  if (!events.length) return '';
+  return `
+    <details class="execution-timeline">
+      <summary>Agent activity <span>${events.length} steps</span></summary>
+      <ol>
+        ${events.map((event) => `
+          <li class="execution-step is-${escapeHtml(event.status || 'waiting')}">
+            <div class="execution-step-head">
+              <span>${escapeHtml(EXECUTION_STEP_LABELS[event.step] || event.step || 'Activity')}</span>
+              <time datetime="${escapeHtml(event.createdAt || '')}">${escapeHtml(formatExecutionTime(event.createdAt))}</time>
+            </div>
+            <div class="execution-step-meta">${escapeHtml(event.actor || 'agent')} · ${escapeHtml(event.tool || 'tool')}${executionApprovalLabel(event)}</div>
+            <div class="execution-step-copy">${escapeHtml(event.summary || '')}</div>
+          </li>
+        `).join('')}
+      </ol>
+    </details>
+  `;
+}
+
+function formatExecutionTime(value) {
+  const date = new Date(value || 0);
+  if (Number.isNaN(date.getTime())) return 'Unknown time';
+  return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+function executionApprovalLabel(event) {
+  if (!event.approvalRequired) return '';
+  if (event.status !== 'completed' && event.status !== 'recovered') return ' · approval required';
+  return event.paymentMode === 'simulated' ? ' · simulated approval' : ' · human approved';
+}
+
+function renderFunnelSummary(funnel, traceStatus = 'recorded') {
+  if (!profileEvidencePanel) return;
+  if (traceStatus === 'unavailable') {
+    profileEvidencePanel.innerHTML = '<div class="profile-evidence-copy">Execution evidence is temporarily unavailable. No activity count is being inferred.</div>';
+    return;
+  }
+  if (!funnel) {
+    profileEvidencePanel.innerHTML = '<div class="profile-evidence-copy">No execution evidence is available for this wallet yet.</div>';
+    return;
+  }
+  const stages = funnel.stageCounts || {};
+  const activity = funnel.activityCounts || {};
+  const demoCount = Number(activity.seeded_demo || 0) + Number(activity.internal_test || 0);
+  profileEvidencePanel.innerHTML = `
+    <div class="profile-evidence-head">
+      <div class="profile-evidence-title">Pilot evidence</div>
+      <span class="provenance-badge">separated metrics</span>
+    </div>
+    <div class="profile-evidence-copy">${escapeHtml(funnel.statement || 'Demo and pilot activity are reported separately.')}</div>
+    <div class="profile-evidence-grid">
+      <div class="profile-evidence-stat"><strong>${escapeHtml(String(stages.intent_received || 0))}</strong><span>Intents</span></div>
+      <div class="profile-evidence-stat"><strong>${escapeHtml(String(stages.rental_funded || 0))}</strong><span>Funded</span></div>
+      <div class="profile-evidence-stat"><strong>${escapeHtml(String(stages.receipt_issued || 0))}</strong><span>Receipts</span></div>
+    </div>
+    <div class="provenance-row">
+      <span class="provenance-badge">${escapeHtml(String(funnel.commercialIntentCount || 0))} commercial intents</span>
+      <span class="provenance-badge">${escapeHtml(String(demoCount))} demo/test events</span>
+    </div>
+  `;
 }
 
 function renderLendingRentals(rentals, cardReservations = []) {
@@ -3221,6 +3467,7 @@ async function refreshNotifications() {
   if (!notificationsPanel) return;
   if (!connectedWallet) {
     renderNotifications([]);
+    renderFunnelSummary(null);
     return;
   }
   try {
@@ -3334,7 +3581,8 @@ async function refreshRentalProfile() {
   lendingRentalsPanel.innerHTML = '<div class="empty-profile-card">Loading lending sessions...</div>';
   rentalReceiptsPanel.innerHTML = '<div class="empty-profile-card">Loading receipts...</div>';
   try {
-    const res = await fetch(`/api/rentals/history?wallet=${encodeURIComponent(connectedWallet)}&limit=8`);
+    const timelineMode = connectedWalletSource === 'seeded_demo' ? '&timeline=seeded_demo' : '';
+    const res = await fetch(`/api/rentals/history?wallet=${encodeURIComponent(connectedWallet)}&limit=8${timelineMode}`);
     const data = await res.json();
     if (!res.ok) throw new Error(data?.error || 'Could not load rentals');
     const settledRentalIds = new Set((data.receipts || []).map((receipt) => receipt.rentalId));
@@ -3349,13 +3597,16 @@ async function refreshRentalProfile() {
     renderActiveRentals(borrowingRentals, data.cardReservations || []);
     renderLendingRentals(lendingRentals, data.ownerCardReservations || []);
     renderReceipts(data.receipts || []);
+    renderFunnelSummary(data.funnel, data.executionTraceStatus);
     await refreshNotifications();
     await refreshOwnerInventory();
   } catch (error) {
+    console.error('Could not refresh rental profile', error);
     const localRentals = activeLocalRentalsForWallet(connectedWallet);
     renderActiveRentals(localRentals, []);
     renderLendingRentals([], []);
     rentalReceiptsPanel.innerHTML = `<div class="empty-profile-card">${escapeHtml(error instanceof Error ? error.message : 'Could not load receipts')}</div>`;
+    renderFunnelSummary(null);
     await refreshNotifications();
     await refreshOwnerInventory();
   }
@@ -3435,6 +3686,46 @@ function requestPrivyAction(action) {
 
   setSheetStatus('Wallet login requires the Gimi app shell at /', 'error');
   updateCheckoutCTA();
+}
+
+function buildOwnerActionMessage(action, intentId, ownerWallet, issuedAt) {
+  return [
+    'Gimi owner action',
+    `Action: ${action}`,
+    `Intent: ${intentId}`,
+    `Owner: ${ownerWallet}`,
+    `Issued at: ${issuedAt}`,
+  ].join('\n');
+}
+
+function requestOwnerActionProof(action, intentId, ownerWallet) {
+  if (!window.parent || window.parent === window) {
+    return Promise.reject(new Error('Owner approval requires the Gimi app shell at /'));
+  }
+  if (pendingOwnerProof) return Promise.reject(new Error('Finish the current owner approval first'));
+  const message = buildOwnerActionMessage(action, intentId, ownerWallet, new Date().toISOString());
+  return new Promise((resolve, reject) => {
+    const timeout = window.setTimeout(() => {
+      pendingOwnerProof = null;
+      reject(new Error('Owner approval timed out'));
+    }, 120000);
+    pendingOwnerProof = {
+      resolve: (proof) => {
+        window.clearTimeout(timeout);
+        pendingOwnerProof = null;
+        resolve(proof);
+      },
+      reject: (error) => {
+        window.clearTimeout(timeout);
+        pendingOwnerProof = null;
+        reject(error);
+      },
+    };
+    window.parent.postMessage(
+      { type: 'gimi:request-privy-message', message, requiredSigner: ownerWallet },
+      window.location.origin
+    );
+  });
 }
 
 function stashPreparedRental(prepared) {
@@ -3678,6 +3969,16 @@ window.addEventListener('message', async (event) => {
     setSheetStatus(`Wallet connected · ${shortWallet(connectedWallet)}`, 'success');
     return;
   }
+  if (event.data?.type === 'gimi:privy-message-signed') {
+    const resolver = pendingOwnerProof;
+    if (!resolver) return;
+    resolver.resolve({
+      address: String(event.data.address || ''),
+      message: String(event.data.message || ''),
+      signature: String(event.data.signature || ''),
+    });
+    return;
+  }
   if (event.data?.type === 'gimi:card-checkout-complete') {
     closePrivyRequest();
     const intent = event.data.intent || {};
@@ -3711,6 +4012,10 @@ window.addEventListener('message', async (event) => {
   if (event.data?.type === 'gimi:privy-wallet-error') {
     closePrivyRequest();
     const message = String(event.data.message || 'Wallet connection cancelled');
+    if (pendingOwnerProof) {
+      pendingOwnerProof.reject(new Error(message));
+      return;
+    }
     if (readPendingListingPublish()) {
       clearPendingListingPublish();
       try { window.localStorage.removeItem('gimi.pendingPrivyTransaction'); } catch (_) {}
@@ -4149,6 +4454,7 @@ async function markCardReservationHandedOff(reservation, button) {
   setLendingStatus('Marking provider-funded rental as handed off...', 'pending');
 
   try {
+    const ownerProof = await requestOwnerActionProof('mark_handed_off', reservation.id, connectedWallet);
     const res = await fetch('/api/rentals/intent/status', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -4156,6 +4462,7 @@ async function markCardReservationHandedOff(reservation, button) {
         intentId: reservation.id,
         ownerWallet: connectedWallet,
         action: 'mark_handed_off',
+        ownerProof,
       }),
     });
     const data = await res.json();
@@ -4189,6 +4496,7 @@ async function confirmCardReservationReturn(reservation, button) {
   setLendingStatus('Recording provider return settlement ledger...', 'pending');
 
   try {
+    const ownerProof = await requestOwnerActionProof('confirm_card_return', reservation.id, connectedWallet);
     const res = await fetch('/api/rentals/intent/settle', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -4196,6 +4504,7 @@ async function confirmCardReservationReturn(reservation, button) {
         intentId: reservation.id,
         ownerWallet: connectedWallet,
         action: 'confirm_card_return',
+        ownerProof,
       }),
     });
     const data = await res.json();
@@ -4646,7 +4955,13 @@ document.addEventListener('keydown', (e) => {
 
 
 lastQuery = 'Camping gear for two';
-hydrateWalletSession();
+if (new URLSearchParams(window.location.search).get('demo') === 'partner') {
+  connectedWallet = '5pNLovuXAbyKM8UGDKZg9Qqe85Sqt1kMPNaippombvwC';
+  connectedWalletSource = 'seeded_demo';
+  updateWalletUI();
+} else {
+  hydrateWalletSession();
+}
 restoreActiveSheetState();
 setTimeout(() => { if (cur === 'idle') ask('Camping gear for two'); }, 1600);
 

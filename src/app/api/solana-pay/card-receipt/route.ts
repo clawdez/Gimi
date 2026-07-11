@@ -2,38 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { getRentableItem } from "@/lib/rentableItems";
 import { getRentalIntentsRepository } from "@/lib/rentalIntentsRepository";
 import { buildMemoReceiptTransaction } from "@/lib/rentproofProgram";
+import { buildCardReceiptMemo } from "@/lib/cardReceipt";
 
 function errorResponse(message: string, status: number, extra?: Record<string, unknown>) {
   return NextResponse.json({ error: message, ...extra }, { status });
-}
-
-function receiptMemo(input: {
-  intentId: string;
-  rentalId: string;
-  itemId: string;
-  ownerWallet: string;
-  renterWallet: string;
-  finalFee: number;
-  ownerPayout: number;
-  platformFee: number;
-  renterRefund: number;
-  currency: string;
-  returnedAt: string;
-}) {
-  return [
-    "gimi-card-receipt:v1",
-    `intent=${input.intentId}`,
-    `rental=${input.rentalId}`,
-    `item=${input.itemId}`,
-    `owner=${input.ownerWallet}`,
-    `renter=${input.renterWallet}`,
-    `fee=${input.finalFee}`,
-    `ownerPayout=${input.ownerPayout}`,
-    `platformFee=${input.platformFee}`,
-    `refund=${input.renterRefund}`,
-    `currency=${input.currency}`,
-    `returnedAt=${input.returnedAt}`,
-  ].join("|");
 }
 
 export async function POST(req: NextRequest) {
@@ -63,7 +35,7 @@ export async function POST(req: NextRequest) {
 
     const rentalId = intent.rentalId || intent.id;
     const renterWallet = intent.renterWallet || `card:${intent.renterIdentity || intent.id}`;
-    const memo = receiptMemo({
+    const memo = buildCardReceiptMemo({
       intentId: intent.id,
       rentalId,
       itemId: intent.itemId,

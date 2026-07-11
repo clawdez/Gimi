@@ -49,6 +49,7 @@ export interface PersistedRentalIntent {
 export interface RentalIntentsRepository {
   storageKind: string;
   save(intent: PersistedRentalIntent): Promise<PersistedRentalIntent>;
+  compareAndSave(intent: PersistedRentalIntent, expectedUpdatedAt: string): Promise<PersistedRentalIntent | undefined>;
   getById(id: string): Promise<PersistedRentalIntent | undefined>;
   getByProviderPaymentId(providerPaymentId: string): Promise<PersistedRentalIntent | undefined>;
   listByRenterWallet(wallet: string, limit?: number): Promise<PersistedRentalIntent[]>;
@@ -91,22 +92,26 @@ interface RentalIntentRow {
   updated_at: string;
 }
 
-class FileRentalIntentsRepository implements RentalIntentsRepository {
+export class FileRentalIntentsRepository implements RentalIntentsRepository {
   readonly storageKind = process.env.VERCEL ? "file-ephemeral" : "file";
+  private writeQueue: Promise<void> = Promise.resolve();
 
   constructor(private readonly filePath = process.env.RENTAL_INTENTS_FILE_PATH ?? defaultRentalIntentsFilePath()) {}
 
   async getById(id: string) {
+    await this.writeQueue;
     const intents = await this.readAll();
     return intents.find((intent) => intent.id === id);
   }
 
   async getByProviderPaymentId(providerPaymentId: string) {
+    await this.writeQueue;
     const intents = await this.readAll();
     return intents.find((intent) => intent.providerPaymentId === providerPaymentId);
   }
 
   async listByRenterWallet(wallet: string, limit = 20) {
+    await this.writeQueue;
     const intents = await this.readAll();
     return intents
       .filter((intent) => intent.renterWallet === wallet)
@@ -115,6 +120,7 @@ class FileRentalIntentsRepository implements RentalIntentsRepository {
   }
 
   async listByOwnerWallet(wallet: string, limit = 20) {
+    await this.writeQueue;
     const intents = await this.readAll();
     return intents
       .filter((intent) => intent.ownerWallet === wallet)
@@ -123,11 +129,27 @@ class FileRentalIntentsRepository implements RentalIntentsRepository {
   }
 
   async save(intent: PersistedRentalIntent) {
-    const intents = await this.readAll();
-    const index = intents.findIndex((entry) => entry.id === intent.id);
-    const next = index >= 0 ? [...intents.slice(0, index), intent, ...intents.slice(index + 1)] : [...intents, intent];
-    await this.writeAll(next);
-    return intent;
+    return this.enqueue(async () => {
+      const intents = await this.readAll();
+      await this.writeAll(upsertIntent(intents, intent));
+      return intent;
+    });
+  }
+
+  async compareAndSave(intent: PersistedRentalIntent, expectedUpdatedAt: string) {
+    return this.enqueue(async () => {
+      const intents = await this.readAll();
+      const current = intents.find((entry) => entry.id === intent.id);
+      if (!current || current.updatedAt !== expectedUpdatedAt) return undefined;
+      await this.writeAll(upsertIntent(intents, intent));
+      return intent;
+    });
+  }
+
+  private async enqueue<T>(operation: () => Promise<T>) {
+    const result = this.writeQueue.then(operation);
+    this.writeQueue = result.then(() => undefined, () => undefined);
+    return result;
   }
 
   private async readAll() {
@@ -144,7 +166,7 @@ class FileRentalIntentsRepository implements RentalIntentsRepository {
 
   private async writeAll(intents: PersistedRentalIntent[]) {
     await mkdir(path.dirname(this.filePath), { recursive: true });
-    const tempPath = `${this.filePath}.${process.pid}.${Date.now()}.tmp`;
+    const tempPath = `${this.filePath}.${process.pid}.${randomUUID()}.tmp`;
     await writeFile(tempPath, `${JSON.stringify(intents, null, 2)}\n`, "utf8");
     await rename(tempPath, this.filePath);
   }
@@ -206,6 +228,19 @@ class SupabaseRentalIntentsRepository implements RentalIntentsRepository {
     if (error) throw new Error(`Supabase rental intent save failed: ${error.message}`);
     return rowToRentalIntent(data);
   }
+
+  async compareAndSave(intent: PersistedRentalIntent, expectedUpdatedAt: string) {
+    const { data, error } = await this.client
+      .from("rental_intents")
+      .update(rentalIntentToRow(intent))
+      .eq("id", intent.id)
+      .eq("updated_at", expectedUpdatedAt)
+      .select("*")
+      .maybeSingle();
+
+    if (error) throw new Error(`Supabase rental intent conditional save failed: ${error.message}`);
+    return data ? rowToRentalIntent(data) : undefined;
+  }
 }
 
 let repository: RentalIntentsRepository | undefined;
@@ -249,6 +284,11 @@ function defaultRentalIntentsFilePath() {
 function normalizeLimit(limit: number | undefined) {
   if (typeof limit !== "number" || !Number.isFinite(limit)) return 20;
   return Math.min(50, Math.max(1, Math.floor(limit)));
+}
+
+function upsertIntent(intents: PersistedRentalIntent[], intent: PersistedRentalIntent) {
+  const index = intents.findIndex((entry) => entry.id === intent.id);
+  return index >= 0 ? [...intents.slice(0, index), intent, ...intents.slice(index + 1)] : [...intents, intent];
 }
 
 function rentalIntentToRow(intent: PersistedRentalIntent): RentalIntentRow {
